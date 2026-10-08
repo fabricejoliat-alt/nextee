@@ -1,0 +1,20 @@
+✔ PostgREST: le manager académie lit son roster et ses relations explicites (483.57875ms)
+✔ API: org falsifiée refusée même avec un player_id connu (42.622541ms)
+✔ PostgREST: jointure familiale composite avec droits organisationnels (4.735542ms)
+✔ PostgREST: aucun roster tiers et aucune écriture client sensible (6.134375ms)
+✔ API: affiliation Sion disponible, Centre encore bloqué indépendamment (43.793292ms)
+✔ API: recherche partenaire limitée, avec refus d’un club sans lien (415.687709ms)
+✔ API: préparation des invitations dérivée des seuls droits du Centre (386.905375ms)
+✔ API: club reçoit une demande sans accéder aux contenus de l’académie (29.72875ms)
+✔ API Coach: aucun accès au junior en attente, même avec une affectation de groupe (2049.944ms)
+✔ PostgREST: les mutations de membres sont refusées au client et restent contrôlées côté serveur (4.783583ms)
+✔ API: affiliations externes réutilisées, Centre actif et nouveau club encore bloqué (28.54625ms)
+✔ API: création contrôlée sans doublon de parent et sans décision juridique implicite (491.442459ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4037.250833

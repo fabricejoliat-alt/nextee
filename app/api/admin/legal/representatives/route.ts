@@ -18,8 +18,7 @@ export async function GET(req: Request) {
     if (members.error) throw members.error;
     const parents = new Set((members.data ?? []).filter((m) => m.role === "parent").map((m) => m.user_id));
     const players = new Set((members.data ?? []).filter((m) => m.role === "player").map((m) => m.user_id));
-    const links = parents.size && players.size ? await db.from("player_guardians")
-      .select("guardian_user_id,player_id,can_edit").in("guardian_user_id", [...parents])
+    const links = parents.size && players.size ? await db.from("player_guardian_scopes").select("guardian_user_id,player_id,can_edit").eq("organization_id", club).in("status", ["pending", "active"]).eq("can_view", true).in("guardian_user_id", [...parents])
       .in("player_id", [...players]).eq("can_edit", true).limit(500) : { data: [], error: null };
     if (links.error) throw links.error;
     const ids = [...new Set([

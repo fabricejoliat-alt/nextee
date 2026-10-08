@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { resolveCampCoachPlayerAccess, resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
@@ -19,7 +20,7 @@ export async function DELETE(
     if (!playerId || !documentId) return NextResponse.json({ error: "Missing params" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId,requestedOrganizationId(req.url));
 
     const docRes = await supabaseAdmin
       .from("player_dashboard_documents")
@@ -79,7 +80,7 @@ export async function PATCH(
     if (!playerId || !documentId) return NextResponse.json({ error: "Missing params" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId,requestedOrganizationId(req.url));
 
     const body = (await req.json().catch(() => ({}))) as {
       file_name?: string | null;

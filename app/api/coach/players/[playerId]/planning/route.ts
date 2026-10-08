@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
@@ -16,7 +17,7 @@ export async function GET(
     if (!playerId) return NextResponse.json({ error: "Missing playerId" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId,requestedOrganizationId(req.url));
     const sharedClubIds = access.sharedClubIds;
     if (sharedClubIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
@@ -111,7 +112,7 @@ export async function GET(
         ? supabaseAdmin.from("coach_groups").select("id,name").in("id", groupIds)
         : Promise.resolve({ data: [], error: null } as any),
       clubIds.length > 0
-        ? supabaseAdmin.from("clubs").select("id,name").in("id", clubIds)
+        ? supabaseAdmin.from("organizations").select("id,name").in("id", clubIds)
         : Promise.resolve({ data: [], error: null } as any),
     ]);
     if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
@@ -123,7 +124,7 @@ export async function GET(
     const clubNameById: Record<string, string> = {};
     for (const c of clubsRes.data ?? []) clubNameById[String((c as any).id)] = String((c as any).name ?? "");
 
-    const scope = await resolveCoachAssignments(supabaseAdmin, callerId);
+    const scope = await resolveCoachAssignments(supabaseAdmin, callerId, requestedOrganizationId(req.url));
     const canOpen = (event: { id: string; group_id: string; club_id: string }) => Boolean(
       scope.memberships.some((member) => member.club_id === event.club_id && member.role === "manager")
       || scope.groups.some((group) => group.id === event.group_id && group.club_id === event.club_id)

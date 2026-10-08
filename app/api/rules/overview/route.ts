@@ -36,7 +36,7 @@ async function loadPlayerLeaderboard(admin: Database, seriesIds: string[], seaso
     .filter(item => (clubIdsByAttempt.get(item.id) ?? []).some(id => playerClubIds.includes(id)))
     .map(item => item.player_user_id))];
   const [{ data: clubs, error: clubsError }, { data: participations, error: participationsError }, { data: profiles, error: profilesError }] = await Promise.all([
-    clubIds.length ? admin.from("clubs").select("id,name").in("id", clubIds) : Promise.resolve({ data: [], error: null }),
+    clubIds.length ? admin.from("organizations").select("id,name").in("id", clubIds) : Promise.resolve({ data: [], error: null }),
     admin.from("rules_club_participations").select("club_id,enabled,visibility,retained_scores_override,minimum_participants_override").eq("season_id", String(season.id)),
     playerIdsInMyClubs.length
       ? admin.from("profiles").select("id,first_name,last_name").in("id", playerIdsInMyClubs)

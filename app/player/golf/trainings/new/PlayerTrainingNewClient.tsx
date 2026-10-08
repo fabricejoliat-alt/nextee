@@ -1,5 +1,7 @@
 "use client";
 
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import Image from "next/image";
 import Link from "next/link";
@@ -453,7 +455,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
 
       // load clubs for memberships
       if (ids.length > 0) {
-        const clubsRes = await supabase.from("clubs").select("id,name").in("id", ids);
+        const clubsRes = await supabase.from("organizations").select("id,name").in("id", ids);
         if (clubsRes.error) {
           setError(clubsRes.error.message);
           setLoading(false);
@@ -779,7 +781,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
       return;
     }
 
-    const club_id = sessionType === "club" ? clubIdForTraining : null;
+    const club_id = clubIdForTraining;
     const mot = performanceEnabled && showSensationsCard && motivation ? Number(motivation) : null;
     const dif = performanceEnabled && showSensationsCard && difficulty ? Number(difficulty) : null;
     const sat = performanceEnabled && showSensationsCard && satisfaction ? Number(satisfaction) : null;
@@ -812,7 +814,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
       start_at: dt.toISOString(),
       location_text: (linkedEvent ? (linkedEvent.location_text ?? place) : place).trim() || null,
       session_type: sessionType,
-      club_id: linkedEvent ? linkedEvent.club_id : club_id,
+      club_id: linkedEvent ? linkedEvent.club_id : sessionType === "club" ? club_id : null,
       coach_name: coachNameForSave,
       motivation: mot,
       difficulty: dif,
@@ -1296,9 +1298,9 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                       </div>
                     ) : null}
 
-                    {sessionType === "club" && (
+                    {(
                       <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>{t("common.club")}</span>
+                        <span style={fieldLabelStyle}>{t("organization.context")}</span>
                         <select
                           value={clubIdForTraining}
                           onChange={(e) => setClubIdForTraining(e.target.value)}

@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { loadValidationDashboard, resolveValidationPlayerAccess } from "@/app/api/validations/_lib";
 
@@ -7,7 +8,7 @@ export async function GET(req: NextRequest) {
     if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
 
     const childId = String(new URL(req.url).searchParams.get("child_id") ?? "").trim();
-    const access = await resolveValidationPlayerAccess(accessToken, childId, "view");
+    const access = await resolveValidationPlayerAccess(accessToken, childId, "view", requestedOrganizationId(req.url));
     const dashboard = await loadValidationDashboard(
       access.supabaseAdmin,
       access.effectivePlayerId,

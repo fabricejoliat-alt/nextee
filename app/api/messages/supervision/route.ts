@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
         .in("club_id", orgIds)
         .eq("is_active", true)
         .in("role", ["manager", "coach"]),
-      supabaseAdmin.from("clubs").select("id,name").in("id", orgIds),
+      supabaseAdmin.from("organizations").select("id,name").in("id", orgIds),
     ]);
     if (staffRes.error) return NextResponse.json({ error: staffRes.error.message }, { status: 400 });
     if (clubsRes.error) return NextResponse.json({ error: clubsRes.error.message }, { status: 400 });

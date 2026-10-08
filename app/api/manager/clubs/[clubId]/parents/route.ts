@@ -43,7 +43,7 @@ export async function GET(req: NextRequest, ctx: Context) {
     }
     for (let from = 0; from < parentIds.length; from += 100) {
       const ids = parentIds.slice(from, from + 100);
-      const rows = await allRows((start, end) => db.from("player_guardians").select("player_id,guardian_user_id")
+      const rows = await allRows((start, end) => db.from("player_guardian_scopes").select("player_id,guardian_user_id").eq("organization_id", clubId).in("status", ["active", "pending"]).eq("can_view", true)
         .in("guardian_user_id", ids).order("player_id").order("guardian_user_id").range(start, end));
       links.push(...rows.filter(row => playerById.has(String(row.player_id))));
     }
@@ -63,7 +63,7 @@ export async function GET(req: NextRequest, ctx: Context) {
         emails.set(id, email?.endsWith("@noemail.local") ? null : email);
       }));
     }
-    const result: ManagerParent[] = parents.map(row => {
+    const result: ManagerParent[] = parents.filter(row => links.some(link => link.guardian_user_id === row.user_id)).map(row => {
       const userId = String(row.user_id), profile = profiles.get(userId);
       return { id: String(row.id), user_id: userId, first_name: profile?.first_name ?? "", last_name: profile?.last_name ?? "",
         email: emails.get(userId) ?? null, phone: profile?.phone ?? "", is_active: row.is_active === true,

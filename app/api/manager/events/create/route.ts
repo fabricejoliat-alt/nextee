@@ -194,7 +194,7 @@ export async function GET(req: NextRequest) {
     }
 
     const [clubsRes, groupsRes, membersRes] = await Promise.all([
-      supabaseAdmin.from("clubs").select("id,name").in("id", ctx.clubIds),
+      supabaseAdmin.from("organizations").select("id,name").in("id", ctx.clubIds),
       supabaseAdmin
         .from("coach_groups")
         .select("id,name,club_id,is_active,head_coach_user_id")

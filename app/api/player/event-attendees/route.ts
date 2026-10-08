@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   bearerTokenFromRequest,
@@ -13,6 +14,7 @@ export async function GET(req: NextRequest) {
     if (!eventId) return NextResponse.json({ attendees: [] });
     const access = await resolveAuthenticatedPlayerAccess({
       accessToken: bearerTokenFromRequest(req),
+      requestedOrganizationId: requestedOrganizationId(req.url),
       requestedPlayerId: childId,
       mode: "view",
     });
@@ -30,10 +32,12 @@ export async function GET(req: NextRequest) {
 
     const eventRes = await supabaseAdmin
       .from("club_events")
-      .select("group_id,event_type")
+      .select("group_id,event_type,club_id")
       .eq("id", eventId)
+      .in("club_id", access.organizationIds)
       .maybeSingle();
     if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
+    if (!eventRes.data) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const eventType = String((eventRes.data as { event_type?: string | null } | null)?.event_type ?? "").trim();
 
     if (eventType === "camp") {

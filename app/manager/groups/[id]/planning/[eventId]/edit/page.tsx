@@ -502,7 +502,7 @@ export default function ManagerEventEditPage() {
         String(gRes.data.name ?? "").startsWith("__EVENT_SPECIFIQUE__");
 
       // club name
-      const cRes = await supabase.from("clubs").select("id,name").eq("id", gRes.data.club_id).maybeSingle();
+      const cRes = await supabase.from("organizations").select("id,name").eq("id", gRes.data.club_id).maybeSingle();
       if (version !== loadVersion.current) return;
       if (!cRes.error && cRes.data) setClubName((cRes.data as ClubRow).name ?? t("common.club"));
       else setClubName(t("common.club"));

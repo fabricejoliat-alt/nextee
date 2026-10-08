@@ -1,3 +1,5 @@
+import { personalOrOrganizationFilter } from "@/lib/personalHistoryScope";
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   bearerTokenFromRequest,
@@ -108,6 +110,7 @@ export async function GET(req: NextRequest) {
       accessToken: bearerTokenFromRequest(req),
       requestedPlayerId: childId,
       mode: "view",
+      requestedOrganizationId: requestedOrganizationId(req.url),
     });
     const { supabaseAdmin } = access;
     const effectiveUserId = access.subjectPlayerId;
@@ -117,6 +120,7 @@ export async function GET(req: NextRequest) {
       .from("golf_rounds")
       .select("id,start_at,score_entry_mode,gir,fairways_hit,fairways_total,total_putts,eagles,birdies,pars,bogeys,doubles_plus")
       .eq("user_id", effectiveUserId)
+      .or(personalOrOrganizationFilter("club_id", access.organizationIds))
       .gte("start_at", curStart.toISOString())
       .lt("start_at", curEnd.toISOString())
       .order("start_at", { ascending: false });

@@ -1,5 +1,7 @@
 "use client";
 
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -251,7 +253,7 @@ export default function PlayerTrainingEditPage() {
       setClubIds(ids);
 
       if (ids.length > 0) {
-        const clubsRes = await supabase.from("clubs").select("id,name").in("id", ids);
+        const clubsRes = await supabase.from("organizations").select("id,name").in("id", ids);
         if (clubsRes.error) {
           setError(clubsRes.error.message);
           setLoading(false);

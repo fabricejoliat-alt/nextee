@@ -1,0 +1,28 @@
+"use client";
+import { useRef,useState } from "react";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import AccessibleDialog from "@/components/ui/AccessibleDialog";
+import { managerHeaders,useManagerResource } from "@/components/manager/useManagerResource";
+import styles from "./OrganizationSettingsAdmin.module.css";
+import table from "./OrganizationsAdmin.module.css";
+type Profile={id:string;first_name:string;last_name:string;username?:string};
+type Reference={id:string;name:string;country_code:string;region_code:string;claimed_organization_id:string|null};
+type Data={references:Reference[];matches:Array<{id:string;status:string;subject_role:string;player:Profile;organization:{name:string}}>;
+  clubs:Array<{id:string;name:string}>;proposals:Array<{id:string;player_id:string;external_club_reference_id:string;player:Profile}>};
+export default function ExternalClubsAdmin(){
+  const {t}=useI18n(),resource=useManagerResource<Data>("/api/admin/organizations/external","organization.operationFailed");
+  const [dialog,setDialog]=useState<{action:"review"|"claim"|"affiliate";id:string;player_id?:string}|null>(null),[club,setClub]=useState(""),[evidence,setEvidence]=useState(""),[busy,setBusy]=useState(false),[feedback,setFeedback]=useState("");const mutation=useRef(false);const text=(key:string)=>t(`organization.${key}`);
+  function open(action:"review"|"claim"|"affiliate",id:string,player_id?:string){setDialog({action,id,player_id});setClub(resource.data?.references.find(row=>row.id===id)?.claimed_organization_id??"");setEvidence("");setFeedback("");}
+  async function submit(event:React.FormEvent,approve=true){event.preventDefault();if(!dialog||mutation.current)return;mutation.current=true;setBusy(true);setFeedback("");
+    try{const response=await fetch("/api/admin/organizations/external",{method:"POST",headers:{...await managerHeaders(),"Content-Type":"application/json"},body:JSON.stringify({action:dialog.action,match_id:dialog.id,reference_id:dialog.id,player_id:dialog.player_id,club_id:club,evidence,approve})});if(!response.ok)throw new Error();setDialog(null);setFeedback("organization.saved");resource.reload();}
+    catch{setFeedback("organization.operationFailed");}finally{setBusy(false);mutation.current=false;}}
+  return <div className={styles.page}><div className={styles.topline}><h1>{text("externalReferences")}</h1></div>{feedback?<p className={feedback==='organization.saved'?styles.successAlert:styles.errorAlert} role="status">{t(feedback)}</p>:null}
+    {resource.loading?<ListLoadingBlock label={t("common.loading")}/>:resource.error?<div className={styles.errorAlert} role="alert">{text("operationFailed")}<button onClick={resource.reload}>{t("manager.refresh")}</button></div>:<>
+      <section className={styles.section}><div className={styles.sectionHeading}><h2>{text("identity")}</h2><p>{text("identityHint")}</p></div>{resource.data?.matches.filter(row=>row.status==='pending').map(row=><div key={row.id} className={styles.dangerTools}><p>{row.player.last_name} {row.player.first_name} · {row.player.username} · {row.organization.name} · {text(row.subject_role)}</p><button className={styles.secondaryButton} disabled={busy} onClick={()=>open("review",row.id)}>{text("confirmMatch")}</button></div>)}</section>
+      <section className={styles.section}><div className={table.tableFrame}><table className={table.table}><thead><tr><th>{text("external_club")}</th><th>{text("country")}</th><th>{text("club")}</th><th>{t("manager.content.actions")}</th></tr></thead><tbody>{resource.data?.references.map(row=><tr key={row.id}><td>{row.name}</td><td>{row.country_code} · {row.region_code}</td><td>{resource.data?.clubs.find(club=>club.id===row.claimed_organization_id)?.name??'—'}</td><td>{!row.claimed_organization_id?<button className={styles.secondaryButton} disabled={busy} onClick={()=>open("claim",row.id)}>{text("claim")}</button>:resource.data?.proposals.filter(item=>item.external_club_reference_id===row.id).map(item=><button key={item.id} className={styles.secondaryButton} disabled={busy} onClick={()=>open("affiliate",row.id,item.player_id)}>{item.player.last_name} {item.player.first_name} · {text("confirmMatch")}</button>)}</td></tr>)}</tbody></table></div></section>
+    </>}{dialog?<AccessibleDialog label={text(dialog.action==='claim'?'claim':'confirmMatch')} onClose={()=>{if(!busy)setDialog(null);}}><form className={styles.section} onSubmit={submit}><h2>{text(dialog.action==='claim'?'claim':'confirmMatch')}</h2>
+      {dialog.action!=='review'?<label className={styles.field}><span>{text("club")}</span><select required disabled={busy||dialog.action==='affiliate'} value={club} onChange={event=>setClub(event.target.value)}><option value="">{t("common.choose")}</option>{resource.data?.clubs.map(row=><option key={row.id} value={row.id}>{row.name}</option>)}</select></label>:null}
+      {dialog.action!=='claim'?<label className={styles.field}><span>{text("evidence")}</span><textarea required minLength={20} disabled={busy} value={evidence} onChange={event=>setEvidence(event.target.value)}/></label>:null}
+      <div className={styles.topActions}><button type="submit" className={styles.primaryButton} disabled={busy}>{text(dialog.action==='claim'?'claim':'confirmMatch')}</button>{dialog.action==='review'?<button type="button" className={styles.dangerButton} disabled={busy||evidence.trim().length<20} onClick={event=>void submit(event,false)}>{text("refuse")}</button>:null}<button className={styles.secondaryButton} type="button" disabled={busy} onClick={()=>setDialog(null)}>{t("common.cancel")}</button></div></form></AccessibleDialog>:null}</div>;
+}

@@ -54,11 +54,12 @@ export async function requireSuperAdmin(accessToken: string) {
   return { supabaseAdmin, callerId };
 }
 
-export async function resolveValidationPlayerAccess(accessToken: string, childIdRaw: string, mode: "view" | "edit" = "view") {
+export async function resolveValidationPlayerAccess(accessToken: string, childIdRaw: string, mode: "view" | "edit" = "view", organizationId?: string | null) {
   const supabaseAdmin = createSupabaseAdmin();
   const access = await resolveAuthenticatedPlayerAccess({
     accessToken,
     requestedPlayerId: childIdRaw,
+    requestedOrganizationId: organizationId,
     mode,
     supabaseAdmin,
   });
@@ -69,6 +70,8 @@ export async function resolveValidationPlayerAccess(accessToken: string, childId
     effectivePlayerId: access.subjectPlayerId,
     isParent: access.isGuardianContext,
     canRecordAttempts: access.permissions.edit,
+    organizationIds: access.organizationIds,
+    organizationId: access.organizationId,
   };
 }
 

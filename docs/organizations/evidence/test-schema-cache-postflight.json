@@ -1,0 +1,29 @@
+{
+  "checked_at": "2026-10-07T18:37:00.337Z",
+  "target": "wizbeuuvjibmmuxyynly",
+  "method": "Read-only REST GET select=* limit=0, service-role header kept private",
+  "tables": [
+    {
+      "table": "player_guardian_scopes",
+      "status": 200,
+      "schema_cache": "available"
+    },
+    {
+      "table": "academy_roster_entries",
+      "status": 200,
+      "schema_cache": "available"
+    },
+    {
+      "table": "legal_organization_templates",
+      "status": 200,
+      "schema_cache": "available"
+    },
+    {
+      "table": "training_volume_default_targets",
+      "status": 200,
+      "schema_cache": "available"
+    }
+  ],
+  "browser": "localhost:3000 login page loaded; authenticated login retest pending",
+  "migration_result": "test-remodel-result.json"
+}

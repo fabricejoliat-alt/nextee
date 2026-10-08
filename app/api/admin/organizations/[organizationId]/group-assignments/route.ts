@@ -69,7 +69,7 @@ export async function GET(
       coachesRes,
       seasonsRes,
     ] = await Promise.all([
-      supabaseAdmin.from("clubs").select("id,name").eq("id", organizationId).maybeSingle(),
+      supabaseAdmin.from("organizations").select("id,name").eq("id", organizationId).maybeSingle(),
       supabaseAdmin
         .from("coach_groups")
         .select("id,name,is_active,head_coach_user_id,club_id")

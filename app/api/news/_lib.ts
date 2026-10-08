@@ -191,7 +191,7 @@ export async function fetchPublishedNewsForClubs(supabaseAdmin: any, clubIds: st
     newsIds.length > 0
       ? supabaseAdmin.from("club_news_targets").select("news_id,target_type,target_value").in("news_id", newsIds)
       : ({ data: [], error: null } as const),
-    supabaseAdmin.from("clubs").select("id,name").in("id", clubIds),
+    supabaseAdmin.from("organizations").select("id,name").in("id", clubIds),
     linkedEventIds.length > 0
       ? supabaseAdmin.from("club_events").select("id,title,event_type,starts_at,group_id").in("id", linkedEventIds)
       : ({ data: [], error: null } as const),
@@ -288,31 +288,25 @@ export async function resolvePlayerNewsContext(args: {
   });
   const effectivePlayerId = access.subjectPlayerId;
 
-  const [profileRes, membershipsRes, groupsRes] = await Promise.all([
+  const [profileRes, groupsRes, permittedGroups] = await Promise.all([
     args.supabaseAdmin
       .from("profiles")
       .select("id,first_name,last_name,birth_date")
       .eq("id", effectivePlayerId)
       .maybeSingle(),
     args.supabaseAdmin
-      .from("club_members")
-      .select("club_id")
-      .eq("user_id", effectivePlayerId)
-      .eq("role", "player")
-      .eq("is_active", true),
-    args.supabaseAdmin
       .from("coach_group_players")
       .select("group_id")
       .eq("player_user_id", effectivePlayerId),
+    args.supabaseAdmin.from("coach_groups").select("id").in("club_id", access.organizationIds),
   ]);
   if (profileRes.error) throw new Error(profileRes.error.message);
-  if (membershipsRes.error) throw new Error(membershipsRes.error.message);
   if (groupsRes.error) throw new Error(groupsRes.error.message);
 
-  const clubIds = Array.from(
-    new Set(((membershipsRes.data ?? []) as any[]).map((row) => String(row.club_id ?? "")).filter(Boolean))
-  );
-  const groupIds = Array.from(new Set(((groupsRes.data ?? []) as any[]).map((row) => String(row.group_id ?? "")).filter(Boolean)));
+  const clubIds = access.organizationIds;
+  if (permittedGroups.error) throw permittedGroups.error;
+  const permittedGroupIds = new Set((permittedGroups.data ?? []).map((group: { id: string }) => group.id));
+  const groupIds = Array.from(new Set(((groupsRes.data ?? []) as any[]).map((row) => String(row.group_id ?? "")).filter((id: string) => permittedGroupIds.has(id))));
 
   const categoriesRes =
     groupIds.length > 0
@@ -327,7 +321,7 @@ export async function resolvePlayerNewsContext(args: {
     actorUserId: args.callerId,
     effectivePlayerId,
     effectivePlayerName: fullName(profile?.first_name ?? null, profile?.last_name ?? null),
-    clubIds,
+    clubIds: clubIds.filter(id => access.organizationIds.includes(id)),
     playerGroupIds: groupIds,
     playerGroupCategories: Array.from(
       new Set(((categoriesRes.data ?? []) as any[]).map((row) => String(row.category ?? "").trim()).filter(Boolean))

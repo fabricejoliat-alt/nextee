@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { coachRows } from "@/lib/server/coachRows";
@@ -12,7 +13,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
     if (!token) return NextResponse.json({ error: "Missing token" }, { status: 401 });
     const { playerId } = await ctx.params;
     const { supabaseAdmin, callerId } = await requireCaller(token);
-    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId,requestedOrganizationId(req.url));
     if (!access.sensitiveClubIds.length) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const [references, attendance, privateReferences, memberships] = await Promise.all([
@@ -59,7 +60,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
     }
     const groupIds = [...new Set(events.map((event) => event.group_id).filter(Boolean))];
     const groups = groupIds.length ? await supabaseAdmin.from("coach_groups").select("id,name").in("id", groupIds) : { data: [], error: null };
-    const clubs = await supabaseAdmin.from("clubs").select("id,name").in("id", access.sensitiveClubIds);
+    const clubs = await supabaseAdmin.from("organizations").select("id,name").in("id", access.sensitiveClubIds);
     if (groups.error || clubs.error) throw new Error("Metadata load failed");
     const groupNames = new Map((groups.data ?? []).map((group) => [group.id, group.name]));
     const clubNames = new Map((clubs.data ?? []).map((club) => [club.id, club.name]));

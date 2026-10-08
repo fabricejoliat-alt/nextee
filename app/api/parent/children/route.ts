@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { loadOrganizationAccessSummary } from "@/lib/server/organizationSummary";
 import {
   bearerTokenFromRequest,
   playerAccessErrorStatus,
@@ -10,6 +11,7 @@ export async function GET(req: NextRequest) {
   try {
     const actor = await requirePlayerActor(bearerTokenFromRequest(req));
     const { supabaseAdmin } = actor;
+    const summary = await loadOrganizationAccessSummary(supabaseAdmin, actor.actorUserId);
     if (!actor.actorRoles.includes("parent")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -41,7 +43,7 @@ export async function GET(req: NextRequest) {
     const clubNameById = new Map<string, string>();
     if (clubIds.length > 0) {
       const { data: clubsRows, error: clubsErr } = await supabaseAdmin
-        .from("clubs")
+        .from("organizations")
         .select("id,name")
         .in("id", clubIds);
       if (clubsErr) return NextResponse.json({ error: clubsErr.message }, { status: 400 });
@@ -51,7 +53,7 @@ export async function GET(req: NextRequest) {
     }
 
     const clubIdsByPlayer = new Map<string, string[]>();
-    for (const row of membershipsRows ?? []) {
+    for (const row of (membershipsRows ?? []).filter(row => summary.some(scope => scope.player_id === row.user_id && scope.organization_id === row.club_id))) {
       const pid = String((row as any).user_id ?? "");
       const cid = String((row as any).club_id ?? "");
       if (!pid || !cid) continue;

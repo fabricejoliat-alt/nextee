@@ -15,7 +15,7 @@ export async function GET(req: Request) {
       db.from("legal_documents").select("*").order("created_at", { ascending: false }),
       db.from("legal_drafts").select("*"),
       db.from("legal_versions").select("*").order("version_number", { ascending: false }),
-      db.from("clubs").select("id,name").order("name", { ascending: true }),
+      db.from("organizations").select("id,name,org_type").order("name", { ascending: true }),
       db.from("legal_enforcement_control").select("enabled,updated_at").eq("singleton", true).single(),
       db.from("legal_club_templates").select("purpose_key"),
     ]);
@@ -41,10 +41,10 @@ export async function POST(req: Request) {
       const audience = Array.isArray(input.audience) ? input.audience.filter((r: unknown) => roles.has(String(r))) : [];
       if (!/^[a-z0-9_-]+$/.test(key) || !["terms","privacy","parent_authorization","specific_consent","junior_notice"].includes(kind)
         || !["accept","acknowledge","authorize","consent","read"].includes(action) || audience.length === 0
-        || !["platform","club"].includes(scope) || (scope === "club" && !input.club_id)) return reply({ error: "Invalid document" }, 400);
+        || !["platform","club","organization"].includes(scope) || (scope !== "platform" && !(input.organization_id ?? input.club_id))) return reply({ error: "Invalid document" }, 400);
       const created = await db.rpc("create_legal_document", {
         p_key: key, p_kind: kind, p_purpose: String(input.purpose_key ?? key), p_scope: scope,
-        p_club: scope === "club" ? String(input.club_id) : null, p_roles: audience, p_action: action,
+        p_club: scope !== "platform" ? String(input.organization_id ?? input.club_id) : null, p_roles: audience, p_action: action,
         p_required: Boolean(input.required), p_actor: actor.id,
       });
       if (created.error) return reply({ error: created.error.message }, 409);
@@ -76,7 +76,7 @@ export async function POST(req: Request) {
     if (input.operation === "save_variables") {
       const variables = input.variables;
       if (!Array.isArray(variables) || variables.some((value: unknown) =>
-        typeof value !== "string" || !["child_name", "club_name", "user_name"].includes(value)))
+        typeof value !== "string" || !["child_name", "club_name", "organization_name", "user_name"].includes(value)))
         return reply({ error: "Invalid variables" }, 400);
       const revision = Number(input.expected_revision);
       if (!Number.isInteger(revision) || revision < 1) return reply({ error: "Invalid revision" }, 400);
@@ -92,7 +92,7 @@ export async function POST(req: Request) {
       const groupPurpose = input.group_purpose == null ? null : String(input.group_purpose);
       let expected: Record<string, unknown>;
       if (groupPurpose) {
-        if (!Object.hasOwn(sharedClubPurposeLabels, groupPurpose) || doc.data.scope !== "club"
+        if (!Object.hasOwn(sharedClubPurposeLabels, groupPurpose) || !["club", "organization"].includes(doc.data.scope)
           || !doc.data.document_key.startsWith("activitee_") || doc.data.purpose_key !== groupPurpose
           || !input.expected_drafts || typeof input.expected_drafts !== "object" || Array.isArray(input.expected_drafts))
           return reply({ error: "Invalid shared draft" }, 400);

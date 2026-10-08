@@ -1,3 +1,4 @@
+import { resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 
@@ -38,38 +39,14 @@ export async function GET(
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
 
-    const [meRes, playerMembershipsRes, historyRes, profileRes] = await Promise.all([
-      supabaseAdmin
-        .from("club_members")
-        .select("club_id")
-        .eq("user_id", callerId)
-        .eq("is_active", true)
-        .in("role", ["coach", "manager"]),
-      supabaseAdmin
-        .from("club_members")
-        .select("club_id")
-        .eq("user_id", playerId)
-        .eq("is_active", true),
-      supabaseAdmin
-        .from("player_handicap_history")
-        .select("id,effective_date,value,note")
-        .eq("user_id", playerId)
-        .order("effective_date", { ascending: false })
-        .order("created_at", { ascending: false }),
-      supabaseAdmin.from("profiles").select("handicap").eq("id", playerId).maybeSingle(),
-    ]);
-
-    if (meRes.error) return NextResponse.json({ error: meRes.error.message }, { status: 400 });
-    if (playerMembershipsRes.error) return NextResponse.json({ error: playerMembershipsRes.error.message }, { status: 400 });
-    if (historyRes.error) return NextResponse.json({ error: historyRes.error.message }, { status: 400 });
-    if (profileRes.error) return NextResponse.json({ error: profileRes.error.message }, { status: 400 });
-
-    const myClubIds = new Set((meRes.data ?? []).map((r: any) => String(r.club_id ?? "")).filter(Boolean));
-    const playerClubIds = Array.from(
-      new Set((playerMembershipsRes.data ?? []).map((r: any) => String(r.club_id ?? "")).filter(Boolean))
-    );
-    const sharedClubIds = playerClubIds.filter((id) => myClubIds.has(id));
-    if (sharedClubIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const contextOrganization = String(req.nextUrl.searchParams.get("organization_id") ?? "").trim();
+    const access = await resolveCoachPlayerAccess(supabaseAdmin,callerId,playerId,contextOrganization);
+    const sharedClubIds = access.sharedClubIds;
+    if (!sharedClubIds.length) return NextResponse.json({error:"Forbidden"},{status:403});
+    const profileRes = await supabaseAdmin.from("profiles").select("handicap").eq("id", playerId).maybeSingle();
+    if (profileRes.error) throw profileRes.error;
+    const historyRes = await supabaseAdmin.from("player_handicap_history").select("id,effective_date,value,note").eq("user_id",playerId).order("effective_date",{ascending:false}).order("created_at",{ascending:false});
+    if(historyRes.error) throw historyRes.error;
 
     const configsRes = await Promise.all(
       sharedClubIds.map(async (clubId) => {

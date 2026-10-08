@@ -5,7 +5,7 @@ const document=(club:string,rule='all_members')=>({id:`doc-${club}`,document_key
 async function missing(documents:object[]){
  // Stub data only: no environment or database switch is changed.
  const {db}=managerDatabase({legal_enforcement_control:[{singleton:true,enabled:true}],club_members:[{user_id:'coach-a',club_id:'A',role:'coach',is_active:true}],app_admins:[],legal_documents:documents});
- return loadManagerModule<{loadMissingLegalActions:(db:unknown,id:string)=>Promise<unknown[]>}>('lib/server/legalRequirements.ts',{}).loadMissingLegalActions(db,'coach-a');
+ return (await loadManagerModule<{loadLegalGateStatus:(db:unknown,id:string,organization:string)=>Promise<{missing:unknown[]}>}>('lib/server/legalRequirements.ts',{}).loadLegalGateStatus(db,'coach-a','A')).missing;
 }
 test('an unsupported required rule in club B does not block a coach only in club A',async()=>{
  assert.deepEqual(await missing([document('B','review_pending')]),[]);

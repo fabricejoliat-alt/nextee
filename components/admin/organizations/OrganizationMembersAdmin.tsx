@@ -46,7 +46,7 @@ export default function OrganizationMembersAdmin() {
     setError(null);
     try {
       const [clubRes, adminsRes, membersRes, usersRes] = await Promise.all([
-        supabase.from("clubs").select("id,name,slug").eq("id", organizationId).maybeSingle(),
+        supabase.from("organizations").select("id,name,slug").eq("id", organizationId).maybeSingle(),
         supabase.from("app_admins").select("user_id"),
         supabase.from("club_members").select("id,club_id,user_id,role,is_active,created_at").eq("club_id", organizationId).eq("role", "manager").order("created_at", { ascending: false }),
         supabase.from("profiles").select("id,first_name,last_name").order("created_at", { ascending: false }),
@@ -120,12 +120,20 @@ export default function OrganizationMembersAdmin() {
     }
   }
 
+  async function mutateManager(manager:ManagerMembership,action:string) {
+    const token=await getToken();
+    if(!token)throw new Error("Pas de session. Reconnecte-toi.");
+    const response=await fetch(`/api/admin/organizations/${organizationId}/members`,{method:"POST",
+      headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
+      body:JSON.stringify({member_id:manager.id,action,expected_active:manager.is_active!==false})});
+    if(!response.ok)throw new Error("La modification n’a pas pu être confirmée. Actualisez les états avant de réessayer.");
+  }
+
   async function updateManagerStatus(manager: ManagerMembership) {
     setBusy(true);
     setError(null);
     try {
-      const { error: updateError } = await supabase.from("club_members").update({ is_active: manager.is_active === false }).eq("id", manager.id).eq("role", "manager");
-      if (updateError) throw new Error(updateError.message);
+      await mutateManager(manager, manager.is_active === false ? "activate" : "suspend");
       setManagers((current) => current.map((item) => item.id === manager.id ? { ...item, is_active: manager.is_active === false } : item));
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : "Erreur de mise à jour");
@@ -139,8 +147,7 @@ export default function OrganizationMembersAdmin() {
     setBusy(true);
     setError(null);
     try {
-      const { error: deleteError } = await supabase.from("club_members").delete().eq("id", manager.id).eq("role", "manager");
-      if (deleteError) throw new Error(deleteError.message);
+      await mutateManager(manager,"remove");
       setManagers((current) => current.filter((item) => item.id !== manager.id));
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : "Erreur de suppression");

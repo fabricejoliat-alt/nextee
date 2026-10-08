@@ -45,7 +45,7 @@ export function legalAdminGroups<T extends LegalAdminGroupDocument>(documents: T
       continue;
     }
     const shared = document.document_key.startsWith("activitee_")
-      && document.scope === "club" && Object.hasOwn(sharedClubPurposeLabels, document.purpose_key);
+      && ["club", "organization"].includes(document.scope) && Object.hasOwn(sharedClubPurposeLabels, document.purpose_key);
     const key = shared ? document.purpose_key : document.document_key;
     const label = shared ? sharedClubPurposeLabels[document.purpose_key]
       : platformLabels[document.document_key] ?? document.document_key;

@@ -1,0 +1,40 @@
+{
+  "validated_at": "2026-10-07T16:51:20.391Z",
+  "source_sha256": "029d29432517b3a9171a61ec319b8652de354f9a260c4f0ed2bddf91c6d2cd97",
+  "gates": {
+    "sql": "passed",
+    "postgrest": "passed",
+    "business": "needs_review",
+    "typescript": "passed",
+    "lint_delta": "passed",
+    "build": "passed",
+    "browser_roles": "passed",
+    "four_languages": "passed",
+    "desktop_tablet_mobile": "passed",
+    "pwa_ios": "passed"
+  },
+  "remote": {
+    "migration": "passed",
+    "clean_postflight": "passed",
+    "backup": "passed",
+    "restore_verification": "pending",
+    "clean_preflight": "passed",
+    "checked_at": "2026-10-07T17:08:24.007Z",
+    "evidence": "evidence/zurich-postflight.json"
+  },
+  "tls_verification": {
+    "checked_at": "2026-10-07T16:57:50.865Z",
+    "ca": "Supabase Root 2021 CA",
+    "hostname": "db.soivxpdcilgltbjbpimt.supabase.co",
+    "status": "passed",
+    "database_authentication": "not_attempted"
+  },
+  "pending_corrections": {
+    "reported_at": "2026-10-07T17:53:27.526Z",
+    "personal_validation_attempts": "player ownership, global progression, API/RLS consistency",
+    "individual_trainings": "support personal history without forced organization",
+    "test_migration": "not_applied",
+    "personal_history": "implemented locally; 17th migration and TEST runner prepared; remote application pending",
+    "production_validation": "Initial receipt remains tied to the original SHA; do not use it as approval of the corrected deployment"
+  }
+}

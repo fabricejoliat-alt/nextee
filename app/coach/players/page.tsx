@@ -33,7 +33,7 @@ export default function CoachPlayersPage() {
       const memberships = (membershipsResult.data ?? []) as Membership[]; const clubIds = [...new Set(memberships.map((row) => row.club_id))];
       if (!clubIds.length) { if (active) { setPlayers([]); setClubs([]); } return; }
       const [clubsResult, linksResult, headGroupsResult] = await Promise.all([
-        supabase.from("clubs").select("id,name").in("id", clubIds),
+        supabase.from("organizations").select("id,name").in("id", clubIds),
         supabase.from("coach_group_coaches").select("group_id").eq("coach_user_id", userId),
         supabase.from("coach_groups").select("id").in("club_id", clubIds).eq("head_coach_user_id", userId),
       ]);
@@ -64,7 +64,7 @@ export default function CoachPlayersPage() {
       <div className={styles.panelHeader}><div><h2>{t("coach.players.list")}</h2><p>{loading ? t("common.loading") : error ? "—" : coachText(t, filtered.length === 1 ? "coach.players.one" : "coach.players.count", { count: filtered.length })}</p></div></div>
       <div className={styles.toolbar}>
         <label className={styles.field}><span>{t("coach.directory.search")}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("coach.players.search")} /></label>
-        {clubs.length > 1 ? <label className={styles.field}><span>{t("coach.directory.club")}</span><select value={clubFilter} onChange={(event) => setClubFilter(event.target.value)}><option value="all">{t("coach.directory.allClubs")}</option>{[...clubs].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", locale)).map((club) => <option key={club.id} value={club.id}>{club.name || t("coach.directory.club")}</option>)}</select></label> : null}
+        {clubs.length > 1 ? <label className={styles.field}><span>{t("organization.context")}</span><select value={clubFilter} onChange={(event) => setClubFilter(event.target.value)}><option value="all">{t("coach.directory.allClubs")}</option>{[...clubs].sort((a, b) => (a.name ?? "").localeCompare(b.name ?? "", locale)).map((club) => <option key={club.id} value={club.id}>{club.name || t("organization.context")}</option>)}</select></label> : null}
         <label className={styles.field}><span>{t("coach.directory.gender")}</span><select value={sexFilter} onChange={(event) => setSexFilter(event.target.value)}><option value="all">{t("coach.directory.all")}</option><option value="male">{t("coach.directory.male")}</option><option value="female">{t("coach.directory.female")}</option><option value="other">{t("coach.directory.other")}</option><option value="none">{t("coach.directory.undefined")}</option></select></label>
       </div>
       {loading ? <CoachListSkeleton label={t("coach.players.loading")} /> : error ? null : !filtered.length ? <div className={styles.empty}><UserRound size={21} aria-hidden="true" />{t("coach.players.empty")}</div> : (

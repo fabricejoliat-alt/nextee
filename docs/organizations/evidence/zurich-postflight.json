@@ -1,0 +1,42 @@
+{
+  "checked_at": "2026-10-07T17:08:24.007Z",
+  "target": "soivxpdcilgltbjbpimt",
+  "source_sha256": "029d29432517b3a9171a61ec319b8652de354f9a260c4f0ed2bddf91c6d2cd97",
+  "verification": "Independent read-only Supabase SQL Editor query",
+  "migration": "passed",
+  "clean_postflight": "passed",
+  "superadmins": 1,
+  "auth_users": 1,
+  "organizations": 0,
+  "clubs": 0,
+  "legal_versions": 4,
+  "legal_fingerprint": "35475d527b52cb2a245c7e89b6d4332b88f26277386d84f095ffb833cf61311f",
+  "legal_presentations": 0,
+  "legal_decisions": 0,
+  "catalogs": {
+    "legal_templates": 3,
+    "rules_cards": 72,
+    "etiquette_cards": 36,
+    "exercises": 60,
+    "ftem_defaults": 10,
+    "illustrations": 40
+  },
+  "backups": [
+    {
+      "path": "backups/organizations/zurich-before-remodel-1791392552387.enc",
+      "bytes": 105418583,
+      "sha256": "a7d9f7b2d04bd6e81f29b2f7c329787024cde8c307899b38ec25a083ddd02463",
+      "integrity": "passed",
+      "restore_verification": "pending"
+    },
+    {
+      "path": "backups/organizations/zurich-clean-after-remodel-1791392587353.enc",
+      "bytes": 105544372,
+      "sha256": "a7aa6939261d25efeb84df05011c9eabb18c19f532d4176177e06f65e762466d",
+      "integrity": "passed",
+      "restore_verification": "pending"
+    }
+  ],
+  "restore_verification": "pending",
+  "deployment": "not_performed"
+}

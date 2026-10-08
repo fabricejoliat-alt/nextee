@@ -477,7 +477,7 @@ export default function PlayerOrderOfMeritPage() {
       );
       const clubNameById = new Map<string, string>();
       if (clubIds.length > 0) {
-        const clubsRes = await supabase.from("clubs").select("id,name").in("id", clubIds);
+        const clubsRes = await supabase.from("organizations").select("id,name").in("id", clubIds);
         if (clubsRes.error) throw new Error(clubsRes.error.message);
         ((clubsRes.data ?? []) as ClubNameRow[]).forEach((c) => {
           const id = String(c?.id ?? "");

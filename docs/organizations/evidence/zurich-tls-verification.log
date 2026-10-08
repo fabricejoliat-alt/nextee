@@ -1,0 +1,73 @@
+Connecting to 2a05:d019:cf3:6a00:e761:a44f:5163:e9f1
+depth=2 C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=Supabase Root 2021 CA
+verify return:1
+depth=1 C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=Supabase Intermediate 2021 CA
+verify return:1
+depth=0 C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=db.soivxpdcilgltbjbpimt.supabase.co
+verify return:1
+CONNECTED(00000003)
+---
+Certificate chain
+ 0 s:C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=db.soivxpdcilgltbjbpimt.supabase.co
+   i:C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=Supabase Intermediate 2021 CA
+   a:PKEY: RSA, 2048 (bit); sigalg: sha256WithRSAEncryption
+   v:NotBefore: Oct  6 17:57:57 2026 GMT; NotAfter: Oct  5 17:57:57 2031 GMT
+ 1 s:C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=Supabase Intermediate 2021 CA
+   i:C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=Supabase Root 2021 CA
+   a:PKEY: RSA, 2048 (bit); sigalg: sha256WithRSAEncryption
+   v:NotBefore: Oct 24 07:53:45 2023 GMT; NotAfter: Oct 21 07:53:45 2033 GMT
+ 2 s:C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=Supabase Root 2021 CA
+   i:C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=Supabase Root 2021 CA
+   a:PKEY: RSA, 2048 (bit); sigalg: sha256WithRSAEncryption
+   v:NotBefore: Apr 28 10:56:53 2021 GMT; NotAfter: Apr 26 10:56:53 2031 GMT
+---
+Server certificate
+-----BEGIN CERTIFICATE-----
+MIID7DCCAtSgAwIBAgIUEx+Y2MQOYfRoCif2CK1Fa4TLcKswDQYJKoZIhvcNAQEL
+BQAwczELMAkGA1UEBhMCVVMxEDAOBgNVBAgMB0RlbHdhcmUxEzARBgNVBAcMCk5l
+dyBDYXN0bGUxFTATBgNVBAoMDFN1cGFiYXNlIEluYzEmMCQGA1UEAwwdU3VwYWJh
+c2UgSW50ZXJtZWRpYXRlIDIwMjEgQ0EwHhcNMjYxMDA2MTc1NzU3WhcNMzExMDA1
+MTc1NzU3WjB5MQswCQYDVQQGEwJVUzEQMA4GA1UECAwHRGVsd2FyZTETMBEGA1UE
+BwwKTmV3IENhc3RsZTEVMBMGA1UECgwMU3VwYWJhc2UgSW5jMSwwKgYDVQQDDCNk
+Yi5zb2l2eHBkY2lsZ2x0YmpicGltdC5zdXBhYmFzZS5jbzCCASIwDQYJKoZIhvcN
+AQEBBQADggEPADCCAQoCggEBAJmNBS71X/zeSbS01PJ9n/uXUUFkg1NyYJAOe2QF
+nQj5IisvYjJTEHdy5Ek2e1nSpBUxZgMZB4uWHV1CU0gY0IkcrdlwSBhNOdIBNI9I
+/+7bxqRBU0mFi3o7IB3n5KRemcTdJfolNqCAf8IcRkiV/zMAfVSebEFgwhFBiFd0
+Jk1gHwzMAJRq2/t4QaQiYfO+nbQBlCvfiBJ+OO1EHNa4i9U88Qhp2zuPe3NNQ6OA
+ggOAnl9F4ktacSPuX31yJmPwVYviEr860xMyVSMORJx1qm62e+yI9NJgczMLoaj+
+IHyUYq3j/ZnajSaPDkkh2E+UxK5uGv3sS73GyV9f+H6YGKsCAwEAAaNyMHAwLgYD
+VR0RBCcwJYIjZGIuc29pdnhwZGNpbGdsdGJqYnBpbXQuc3VwYWJhc2UuY28wHQYD
+VR0OBBYEFNntCjlHT3VvBl5fr2mZT72cAJ1oMB8GA1UdIwQYMBaAFBWgUy69cn1i
+/5Amvr8YlfRnRUD6MA0GCSqGSIb3DQEBCwUAA4IBAQCRjVK+uB9i1M/QX703EpxH
+dqwhWFFw4CQsXRhhmarQ1CiYaXF56FIbYJjeJegQKpn88vXezd4TMnxOcHSKNbYD
+oFMwC8zspZYXlgxrpT1Wj5FkesmK6Pb2tVXSS8/lFswFiGVg/Yk0bsDa6yCp1u+p
+b/Phdv9fa6y+mvR5fIcr4sH78S2RVQSGI6X8Qbquy3yUh3Cb+TnzxMuDSaoGL83k
+ZHOoSi5/jcPZqG3GMgKrpw94b4TdlslzBSobULThUSVozfViPts9AuUZqI/ecIO2
++FUifceP1Jr9rBmjskRXbuA2yzLX5fYu1RblimZGY2oNgqCq489KtTUXe4IelR3S
+-----END CERTIFICATE-----
+subject=C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=db.soivxpdcilgltbjbpimt.supabase.co
+issuer=C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=Supabase Intermediate 2021 CA
+---
+Acceptable client certificate CA names
+C=US, ST=Delware, L=New Castle, O=Supabase Inc, CN=Supabase Root 2021 CA
+Requested Signature Algorithms: id-ml-dsa-65:id-ml-dsa-87:id-ml-dsa-44:ECDSA+SHA256:ECDSA+SHA384:ECDSA+SHA512:ed25519:ed448:ecdsa_brainpoolP256r1_sha256:ecdsa_brainpoolP384r1_sha384:ecdsa_brainpoolP512r1_sha512:rsa_pss_pss_sha256:rsa_pss_pss_sha384:rsa_pss_pss_sha512:RSA-PSS+SHA256:RSA-PSS+SHA384:RSA-PSS+SHA512:RSA+SHA256:RSA+SHA384:RSA+SHA512
+Shared Requested Signature Algorithms: id-ml-dsa-65:id-ml-dsa-87:id-ml-dsa-44:ECDSA+SHA256:ECDSA+SHA384:ECDSA+SHA512:ed25519:ed448:ecdsa_brainpoolP256r1_sha256:ecdsa_brainpoolP384r1_sha384:ecdsa_brainpoolP512r1_sha512:rsa_pss_pss_sha256:rsa_pss_pss_sha384:rsa_pss_pss_sha512:RSA-PSS+SHA256:RSA-PSS+SHA384:RSA-PSS+SHA512:RSA+SHA256:RSA+SHA384:RSA+SHA512
+Peer signing digest: SHA256
+Peer signature type: rsa_pss_rsae_sha256
+Peer Temp Key: ECDH, prime256v1, 256 bits
+---
+SSL handshake has read 3824 bytes and written 2063 bytes
+Verification: OK
+Verified peername: db.soivxpdcilgltbjbpimt.supabase.co
+---
+New, TLSv1.3, Cipher is TLS_AES_256_GCM_SHA384
+Protocol: TLSv1.3
+Server public key is 2048 bit
+This TLS version forbids renegotiation.
+Compression: NONE
+Expansion: NONE
+No ALPN negotiated
+Early data was not sent
+Verify return code: 0 (ok)
+---
+DONE

@@ -1,5 +1,6 @@
 "use client";
 
+import { currentOrganizationFilter } from "@/lib/organizationFetch";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
@@ -59,6 +60,7 @@ export default function NewRoundPage() {
   const [competitionName, setCompetitionName] = useState("");
   const [handicapStart, setHandicapStart] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
+  const [owners,setOwners]=useState<Array<{id:string;name:string;org_type:string}>>([]);
   const [omOrganizationId, setOmOrganizationId] = useState<string>("");
   const [omCompetitionLevel, setOmCompetitionLevel] = useState<OmCompetitionLevel>("club_official");
   const [omCompetitionLevelSelect, setOmCompetitionLevelSelect] = useState<OmCompetitionLevelSelect>("club_official");
@@ -98,16 +100,11 @@ export default function NewRoundPage() {
         setHandicapStart((prev) => (prev.trim() ? prev : String(h)));
       }
 
-      const cmRes = await supabase
-        .from("club_members")
-        .select("club_id")
-        .eq("user_id", uid)
-        .eq("is_active", true)
-        .eq("role", "player")
-        .limit(1)
-        .maybeSingle();
-      if (!cmRes.error && cmRes.data?.club_id) {
-        setOmOrganizationId(String(cmRes.data.club_id));
+      const session=await supabase.auth.getSession();
+      const response=await fetch("/api/legal/status",{headers:{Authorization:`Bearer ${session.data.session?.access_token}`},cache:"no-store"});
+      if(response.ok){const status=await response.json();const available=(status.organizations??[]).filter((row:{player_id:string;accessible:boolean})=>row.player_id===uid&&row.accessible);
+        const choices=available.map((row:{organization_id:string;name:string;org_type:string})=>({id:row.organization_id,name:row.name,org_type:row.org_type}));setOwners(choices);
+        const selected=currentOrganizationFilter();setOmOrganizationId(choices.some((row:{id:string})=>row.id===selected)?selected!:choices.length===1?choices[0].id:"");
       }
     })();
   }, []);
@@ -352,6 +349,7 @@ export default function NewRoundPage() {
 
     const payloadBase: Record<string, unknown> = {
       user_id: uid,
+      club_id: null,
       location: isMatchPlayCompetition ? matchCourseName.trim() : manualLocation.trim(),
       round_type: roundType,
       competition_name: roundType === "competition" ? competitionName.trim() : null,
@@ -497,6 +495,10 @@ export default function NewRoundPage() {
                 </label>
               </div>
 
+              {roundType === "competition" && <label style={{display:"grid",gap:6}}><span style={fieldLabelStyle}>{t("organization.context")}</span>
+                <select required value={omOrganizationId} disabled={busy} onChange={event=>setOmOrganizationId(event.target.value)}>
+                  <option value="">{t("organization.choose")}</option>{owners.map(owner=><option key={owner.id} value={owner.id}>{owner.name} · {t(`organization.${owner.org_type}`)}</option>)}
+                </select></label>}
               <div className="hr-soft" />
 
               <div style={{ display: "grid", gap: 10 }}>

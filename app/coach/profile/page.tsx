@@ -1,4 +1,6 @@
 "use client";
+
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
 import Link from "next/link";
 
 import ProfileCustomFieldControl from "@/components/ProfileCustomFieldControl";
@@ -36,7 +38,7 @@ type ProfileRow = {
 };
 
 type ClubMember = { club_id: string };
-type Club = { id: string; name: string | null };
+type Club = { id: string; name: string | null; org_type: string };
 type ProfileCustomField = {
   id: string;
   field_key: string;
@@ -107,10 +109,10 @@ export default function CoachProfilePage() {
   const [clubs, setClubs] = useState<Club[]>([]);
   const [customFieldGroups, setCustomFieldGroups] = useState<ProfileCustomFieldGroup[]>([]);
   const heroClubLine = useMemo(() => {
-    const names = clubs.map((c) => c.name).filter(Boolean) as string[];
+    const names = clubs.filter(c=>c.name).map(c=>`${c.name} · ${t(`organization.${c.org_type}`)}`);
     if (names.length === 0) return "—";
     return names.join(" • ");
-  }, [clubs]);
+  }, [clubs, t]);
 
   // form
   const [firstName, setFirstName] = useState("");
@@ -255,9 +257,9 @@ export default function CoachProfilePage() {
         .filter(Boolean);
 
       if (cids.length > 0) {
-        const clubsRes = await supabase.from("clubs").select("id,name").in("id", cids);
+        const clubsRes = await supabase.from("organizations").select("id,name,org_type").in("id", cids);
         if (!clubsRes.error) setClubs((clubsRes.data ?? []) as Club[]);
-        else setClubs(cids.map((id) => ({ id, name: null })));
+        else setClubs(cids.map((id) => ({ id, name: null, org_type:"club" })));
       } else {
         setClubs([]);
       }

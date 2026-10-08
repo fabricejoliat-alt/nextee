@@ -69,7 +69,7 @@ export default function GroupsManagementPage() {
       const nextSeasons = (seasonData ?? []) as Season[];
       const activeSeasonId = nextSeasons.some((season) => season.id === requestedSeasonId) ? requestedSeasonId : nextSeasons.find((season) => season.is_current)?.id ?? nextSeasons[0]?.id ?? "";
       setSeasons(nextSeasons); setSeasonId(activeSeasonId);
-      let groupQuery = supabase.from("coach_groups").select("id,club_id,name,is_active,head_coach_user_id,clubs:clubs(id,name)").eq("club_id", id);
+      let groupQuery = supabase.from("coach_groups").select("id,club_id,name,is_active,head_coach_user_id,clubs:organizations!coach_groups_club_id_fkey(id,name)").eq("club_id", id);
       if (activeSeasonId) groupQuery = groupQuery.eq("club_season_id", activeSeasonId);
       const { data: groupData, error: groupError } = await groupQuery.order("name", { ascending: true });
       if (version !== loadVersion.current) return;

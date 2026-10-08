@@ -199,7 +199,7 @@ export default function CoachEventPlayerDetailPage() {
       const ev = eRes.data as EventRow;
       setEvent(ev);
 
-      const cRes = await supabase.from("clubs").select("id,name").eq("id", ev.club_id).maybeSingle();
+      const cRes = await supabase.from("organizations").select("id,name").eq("id", ev.club_id).maybeSingle();
       if (!cRes.error && cRes.data) setClubName((cRes.data as ClubRow).name ?? "Club");
       else setClubName("Club");
 

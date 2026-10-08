@@ -1,3 +1,5 @@
+import { personalOrOrganizationFilter } from "@/lib/personalHistoryScope";
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   bearerTokenFromRequest,
@@ -95,6 +97,7 @@ export async function GET(req: NextRequest) {
     const childId = String(new URL(req.url).searchParams.get("child_id") ?? "").trim();
     const access = await resolveAuthenticatedPlayerAccess({
       accessToken: bearerTokenFromRequest(req),
+      requestedOrganizationId: requestedOrganizationId(req.url),
       requestedPlayerId: childId,
       mode: "view",
     });
@@ -120,11 +123,13 @@ export async function GET(req: NextRequest) {
         .from("club_members")
         .select("club_id")
         .eq("user_id", effectiveUserId)
+        .in("club_id", access.organizationIds)
         .eq("is_active", true),
       supabaseAdmin
         .from("training_sessions")
         .select("id,start_at,location_text,session_type,club_id,total_minutes,motivation,difficulty,satisfaction,created_at,club_event_id")
         .eq("user_id", effectiveUserId)
+        .or(personalOrOrganizationFilter("club_id", access.organizationIds))
         .order("start_at", { ascending: false }),
       supabaseAdmin
         .from("club_event_attendees")
@@ -133,7 +138,7 @@ export async function GET(req: NextRequest) {
       supabaseAdmin
         .from("player_activity_events")
         .select("id,user_id,event_type,title,starts_at,ends_at,location_text,notes,status,created_at")
-        .eq("user_id", effectiveUserId)
+        .eq("user_id", effectiveUserId).or(personalOrOrganizationFilter("organization_id", access.organizationIds))
         .order("starts_at", { ascending: false }),
     ]);
 
@@ -156,11 +161,12 @@ export async function GET(req: NextRequest) {
       ? await supabaseAdmin
           .from("club_events")
           .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,series_id,status,requires_evaluation,competition_level,competition_category,external_registration_url,competition_note")
-          .in("id", eventIds)
+          .in("id", eventIds).in("club_id", access.organizationIds)
           .order("starts_at", { ascending: false })
       : { data: [] as ClubEventRow[], error: null };
     if (eventsRes.error) return NextResponse.json({ error: eventsRes.error.message }, { status: 400 });
     const rawAttendeeEvents = (eventsRes.data ?? []) as ClubEventRow[];
+    for (const key of Object.keys(attendeeStatusByEventId)) if (!rawAttendeeEvents.some(event => event.id === key)) delete attendeeStatusByEventId[key];
     const campEventIds = uniq(
       rawAttendeeEvents
         .filter((event) => event.event_type === "camp")
@@ -209,7 +215,7 @@ export async function GET(req: NextRequest) {
 
     const campIds = uniq(campDays.map((row) => row.camp_id));
     const campsRes = campIds.length
-      ? await supabaseAdmin.from("player_camps").select("id,title,coach_name,notes,status").in("id", campIds)
+      ? await supabaseAdmin.from("player_camps").select("id,title,coach_name,notes,status").in("id", campIds).or(personalOrOrganizationFilter("organization_id", access.organizationIds))
       : { data: [] as CampRow[], error: null };
     if (campsRes.error) return NextResponse.json({ error: campsRes.error.message }, { status: 400 });
     const camps = (campsRes.data ?? []) as CampRow[];
@@ -251,7 +257,7 @@ export async function GET(req: NextRequest) {
 
     const [clubsRes, groupsRes] = await Promise.all([
       clubIds.length
-        ? supabaseAdmin.from("clubs").select("id,name").in("id", clubIds)
+        ? supabaseAdmin.from("organizations").select("id,name").in("id", clubIds)
         : { data: [] as NamedRow[], error: null },
       groupIds.length
         ? supabaseAdmin.from("coach_groups").select("id,name").in("id", groupIds)

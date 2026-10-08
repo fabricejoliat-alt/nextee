@@ -1,3 +1,5 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
+import { authorizedCoachPlayers } from "@/lib/coachAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { requireCoachEventAccess } from "@/app/api/coach/events/_access";
@@ -19,7 +21,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     if (!eventId) return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(token);
-    const event = await requireCoachEventAccess(supabaseAdmin, callerId, eventId);
+    const event = await requireCoachEventAccess(supabaseAdmin, callerId, eventId, requestedOrganizationId(req.url));
     if (event.event_type !== "training") {
       return NextResponse.json({ error: "Only training sessions can be debriefed." }, { status: 400 });
     }
@@ -47,12 +49,14 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     if (debriefRes.error) throw new Error(debriefRes.error.message);
     if (groupRes.error) throw new Error(groupRes.error.message);
 
-    const attendeeRows = (attendeesRes.data ?? []) as Array<{
+    const candidateAttendeeRows = (attendeesRes.data ?? []) as Array<{
       player_id: string;
       coach_recorded_status: "present" | "absent" | null;
       coach_recorded_by: string | null;
       coach_recorded_at: string | null;
     }>;
+    const authorized = await authorizedCoachPlayers(supabaseAdmin, callerId, event.club_id, candidateAttendeeRows.map(row => row.player_id), eventId);
+    const attendeeRows = candidateAttendeeRows.filter(row => authorized.has(row.player_id));
     const playerIds = attendeeRows.map((row) => row.player_id);
     const profilesRes = playerIds.length
       ? await supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", playerIds)
@@ -91,10 +95,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
       event,
       groupName: String(groupRes.data?.name ?? ""),
       attendees,
-      debrief: debriefRes.data ?? null,
+      debrief: attendeeRows.length === candidateAttendeeRows.length ? debriefRes.data ?? null : null,
       coachTrainingAssistanceEnabled: assistanceEnabled,
       criteria: evaluationState.criteria.filter((criterion) => ["coach", "both"].includes(criterion.snapshot_respondent)),
-      responses: evaluationState.responses,
+      responses: evaluationState.responses.filter(row => authorized.has(row.player_id)),
     }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Server error";

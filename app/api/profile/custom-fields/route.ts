@@ -211,7 +211,7 @@ export async function GET(req: NextRequest) {
       { data: fieldRows, error: fieldsError },
       { data: seasonRows, error: seasonsError },
     ] = await Promise.all([
-      supabaseAdmin.from("clubs").select("id,name").in("id", clubIds),
+      supabaseAdmin.from("organizations").select("id,name").in("id", clubIds),
       supabaseAdmin
         .from("club_player_fields")
         .select("id,club_id,field_key,label,field_type,options_json,is_active,sort_order,applies_to_roles,visible_in_profile,editable_in_profile,visible_to_player,editable_by_player,visible_to_coach,editable_by_coach,legacy_binding,scope")

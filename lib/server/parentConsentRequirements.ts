@@ -11,6 +11,8 @@ export async function pendingEditableParentChildren(db: SupabaseClient, links: G
   const parentMemberships = actorId ? await db.from("club_members").select("club_id")
     .eq("user_id", actorId).eq("role", "parent").eq("is_active", true) : null;
   if (parentMemberships?.error) throw parentMemberships.error;
+  const scopedRights = actorId ? await db.from("player_guardian_scopes").select("organization_id,player_id,can_edit,status").eq("guardian_user_id",actorId).in("status",["pending","active"]).eq("can_edit",true) : null;
+  if(scopedRights?.error)throw scopedRights.error;
   const [relationships, assertions] = actorId ? await Promise.all([
     db.from("player_guardians").select("player_id,relation").eq("guardian_user_id", actorId).in("player_id", childIds),
     db.from("legal_representative_assertions").select("child_id,club_id,status").eq("guardian_id", actorId).in("child_id", childIds),
@@ -18,6 +20,7 @@ export async function pendingEditableParentChildren(db: SupabaseClient, links: G
   if (relationships.error || assertions.error) throw relationships.error ?? assertions.error;
   const scopedMemberships = (memberships.data ?? []).filter((row) => {
     if (!actorId) return true;
+    if(!(scopedRights?.data??[]).some(scope=>scope.player_id===row.user_id&&scope.organization_id===row.club_id))return false;
     if (!(parentMemberships?.data ?? []).some((parent) => parent.club_id === row.club_id)) return false;
     const assertion = (assertions.data ?? []).find((entry) => entry.child_id === row.user_id && entry.club_id === row.club_id);
     return assertion?.status !== "revoked" && (assertion?.status === "verified"

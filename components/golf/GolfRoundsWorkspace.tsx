@@ -2,10 +2,9 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, BarChart3, ChevronDown, Flag, Gauge, Plus, RotateCcw, Target } from "lucide-react";
+import { BarChart3, ChevronDown, Flag, Gauge, Plus, RotateCcw, Target } from "lucide-react";
 import type { EChartsOption } from "echarts";
-import { supabase } from "@/lib/supabaseClient";
-import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { readPlayerPage } from "@/lib/playerPageRead";
 import ActiviteeEChart from "@/components/ui/ActiviteeEChart";
 import ActivityDateTile from "@/components/ui/ActivityDateTile";
 import { MANAGEMENT_CHART_COLORS } from "@/lib/managementCharts";
@@ -13,6 +12,7 @@ import { calculateGolfRoundMetrics, getScoreCategory, scoreToParLabel, type Golf
 import styles from "./GolfRoundsWorkspace.module.css";
 import activityStyles from "@/app/player/golf/trainings/PlayerActivities.module.css";
 import trainingStyles from "@/app/player/golf/PlayerGolfTraining.module.css";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 export type GolfWorkspaceRound = {
   id: string; start_at: string; round_type: string; competition_name: string | null; course_name: string | null;
@@ -158,6 +158,7 @@ function RoundDetail({ round, holes, readOnly = false }: { round: Round; holes: 
 }
 
 export default function GolfRoundsWorkspace({ navigation, dataset, readOnly = false }: { navigation?: React.ReactNode; dataset?: GolfRoundsDataset; readOnly?: boolean }) {
+  const { t } = useI18n();
   const [ownRounds, setRounds] = useState<Round[]>([]); const [ownHoles, setHoles] = useState<Hole[]>([]);
   const [ownLoading, setLoading] = useState(true); const [ownError, setError] = useState<string | null>(null); const [openId, setOpenId] = useState<string | null>(null);
   const [period, setPeriod] = useState<Period>("year"); const [course, setCourse] = useState("all"); const [format, setFormat] = useState("all"); const [status, setStatus] = useState("all");
@@ -166,7 +167,17 @@ export default function GolfRoundsWorkspace({ navigation, dataset, readOnly = fa
   const loading = dataset?.loading ?? ownLoading;
   const error = dataset?.error ?? ownError;
   const external = Boolean(dataset);
-  useEffect(() => { if (external) return; let alive = true; (async () => { try { setLoading(true); const { effectiveUserId } = await resolveEffectivePlayerContext(); const r = await supabase.from("golf_rounds").select("id,start_at,round_type,competition_name,course_name,tee_name,total_score,total_putts,fairways_hit,fairways_total,gir,score_entry_mode").eq("user_id", effectiveUserId).order("start_at", { ascending: false }); if (r.error) throw r.error; const list = (r.data ?? []) as Round[]; const ids = list.map(item => item.id); const h = ids.length ? await supabase.from("golf_round_holes").select("round_id,id,hole_no,par,score,putts,fairway_hit,stroke_index,note").in("round_id", ids).order("hole_no") : { data: [], error: null }; if (h.error) throw h.error; if (alive) { setRounds(list); setHoles((h.data ?? []) as Hole[]); } } catch (cause: unknown) { if (alive) setError(cause instanceof Error ? cause.message : "Impossible de charger les parcours."); } finally { if (alive) setLoading(false); } })(); return () => { alive = false; }; }, [external]);
+  useEffect(() => {
+    if (external) return;
+    let alive = true;
+    setLoading(true); setError(null);
+    void readPlayerPage<GolfRoundsDataset & { viewerUserId: string; effectiveUserId: string; role: "player" | "parent" }>("/api/player/golf-data?view=rounds").then(data => {
+      if (alive) { setRounds(data.rounds); setHoles(data.holes); }
+    }).catch(error => {
+      if (alive) setError(error instanceof Error ? error.message : "Impossible de charger les parcours.");
+    }).finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [external]);
   const holesByRound = useMemo(() => { const map: Record<string,Hole[]> = {}; holes.forEach(h => (map[h.round_id] ??= []).push(h)); return map; }, [holes]);
   const courses = useMemo(() => [...new Set(rounds.map(r => r.course_name).filter(Boolean) as string[])].sort(), [rounds]);
   const filtered = useMemo(() => rounds.filter(round => { const hs = holesByRound[round.id] ?? []; const metrics = calculateGolfRoundMetrics(hs); const age = Date.now()-new Date(round.start_at).getTime(); if (period === "3m" && age > 1000*60*60*24*93) return false; if (period === "year" && new Date(round.start_at).getFullYear() !== new Date().getFullYear()) return false; if (course !== "all" && round.course_name !== course) return false; if (format !== "all" && String(metrics.expectedHoles) !== format) return false; if (status !== "all" && (status === "complete") !== metrics.complete) return false; return true; }), [rounds,holesByRound,period,course,format,status]);
@@ -175,7 +186,7 @@ export default function GolfRoundsWorkspace({ navigation, dataset, readOnly = fa
   return <section className={styles.workspace}>
     {navigation}
     <div className={`${activityStyles.controls} ${styles.filters}`}><label className={styles.filterLabel}>Période<select className={styles.filter} value={period} onChange={e=>setPeriod(e.target.value as Period)}><option value="3m">3 derniers mois</option><option value="year">Cette année</option><option value="all">Tout l’historique</option></select></label><label className={styles.filterLabel}>Parcours<select className={styles.filter} value={course} onChange={e=>setCourse(e.target.value)}><option value="all">Tous les parcours</option>{courses.map(value=><option key={value}>{value}</option>)}</select></label><label className={styles.filterLabel}>Nombre de trous<select className={styles.filter} value={format} onChange={e=>setFormat(e.target.value)}><option value="all">9 et 18 trous</option><option value="9">9 trous</option><option value="18">18 trous</option></select></label><label className={styles.filterLabel}>Statut<select className={styles.filter} value={status} onChange={e=>setStatus(e.target.value)}><option value="all">Tous</option><option value="complete">Terminés</option><option value="progress">En cours</option></select></label></div>
-    {!readOnly ? <section className={activityStyles.plannerSection} aria-labelledby="round-shortcut-title"><div className={activityStyles.plannerHeading}><h2 id="round-shortcut-title">Compléter mon historique</h2><p>Ajoutez une partie et renseignez votre carte de score.</p></div><div className={activityStyles.plannerShortcuts}><Link className={activityStyles.plannerShortcut} href="/player/golf/rounds/new"><span><Plus size={19} /></span><strong>Ajouter un parcours</strong><ArrowRight size={16} /></Link></div></section> : null}
+    {!readOnly ? <section className={`${activityStyles.plannerSection} ${trainingStyles.creationHeader}`} aria-labelledby="round-shortcut-title"><div className={activityStyles.plannerHeading}><h2 id="round-shortcut-title">Compléter mon historique</h2><p>Ajoutez une partie et renseignez votre carte de score.</p></div><Link className={`${activityStyles.primaryButton} ${trainingStyles.creationAction}`} href="/player/golf/rounds/new"><Plus size={18} aria-hidden="true" />{t("player.newRound")}</Link></section> : null}
     <div className={trainingStyles.kpis} aria-label="Synthèse des parcours"><article className={trainingStyles.kpi}><div className={trainingStyles.kpiTitle}><span><Flag size={17} /></span><h2>Parties</h2></div><strong>{loading ? "…" : filtered.length}</strong><p>sur la période</p><small>Parcours enregistrés</small></article><article className={trainingStyles.kpi}><div className={trainingStyles.kpiTitle}><span><Gauge size={17} /></span><h2>Score moyen</h2></div><strong>{aggregate.avgScore ?? "—"}</strong><p>parties terminées</p><small>Moyenne des scores complets</small></article><article className={trainingStyles.kpi}><div className={trainingStyles.kpiTitle}><span><Target size={17} /></span><h2>GIR</h2></div><strong>{aggregate.gir == null ? "—" : `${aggregate.gir}%`}</strong><p>données connues</p><small>Greens en régulation</small></article><article className={trainingStyles.kpi}><div className={trainingStyles.kpiTitle}><span><BarChart3 size={17} /></span><h2>Fairways</h2></div><strong>{aggregate.fairway == null ? "—" : `${aggregate.fairway}%`}</strong><p>par 4 et par 5</p><small>Mises en jeu réussies</small></article></div>
     {error ? <div className={styles.error} role="alert">{error} <button className="btn" onClick={() => location.reload()}><RotateCcw size={14}/> Réessayer</button></div> : loading ? <div className={styles.list}>{[1,2,3].map(i=><div className={styles.skeleton} key={i}/>)}</div> : filtered.length === 0 ? <div className={styles.empty}><strong>{rounds.length ? "Aucun résultat" : readOnly ? "Aucun parcours enregistré" : "Votre historique commence ici"}</strong><span>{rounds.length ? "Modifiez ou réinitialisez les filtres pour retrouver les parties." : readOnly ? "Les parcours saisis par le joueur apparaîtront ici." : "Ajoutez votre première partie pour suivre vos scores et vos tendances."}</span>{rounds.length ? <button className="btn" onClick={reset}>Réinitialiser les filtres</button> : !readOnly ? <Link className={activityStyles.primaryButton} href="/player/golf/rounds/new"><Plus size={18}/> Ajouter un parcours</Link> : null}</div> : <div className={styles.list}>{filtered.map(round => { const hs=holesByRound[round.id]??[]; const metrics=calculateGolfRoundMetrics(hs); const isOpen=openId===round.id; const teeName=round.tee_name?.replace(/^(tee|départ)\s*:?\s*/i, ""); return <article className={`${styles.roundShell} ${isOpen?styles.expanded:""}`} key={round.id}><button className={`${activityStyles.competitionCard} ${styles.roundCard}`} aria-expanded={isOpen} aria-controls={`detail-${round.id}`} onClick={()=>setOpenId(isOpen?null:round.id)}><ActivityDateTile startsAt={round.start_at} locale={locale} className={`${activityStyles.dateTile} ${styles.roundDate}`} showYear/><span className={styles.content}><span className={styles.titleRow}><strong className={styles.course}>{round.course_name || round.competition_name || "Parcours sans nom"}</strong>{!metrics.complete?<span className={styles.badgeProgress}>En cours</span>:null}</span><span className={styles.meta}>{round.round_type === "competition" ? "Compétition" : "Entraînement"} · {metrics.expectedHoles} trous{teeName?` · Tee ${teeName}`:""}</span><span className={styles.quickStats}><span>Putts <b>{metrics.putts.total ?? round.total_putts ?? "—"}</b></span><span>Fairways <b>{metrics.fairways.percentage == null?"—":`${metrics.fairways.percentage}%`}</b></span><span>GIR <b>{metrics.gir.percentage == null?"—":`${metrics.gir.percentage}%`}</b></span></span></span><span className={styles.roundAside}><span className={styles.score}><strong>{metrics.score ?? round.total_score ?? "—"}</strong><span>{scoreToParLabel(metrics.toPar)}</span></span><span className={styles.chevron}><ChevronDown aria-hidden="true"/></span></span></button>{isOpen?<div id={`detail-${round.id}`}><RoundDetail round={round} holes={hs} readOnly={readOnly}/></div>:null}</article>; })}</div>}
   </section>;

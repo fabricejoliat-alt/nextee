@@ -1,5 +1,7 @@
 "use client";
 
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import Image from "next/image";
 import { CheckCircle2, ChevronDown, ChevronUp, ClipboardList, Clock3, Flag, Lock, ShieldCheck, Target, Trash2, XCircle } from "lucide-react";
@@ -47,7 +49,7 @@ function ValidationsPageSkeleton() {
 }
 
 export default function PlayerValidationsPage() {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState("");
   const [deletingAttemptId, setDeletingAttemptId] = useState("");
@@ -181,7 +183,7 @@ export default function PlayerValidationsPage() {
         }),
       });
       const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error ?? "Erreur d'enregistrement.");
+      if (!res.ok) throw new Error(json.error === "organization.choose" ? t("organization.choose") : json.error ?? "Erreur d'enregistrement.");
       setDashboard(json.dashboard as ValidationDashboardPayload);
       if (result === "success") setExpandedExerciseIds((current) => ({ ...current, [exercise.id]: false }));
       setInfo(txt.saved);

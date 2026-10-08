@@ -1,3 +1,5 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
+import { authorizedCoachPlayers } from "@/lib/coachAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { requireCoachEventAccess } from "@/app/api/coach/events/_access";
@@ -99,7 +101,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
     if (!eventId) return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(token);
-    const targetEvent = await requireCoachEventAccess(supabaseAdmin, callerId, eventId);
+    const targetEvent = await requireCoachEventAccess(supabaseAdmin, callerId, eventId, requestedOrganizationId(req.url));
     if (!isFutureTraining(targetEvent)) {
       return NextResponse.json({ insights: [], history_event_count: 0 });
     }
@@ -115,6 +117,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
     let playerIds = Array.from(
       new Set((targetAttendeesRes.data ?? []).map((row) => String(row.player_id ?? "").trim()).filter(Boolean))
     );
+    const authorized = await authorizedCoachPlayers(supabaseAdmin, callerId, targetEvent.club_id, playerIds, eventId);
+    playerIds = playerIds.filter(id => authorized.has(id));
     if (playerIds.length === 0) return NextResponse.json({ insights: [], history_event_count: 0 });
 
     const grants = new Map<string, string>();

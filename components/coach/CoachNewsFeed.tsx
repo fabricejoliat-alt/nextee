@@ -1,5 +1,7 @@
 "use client";
 
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Eye, Newspaper, X } from "lucide-react";

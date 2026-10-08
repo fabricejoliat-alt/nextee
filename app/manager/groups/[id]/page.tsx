@@ -223,7 +223,7 @@ export default function CoachGroupEditPage() {
       .select(
         `
         id,created_at,club_id,name,is_active,is_performance,head_coach_user_id,
-        clubs:clubs ( id, name )
+        clubs:organizations!coach_groups_club_id_fkey ( id, name )
       `
       )
       .eq("id", groupId)

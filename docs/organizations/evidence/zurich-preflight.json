@@ -1,0 +1,15 @@
+{
+  "environment": "Zurich",
+  "project": "soivxpdcilgltbjbpimt",
+  "mode": "--check",
+  "source_sha256": "029d29432517b3a9171a61ec319b8652de354f9a260c4f0ed2bddf91c6d2cd97",
+  "source": "User screenshot, 7 October 2026 18:58:53 Europe/Zurich",
+  "clean_base": "PASS",
+  "postgresql_version": "17.11",
+  "legal_versions": 4,
+  "legal_presentations": 0,
+  "legal_decisions": 0,
+  "legal_templates_available": true,
+  "ftem_available": true,
+  "remote_mutation": false
+}

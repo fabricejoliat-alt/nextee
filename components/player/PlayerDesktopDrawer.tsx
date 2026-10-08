@@ -1,5 +1,7 @@
 "use client";
 
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -224,8 +226,8 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         setSelectedChildId(cached.selectedChildId);
       }
 
-      const { data: auth } = await supabase.auth.getUser();
-      const displayUserId = auth.user?.id ?? "";
+      const { data: auth } = await supabase.auth.getSession();
+      const displayUserId = auth.session?.user.id ?? "";
       const headers = await authHeader();
       const [meRes, profileRes] = await Promise.all([
         fetch("/api/auth/me", { method: "GET", headers, cache: "no-store" }),
@@ -299,8 +301,9 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
     let cancelled = false;
 
     (async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      let uid = auth.user?.id ?? "";
+      const { data: auth } = await supabase.auth.getSession();
+      if (cancelled) return;
+      let uid = auth.session?.user.id ?? "";
       const cached = readDrawerFooterCache();
       const effectiveViewerRole = viewerRole === "parent" ? viewerRole : cached?.viewerRole ?? viewerRole;
       const effectiveChildId = selectedChildId || cached?.selectedChildId || "";
@@ -329,8 +332,8 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
     if (!open || !performanceEnabled) return;
 
     (async () => {
-      const { data: auth } = await supabase.auth.getUser();
-      let uid = auth.user?.id ?? "";
+      const { data: auth } = await supabase.auth.getSession();
+      let uid = auth.session?.user.id ?? "";
       if (viewerRole === "parent" && selectedChildId) uid = selectedChildId;
       if (!uid) {
         setPendingEvalCount(0);

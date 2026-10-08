@@ -1,0 +1,28 @@
+✔ All 17 migrations and postflight are inside one transaction; rollback restores the original schema (1406.677916ms)
+✔ Encrypted backup preserves database and images and rejects corruption/wrong password (110.490709ms)
+✔ canonique: aucune académie dans clubs, projections et FTEM cohérents (1365.905875ms)
+✔ recherche minimale: relation active, acteur et capacités contrôlés (4.572666ms)
+✔ demande: ni autorisation implicite, ni duplication, validation source obligatoire (8.83075ms)
+✔ Admin ne se substitue pas au parent; preuve avec organisation_name rendue (4.63475ms)
+✔ RLS: Manager étranger, parent hors périmètre et écriture directe refusés (6.232833ms)
+✔ retrait Centre: historique immuable et Sion toujours accessible (4.179958ms)
+✔ conflit et nouvelle version: nouvelle décision obligatoire, historique conservé (14.149083ms)
+✔ propriétaire sportif obligatoire et notifications limitées aux droits du parent (30.367959ms)
+✔ ancien RPC golf: droit d’édition par organisation et cascade contrôlée (16.789125ms)
+✔ club externe: revendication sans accès, rapprochement humain sans nouveaux comptes (4.841084ms)
+✔ refus parental Centre: activation interdite, affiliation Sion indépendante (4.004959ms)
+✔ suppression organisation: refus avec histoire, comptes et autres affiliations préservés (4.202959ms)
+✔ rollback refuse après une utilisation; replay et rollback vierge restaurent les fonctions (1038.505125ms)
+✔ preuves anciennes: migration et retour arrière conservent versions, présentations et décisions (1024.09675ms)
+✔ migration peuplée: deux affiliations, histoires personnelles intactes, aucune attribution depuis OM (1456.314875ms)
+✔ Player: mêmes histoires personnelles dans les deux contextes, données du club isolées (221.798709ms)
+✔ Parent: lecture personnelle permise, modification selon droits du contexte; tiers refusé (81.100042ms)
+✔ Coach affecté: progression personnelle lisible, écriture personnelle interdite (28.724583ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3625.451333

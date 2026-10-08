@@ -59,7 +59,7 @@ export async function GET(req: Request) {
       new Set((managerMemberships ?? []).map((row) => String((row as MembershipRow).club_id ?? "").trim()).filter(Boolean))
     );
     const { data: clubs, error: clubsErr } = clubIds.length
-      ? await supabaseAdmin.from("clubs").select("id, name").in("id", clubIds)
+      ? await supabaseAdmin.from("organizations").select("id, name").in("id", clubIds)
       : { data: [], error: null };
     if (clubsErr) return NextResponse.json({ error: clubsErr.message }, { status: 400 });
 

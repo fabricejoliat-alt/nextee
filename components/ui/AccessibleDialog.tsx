@@ -14,6 +14,7 @@ export default function AccessibleDialog({ children, onClose, className = "", la
     if (!dialog) return;
     const previousOverflow = document.body.style.overflow;
     dialog.showModal();
+    dialog.focus({ preventScroll: true });
     document.body.style.overflow = "hidden";
     return () => {
       dialog.close();
@@ -21,7 +22,7 @@ export default function AccessibleDialog({ children, onClose, className = "", la
       if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
   }, []);
-  return <dialog ref={ref} className={`${styles.dialog} ${className}`} aria-label={label} aria-labelledby={labelledBy}
+  return <dialog ref={ref} tabIndex={-1} autoFocus className={`${styles.dialog} ${className}`} aria-label={label} aria-labelledby={labelledBy}
     aria-modal="true" onCancel={(event) => { event.preventDefault(); onClose(); }}
     onKeyDown={(event) => {
       if (event.key !== "Tab") return;

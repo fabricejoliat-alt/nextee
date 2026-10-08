@@ -1,8 +1,11 @@
 "use client";
 
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
 /* eslint-disable @next/next/no-img-element -- Marketplace thumbnails use user-managed Storage URLs. */
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { PlayerHomeBootstrapContext } from "@/components/player/PlayerHomeBootstrapContext";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -11,7 +14,7 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
-import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
+import type { PlayerHomeSummary } from "@/lib/playerHomeSummary";
 import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CalendarCheck2, CheckCircle2, ClipboardCheck, MapPin, Medal, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
 import type { ValidationDashboardPayload } from "@/lib/validations";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -21,7 +24,7 @@ import EtiquetteVisual from "@/components/etiquette/EtiquetteVisual";
 import etiquetteVisualStyles from "@/components/etiquette/EtiquetteVisual.module.css";
 import RulesVisual from "@/components/rules/RulesVisual";
 import rulesVisualStyles from "@/components/rules/RulesVisual.module.css";
-import ActiviteeEChart from "@/components/ui/ActiviteeEChart";
+import dynamic from "next/dynamic";
 import { buildManagementVolumeChartOption } from "@/lib/managementCharts";
 import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import overviewStyles from "@/app/player/golf/PlayerGolfOverview.module.css";
@@ -35,7 +38,6 @@ type Profile = {
   avatar_url: string | null;
 };
 
-type ClubMember = { club_id: string };
 type Club = { id: string; name: string | null };
 
 type Item = {
@@ -188,47 +190,13 @@ type AttendanceInsight = { present: number; expected: number; rate: number; chan
 type MeritInsight = { rank: number; total: number; change: number | null } | null;
 
 const PLAYER_HOME_CACHE_TTL_MS = 45_000;
-const playerHomeCacheKey = (userId: string) => `page-cache:player-home:v3:${userId}`;
+const playerHomeCacheKey = (userId: string, viewerId: string, organizationIds: string[]) =>
+  `page-cache:player-home:v4:${viewerId}:${userId}:${[...organizationIds].sort().join(",")}`;
 
-type HeroCachePayload = {
-  profile: Profile | null;
-  clubs: Club[];
-  updatedAt: number;
-};
-
-const HERO_CACHE_TTL_MS = 10 * 60 * 1000;
-
-function heroCacheKey(userId: string) {
-  return `player:home:hero:${userId}`;
-}
-
-function readHeroCache(userId: string) {
-  if (typeof window === "undefined" || !userId) return null as HeroCachePayload | null;
-  try {
-    const raw = window.localStorage.getItem(heroCacheKey(userId));
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as HeroCachePayload;
-    if (!parsed || typeof parsed !== "object") return null;
-    if (!parsed.updatedAt || Date.now() - parsed.updatedAt > HERO_CACHE_TTL_MS) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function writeHeroCache(userId: string, payload: { profile: Profile | null; clubs: Club[] }) {
-  if (typeof window === "undefined" || !userId) return;
-  try {
-    const data: HeroCachePayload = {
-      profile: payload.profile,
-      clubs: payload.clubs,
-      updatedAt: Date.now(),
-    };
-    window.localStorage.setItem(heroCacheKey(userId), JSON.stringify(data));
-  } catch {
-    // ignore cache write issues
-  }
-}
+const ActiviteeEChart = dynamic(() => import("@/components/ui/ActiviteeEChart"), {
+  ssr: false,
+  loading: () => <div className={playerUiStyles.skeleton} style={{ height: 260 }}><span /><span /><span /></div>,
+});
 
 function displayHello(p: Profile | null | undefined, t: (key: string) => string) {
   const f = (p?.first_name ?? "").trim();
@@ -518,11 +486,6 @@ function BenchmarkBadge({ icon: Icon, tone, children }: { icon: LucideIcon; tone
   return <span className={`${playerUiStyles.badge} ${toneClass} ${styles.statusBadge}`}><Icon size={13} aria-hidden="true" />{children}</span>;
 }
 
-function effectiveHomeSessionType(session: TrainingSessionRow | HomeSessionRow) {
-  if (session.club_event_id) return "club" as const;
-  return session.session_type;
-}
-
 type RulesHomeOverview = {
   currentSeriesId: string | null;
   series: Array<{ id: string; position: number; title_i18n: Record<string, string>; discovery_starts_at: string; quiz_opens_at: string; quiz_closes_at: string; results_published_at: string | null }>;
@@ -537,7 +500,7 @@ function PlayerRulesHomeCard({ locale }: { locale: string }) {
     void (async () => {
       const { data } = await supabase.auth.getSession();
       const token = data.session?.access_token;
-      if (!token) return;
+      if (!token || !active) return;
       try {
         const response = await fetch("/api/rules/overview", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
         if (!response.ok) return;
@@ -573,6 +536,8 @@ function PlayerEtiquetteHomeCard({ locale }: { locale: string }) {
 }
 
 export default function PlayerHomePage() {
+  const initialHomeRead = useContext(PlayerHomeBootstrapContext);
+  const initialHomeReadOwner = useRef({});
   const router = useRouter();
   const { t, locale } = useI18n();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
@@ -613,6 +578,12 @@ export default function PlayerHomePage() {
   const [trainingSeasonMonths, setTrainingSeasonMonths] = useState<number[]>([]);
   const [trainingOffseasonMonths, setTrainingOffseasonMonths] = useState<number[]>([]);
   const [insightsLoading, setInsightsLoading] = useState(true);
+  const [validationsLoading, setValidationsLoading] = useState(true);
+  const [meritLoading, setMeritLoading] = useState(true);
+  const [homeContext, setHomeContext] = useState<{
+    userId: string; viewerId: string; role: "player" | "parent";
+    organizationIds: string[]; performanceEnabled: boolean; handicap: number | null;
+  } | null>(null);
   const [insightsError, setInsightsError] = useState(false);
   const [pendingTrainings, setPendingTrainings] = useState<PendingTraining[]>([]);
   const [attendanceInsight, setAttendanceInsight] = useState<AttendanceInsight | null>(null);
@@ -624,117 +595,91 @@ export default function PlayerHomePage() {
   const bucket = "marketplace";
 
   useEffect(() => {
-    if (!effectiveUserId) return;
-    let cancelled = false;
-    const loadInsights = async () => {
-      setInsightsLoading(true);
-      setInsightsError(false);
-      try {
-        const { data: auth } = await supabase.auth.getSession();
-        const token = auth.session?.access_token ?? "";
-        const validationQuery = viewerRole === "parent" ? `?child_id=${encodeURIComponent(effectiveUserId)}` : "";
-        const [attendeesResult, sessionsResult, validationsResult] = await Promise.all([
-          supabase.from("club_event_attendees").select("event_id,status").eq("player_id", effectiveUserId),
-          isPerformanceEnabled
-            ? supabase.from("training_sessions").select("id,start_at,club_event_id,location_text,motivation,difficulty,satisfaction").eq("user_id", effectiveUserId).order("start_at", { ascending: false })
-            : Promise.resolve({ data: [], error: null }),
-          token ? fetch(`/api/player/validations${validationQuery}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" }).catch(() => null) : Promise.resolve(null),
-        ]);
-        if (attendeesResult.error) throw attendeesResult.error;
-        if (sessionsResult.error) throw sessionsResult.error;
-        const attendees = (attendeesResult.data ?? []) as Array<{ event_id: string; status: string | null }>;
-        const sessions = (sessionsResult.data ?? []) as Array<{ id: string; start_at: string; club_event_id: string | null; location_text: string | null; motivation: number | null; difficulty: number | null; satisfaction: number | null }>;
-        const eventIds = [...new Set(attendees.map((row) => row.event_id).filter(Boolean))];
-        const sessionIds = sessions.map((row) => row.id);
-        const [eventsResult, itemsResult] = await Promise.all([
-          eventIds.length ? supabase.from("club_events").select("id,event_type,title,starts_at,ends_at,status,requires_evaluation").in("id", eventIds) : Promise.resolve({ data: [], error: null }),
-          sessionIds.length ? supabase.from("training_session_items").select("session_id,minutes").in("session_id", sessionIds) : Promise.resolve({ data: [], error: null }),
-        ]);
-        if (eventsResult.error) throw eventsResult.error;
-        if (itemsResult.error) throw itemsResult.error;
-        const events = (eventsResult.data ?? []) as Array<{ id: string; event_type: string; title: string | null; starts_at: string; ends_at: string | null; status: string; requires_evaluation: boolean }>;
-        const statusById = new Map(attendees.map((row) => [row.event_id, row.status]));
-        const itemMinutesBySession = new Map<string, number>();
-        for (const row of (itemsResult.data ?? []) as Array<{ session_id: string; minutes: number }>) {
-          itemMinutesBySession.set(row.session_id, Math.max(itemMinutesBySession.get(row.session_id) ?? 0, Number(row.minutes ?? 0)));
+    if (!homeContext) return;
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const childQuery = homeContext.role === "parent" ? `?child_id=${encodeURIComponent(homeContext.userId)}` : "";
+    const loadSummaries = async () => {
+      const token = (await supabase.auth.getSession()).data.session?.access_token;
+      if (signal.aborted) return;
+      if (!token) throw new Error("Invalid session");
+      const headers = { Authorization: `Bearer ${token}` };
+      const { start, end } = monthRangeLocal(new Date());
+      const previous = new Date(start.getFullYear(), start.getMonth() - 1, 1);
+      const query = new URLSearchParams({ from: start.toISOString(), to: end.toISOString(), previous_from: previous.toISOString() });
+      if (homeContext.role === "parent") query.set("child_id", homeContext.userId);
+      // Each card family completes independently; a slow validation does not
+      // hold attendance, monthly volume, or the upcoming-activity preview.
+      const summary = async () => {
+        try {
+          const response = await fetch(`/api/player/home-summary?${query}`, { headers, cache: "no-store", signal });
+          if (!response.ok) throw new Error("Unable to load Player summary");
+          const data = await response.json() as PlayerHomeSummary & { volumeConfigs: Array<{
+            rows: TrainingVolumeTargetRow[]; settings: { season_months: unknown; offseason_months: unknown } | null;
+          }> };
+          if (signal.aborted) return;
+          setPendingTrainings(data.pendingTrainings);
+          setAttendanceInsight(data.attendanceInsight);
+          setMonthSessions(data.monthSessions);
+          setMonthItems(data.monthItems as TrainingItemRow[]);
+          setMonthClubEventDurationById(data.monthClubEventDurationById);
+          setMonthPlannedClubEvents(data.monthPlannedClubEvents);
+          setMonthPlannedClubMinutes(data.monthPlannedClubMinutes);
+          const month = new Date().getMonth() + 1;
+          const best = data.volumeConfigs.map(config => {
+            const seasonMonths = parseMonthArray(config.settings?.season_months);
+            const offseasonMonths = parseMonthArray(config.settings?.offseason_months);
+            return { ...config, seasonMonths, offseasonMonths,
+              objective: objectiveForMonth(pickTrainingVolumeTarget(homeContext.handicap, config.rows), seasonMonths, offseasonMonths, month) };
+          }).sort((a, b) => b.objective - a.objective)[0];
+          setTrainingVolumeRows(best?.rows ?? []);
+          setTrainingSeasonMonths(best?.seasonMonths ?? []);
+          setTrainingOffseasonMonths(best?.offseasonMonths ?? []);
+        } catch {
+          if (!signal.aborted) setInsightsError(true);
+        } finally {
+          if (!signal.aborted) { setLoading(false); setInsightsLoading(false); }
         }
-        const completeSessions = new Set(sessions.filter((session) => (itemMinutesBySession.get(session.id) ?? 0) > 0 && typeof session.motivation === "number" && typeof session.difficulty === "number" && typeof session.satisfaction === "number").map((session) => session.id));
-        const sessionsByEvent = new Map(sessions.filter((session) => session.club_event_id).map((session) => [session.club_event_id, session]));
-        const now = Date.now();
-        const pending: PendingTraining[] = [];
-        if (isPerformanceEnabled) {
-          for (const event of events) {
-            if (event.status !== "scheduled" || !event.requires_evaluation || !["training", "camp"].includes(event.event_type) || new Date(event.ends_at ?? event.starts_at).getTime() >= now || ["absent", "excused", "not_registered"].includes(statusById.get(event.id) ?? "")) continue;
-            const session = sessionsByEvent.get(event.id);
-            if (session && completeSessions.has(session.id)) continue;
-            pending.push({ id: event.id, dateIso: event.starts_at, title: event.title?.trim() || (event.event_type === "camp" ? "Stage" : "Entraînement"), href: session ? `/player/golf/trainings/${session.id}/edit` : `/player/golf/trainings/new?club_event_id=${encodeURIComponent(event.id)}` });
-          }
-          for (const session of sessions) {
-            if (session.club_event_id || completeSessions.has(session.id) || new Date(session.start_at).getTime() >= now) continue;
-            pending.push({ id: session.id, dateIso: session.start_at, title: "Entraînement individuel", href: `/player/golf/trainings/${session.id}/edit` });
-          }
-        }
-        pending.sort((a, b) => new Date(b.dateIso).getTime() - new Date(a.dateIso).getTime());
-        const currentStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1).getTime();
-        const previousStart = new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1).getTime();
-        const attendanceFor = (from: number, to: number) => {
-          let present = 0; let expected = 0;
-          for (const event of events) {
-            const date = new Date(event.starts_at).getTime();
-            const status = statusById.get(event.id);
-            if (date < from || date >= to || date >= now || event.status !== "scheduled" || !["training", "interclub", "camp", "event", "session"].includes(event.event_type) || !["present", "absent"].includes(status ?? "")) continue;
-            expected += 1;
-            if (status === "present") present += 1;
-          }
-          return { present, expected, rate: expected ? Math.round((present / expected) * 100) : 0 };
-        };
-        const currentAttendance = attendanceFor(currentStart, now);
-        const previousAttendance = attendanceFor(previousStart, currentStart);
-        let merit: MeritInsight = null;
-        let partialError = false;
-        if (isPerformanceEnabled && clubs[0]?.id) {
+      };
+      const validations = async () => {
+        try {
+          const response = await fetch(`/api/player/validations${childQuery}`, { headers, cache: "no-store", signal });
+          if (!response.ok) throw new Error("Unable to load validations");
+          const data = await response.json() as ValidationDashboardPayload;
+          if (!signal.aborted) setValidationDashboard(data);
+        } catch { if (!signal.aborted) setInsightsError(true); }
+        finally { if (!signal.aborted) setValidationsLoading(false); }
+      };
+      const merit = async () => {
+        try {
+          const organizationId = homeContext.organizationIds[0];
+          if (!homeContext.performanceEnabled || !organizationId) return;
           const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(new Date());
           const yearStart = `${today.slice(0, 4)}-01-01`;
-          const ranking = await supabase.rpc("om_ranking_snapshot", { p_org_id: clubs[0].id, p_from: yearStart, p_as_of: today });
-          if (ranking.error) partialError = true;
-          else {
-            const rows = (ranking.data ?? []) as Array<{ player_id: string; rank_net: number }>;
-            const mine = rows.find((row) => row.player_id === effectiveUserId);
-            if (mine && Number.isFinite(Number(mine.rank_net))) {
-              let change: number | null = null;
-              const previousMonthEnd = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 0)).toISOString().slice(0, 10);
-              if (previousMonthEnd >= yearStart) {
-                const previousRanking = await supabase.rpc("om_ranking_snapshot", { p_org_id: clubs[0].id, p_from: yearStart, p_as_of: previousMonthEnd });
-                if (!previousRanking.error) {
-                  const previousMine = ((previousRanking.data ?? []) as Array<{ player_id: string; rank_net: number }>).find((row) => row.player_id === effectiveUserId);
-                  if (previousMine && Number.isFinite(Number(previousMine.rank_net))) change = Number(previousMine.rank_net) - Number(mine.rank_net);
-                }
-              }
-              merit = { rank: Number(mine.rank_net), total: rows.length, change };
-            }
+          const previousMonthEnd = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 0)).toISOString().slice(0, 10);
+          const [ranking, previousRanking] = await Promise.all([
+            supabase.rpc("om_ranking_snapshot", { p_org_id: organizationId, p_from: yearStart, p_as_of: today }).abortSignal(signal),
+            previousMonthEnd >= yearStart ? supabase.rpc("om_ranking_snapshot", { p_org_id: organizationId, p_from: yearStart, p_as_of: previousMonthEnd }).abortSignal(signal) : Promise.resolve({ data: [], error: null }),
+          ]);
+          if (signal.aborted) return;
+          if (ranking.error) throw ranking.error;
+          const rows = (ranking.data ?? []) as Array<{ player_id: string; rank_net: number }>;
+          const mine = rows.find(row => row.player_id === homeContext.userId);
+          if (mine && Number.isFinite(Number(mine.rank_net))) {
+            const previousMine = !previousRanking.error ? ((previousRanking.data ?? []) as Array<{ player_id: string; rank_net: number }>).find(row => row.player_id === homeContext.userId) : null;
+            setMeritInsight({ rank: Number(mine.rank_net), total: rows.length,
+              change: previousMine && Number.isFinite(Number(previousMine.rank_net)) ? Number(previousMine.rank_net) - Number(mine.rank_net) : null });
           }
-        }
-        let validation: ValidationDashboardPayload | null = null;
-        if (token && !validationsResult) partialError = true;
-        if (validationsResult) {
-          if (!validationsResult.ok) partialError = true;
-          else validation = await validationsResult.json() as ValidationDashboardPayload;
-        }
-        if (cancelled) return;
-        setPendingTrainings(pending);
-        setAttendanceInsight(currentAttendance.expected ? { ...currentAttendance, change: previousAttendance.expected ? currentAttendance.rate - previousAttendance.rate : null } : null);
-        setMeritInsight(merit);
-        setValidationDashboard(validation);
-        setInsightsError(partialError);
-      } catch (cause) {
-        if (!cancelled) { console.warn("player dashboard insights failed:", cause); setInsightsError(true); }
-      } finally {
-        if (!cancelled) setInsightsLoading(false);
-      }
+        } catch { if (!signal.aborted) setInsightsError(true); }
+        finally { if (!signal.aborted) setMeritLoading(false); }
+      };
+      await Promise.all([summary(), validations(), merit()]);
     };
-    void loadInsights();
-    return () => { cancelled = true; };
-  }, [effectiveUserId, viewerRole, isPerformanceEnabled, clubs]);
+    void loadSummaries().catch(() => {
+      if (!signal.aborted) { setInsightsError(true); setInsightsLoading(false); setValidationsLoading(false); setMeritLoading(false); setLoading(false); }
+    });
+    return () => controller.abort();
+  }, [homeContext]);
 
   const placeholderThumb = useMemo(() => {
     const svg = `
@@ -851,11 +796,11 @@ export default function PlayerHomePage() {
     };
   }, [monthEffectiveMinutes, monthSessions, monthItems, t, displayedTrainingVolumeObjective]);
 
-  async function loadUpcomingPreview(userId: string, viewerUid?: string) {
+  async function loadUpcomingPreview(userId: string, viewerUid: string, signal: AbortSignal) {
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token ?? "";
-      if (!token) return;
+      if (!token || signal.aborted) return;
 
       const query = new URLSearchParams();
       query.set("locale", locale);
@@ -864,8 +809,10 @@ export default function PlayerHomePage() {
         method: "GET",
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
+        signal,
       });
       const json = await res.json().catch(() => ({}));
+      if (signal.aborted) return;
       if (!res.ok) throw new Error(String(json?.error ?? "Failed to load upcoming preview"));
 
       setAttendeeStatusByEventId((prev) => ({ ...prev, ...(json?.attendeeStatusByEventId ?? {}) }));
@@ -881,15 +828,18 @@ export default function PlayerHomePage() {
       setUpcomingActivities(previewUpcoming);
       setUpcomingLoading(false);
     } catch {
-      // keep default full-loading flow
+      if (!signal.aborted) setUpcomingActivities([]);
+    } finally {
+      if (!signal.aborted) setUpcomingLoading(false);
     }
   }
 
-  async function loadLatestNews(userId: string, role: "player" | "parent") {
+  async function loadLatestNews(userId: string, role: "player" | "parent", signal: AbortSignal) {
     try {
       setNewsLoading(true);
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token ?? "";
+      if (signal.aborted) return;
       if (!token) {
         setLatestNews([]);
         return;
@@ -901,19 +851,22 @@ export default function PlayerHomePage() {
         method: "GET",
         headers: { Authorization: `Bearer ${token}` },
         cache: "no-store",
+        signal,
       });
       const json = await res.json().catch(() => ({}));
+      if (signal.aborted) return;
       if (!res.ok) throw new Error(String(json?.error ?? "Failed to load news"));
       const rows = Array.isArray(json?.news) ? (json.news as HomeNewsItem[]) : [];
       setLatestNews(rows.slice(0, 3));
     } catch {
+      if (signal.aborted) return;
       setLatestNews([]);
     } finally {
-      setNewsLoading(false);
+      if (!signal.aborted) setNewsLoading(false);
     }
   }
 
-  async function loadLatestMarketplace(clubIds: string[]) {
+  async function loadLatestMarketplace(clubIds: string[], signal: AbortSignal) {
     if (latestItems.length === 0) setMarketplaceLoading(true);
     try {
       const dedupedClubIds = Array.from(new Set(clubIds.filter(Boolean)));
@@ -929,7 +882,8 @@ export default function PlayerHomePage() {
         .in("club_id", dedupedClubIds)
         .eq("is_active", true)
         .order("created_at", { ascending: false })
-        .limit(3);
+        .limit(3).abortSignal(signal);
+      if (signal.aborted) return;
 
       if (itemsRes.error) {
         setLatestItems([]);
@@ -950,7 +904,8 @@ export default function PlayerHomePage() {
         .from("marketplace_images")
         .select("item_id,path,sort_order")
         .in("item_id", ids)
-        .eq("sort_order", 0);
+        .eq("sort_order", 0).abortSignal(signal);
+      if (signal.aborted) return;
 
       if (imgRes.error) {
         setThumbByItemId({});
@@ -964,318 +919,63 @@ export default function PlayerHomePage() {
       });
       setThumbByItemId(map);
     } catch (e) {
+      if (signal.aborted) return;
       console.warn("player home marketplace load failed:", e);
       setLatestItems([]);
       setThumbByItemId({});
     } finally {
-      setMarketplaceLoading(false);
-    }
-  }
-
-  async function load() {
-    setLoading(true);
-    setUpcomingLoading(true);
-    setMarketplaceLoading(true);
-    setError(null);
-    setHeroLoading(true);
-
-    let effectiveUid = "";
-    let viewerUid = "";
-    try {
-      const ctx = await resolveEffectivePlayerContext();
-      effectiveUid = ctx.effectiveUserId;
-      viewerUid = ctx.viewerUserId;
-      setViewerRole(ctx.role === "parent" ? "parent" : "player");
-      setViewerUserId(viewerUid);
-      setEffectiveUserId(effectiveUid);
-      void loadLatestNews(effectiveUid, ctx.role === "parent" ? "parent" : "player");
-      const performanceEnabled = await isEffectivePlayerPerformanceEnabled(effectiveUid);
-      setIsPerformanceEnabled(performanceEnabled);
-      const pageCache = readClientPageCache<PlayerHomePageCache>(
-        playerHomeCacheKey(effectiveUid),
-        PLAYER_HOME_CACHE_TTL_MS
-      );
-      if (pageCache) {
-        setProfile(pageCache.profile);
-        setClubs(pageCache.clubs);
-        setLatestItems(pageCache.latestItems);
-        setThumbByItemId(pageCache.thumbByItemId);
-        setMarketplaceLoading(false);
-        setMonthSessions(pageCache.monthSessions);
-        setMonthClubEventDurationById(pageCache.monthClubEventDurationById ?? {});
-        setMonthPlannedClubMinutes(pageCache.monthPlannedClubMinutes ?? 0);
-        setMonthItems(pageCache.monthItems);
-        setViewerUserId(pageCache.viewerUserId || viewerUid);
-        setEffectiveUserId(pageCache.effectiveUserId || effectiveUid);
-        setAttendeeStatusByEventId(pageCache.attendeeStatusByEventId);
-        setClubNameById(pageCache.clubNameById);
-        setGroupNameById(pageCache.groupNameById);
-        setCoachNamesByEventId(pageCache.coachNamesByEventId ?? {});
-        setEventStructureByEventId(pageCache.eventStructureByEventId);
-        setUpcomingActivities(pageCache.upcomingActivities);
-        setUpcomingLoading(false);
-        setLoading(false);
-      }
-      void loadUpcomingPreview(effectiveUid, viewerUid);
-      const heroCache = readHeroCache(effectiveUid);
-      if (heroCache) {
-        setProfile(heroCache.profile);
-        setClubs(heroCache.clubs);
-        setHeroLoading(false);
-      }
-    } catch {
-      setError(t("roundsNew.error.invalidSession"));
-      setLoading(false);
-      setUpcomingLoading(false);
-      setHeroLoading(false);
-      setNewsLoading(false);
-      return;
-    }
-
-    try {
-      const [profRes, memRes] = await Promise.all([
-      supabase.from("profiles").select("id,first_name,last_name,handicap,avatar_url").eq("id", effectiveUid).maybeSingle(),
-      supabase.from("club_members").select("club_id").eq("user_id", effectiveUid).eq("is_active", true),
-      ]);
-
-    if (profRes.error) {
-      setError(profRes.error.message);
-      setLoading(false);
-      setUpcomingLoading(false);
-      setHeroLoading(false);
-      return;
-    }
-    setProfile((profRes.data ?? null) as Profile | null);
-    let cids: string[] = [];
-    if (memRes.error) {
-      // Non-blocking: home KPIs (rounds/stats) must still load even if memberships fail.
-      console.warn("club_members load failed:", memRes.error.message);
-      setClubs([]);
-    } else {
-      cids = ((memRes.data ?? []) as ClubMember[]).map((m) => m.club_id).filter(Boolean);
-    }
-
-    let heroClubs: Club[] = [];
-    if (cids.length > 0) {
-      const clubsRes = await supabase.from("clubs").select("id,name").in("id", cids);
-      if (!clubsRes.error) {
-        heroClubs = (clubsRes.data ?? []) as Club[];
-        setClubs(heroClubs);
-      } else {
-        heroClubs = cids.map((id) => ({ id, name: null }));
-        setClubs(heroClubs);
-      }
-    } else {
-      heroClubs = [];
-      setClubs([]);
-    }
-    setHeroLoading(false);
-    writeHeroCache(effectiveUid, { profile: (profRes.data ?? null) as Profile | null, clubs: heroClubs });
-
-    // Training volume config from active clubs: keep the highest monthly objective
-    if (cids.length > 0) {
-      try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token ?? "";
-        if (token) {
-          const clubIds = Array.from(new Set(cids));
-          const month = new Date().getMonth() + 1;
-          const handicap = (profRes.data as Profile | null)?.handicap ?? null;
-
-          const responses = await Promise.all(
-            clubIds.map(async (clubId) => {
-              const res = await fetch(
-                `/api/player/clubs/${clubId}/training-volume?player_id=${encodeURIComponent(effectiveUid)}`,
-                {
-                  method: "GET",
-                  headers: { Authorization: `Bearer ${token}` },
-                  cache: "no-store",
-                }
-              );
-              const json = await res.json().catch(() => ({}));
-              if (!res.ok) return null;
-              const rows = Array.isArray(json?.rows) ? (json.rows as TrainingVolumeTargetRow[]) : [];
-              const seasonMonths = parseMonthArray(json?.settings?.season_months);
-              const offseasonMonths = parseMonthArray(json?.settings?.offseason_months);
-              const target = pickTrainingVolumeTarget(typeof handicap === "number" ? handicap : null, rows);
-              const objective = objectiveForMonth(target, seasonMonths, offseasonMonths, month);
-              return { rows, seasonMonths, offseasonMonths, objective };
-            })
-          );
-
-          const best = responses
-            .filter((x): x is { rows: TrainingVolumeTargetRow[]; seasonMonths: number[]; offseasonMonths: number[]; objective: number } => Boolean(x))
-            .sort((a, b) => b.objective - a.objective)[0];
-
-          if (best) {
-            setTrainingVolumeRows(best.rows);
-            setTrainingSeasonMonths(best.seasonMonths);
-            setTrainingOffseasonMonths(best.offseasonMonths);
-          } else {
-            setTrainingVolumeRows([]);
-            setTrainingSeasonMonths([]);
-            setTrainingOffseasonMonths([]);
-          }
-        } else {
-          setTrainingVolumeRows([]);
-          setTrainingSeasonMonths([]);
-          setTrainingOffseasonMonths([]);
-        }
-      } catch {
-        setTrainingVolumeRows([]);
-        setTrainingSeasonMonths([]);
-        setTrainingOffseasonMonths([]);
-      }
-    } else {
-      setTrainingVolumeRows([]);
-      setTrainingSeasonMonths([]);
-      setTrainingOffseasonMonths([]);
-    }
-
-    if (cids.length > 0) {
-      void loadLatestMarketplace(cids);
-    } else {
-      setLatestItems([]);
-      setThumbByItemId({});
-      setMarketplaceLoading(false);
-    }
-
-    // Trainings month
-    const { start, end } = monthRangeLocal(new Date());
-    const sRes = await supabase
-      .from("training_sessions")
-      .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id")
-      .eq("user_id", effectiveUid)
-      .gte("start_at", start.toISOString())
-      .lt("start_at", end.toISOString())
-      .order("start_at", { ascending: false });
-
-    if (!sRes.error) {
-      const sess = (sRes.data ?? []) as TrainingSessionRow[];
-      setMonthSessions(sess);
-
-      const sIds = sess.map((s) => s.id);
-      if (sIds.length > 0) {
-        const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in("session_id", sIds);
-        setMonthItems((iRes.data ?? []) as TrainingItemRow[]);
-      } else {
-        setMonthItems([]);
-      }
-
-      const monthClubEventIds = Array.from(
-        new Set(
-          sess
-            .filter((s) => effectiveHomeSessionType(s) === "club")
-            .map((s) => s.club_event_id)
-            .filter((v): v is string => Boolean(v))
-        )
-      );
-      if (monthClubEventIds.length > 0) {
-        const evRes = await supabase
-          .from("club_events")
-          .select("id,duration_minutes,starts_at,ends_at")
-          .in("id", monthClubEventIds);
-        const map: Record<string, number> = {};
-        if (!evRes.error) {
-          (evRes.data ?? []).forEach(
-            (row: { id: string; duration_minutes: number | null; starts_at: string | null; ends_at: string | null }) => {
-            if (!row?.id) return;
-            const mins = Number(row.duration_minutes ?? 0);
-              if (Number.isFinite(mins) && mins > 0) {
-                map[row.id] = mins;
-                return;
-              }
-              if (row.starts_at && row.ends_at) {
-                const startMs = new Date(row.starts_at).getTime();
-                const endMs = new Date(row.ends_at).getTime();
-                const diff = Math.round((endMs - startMs) / 60000);
-                map[row.id] = Number.isFinite(diff) && diff > 0 ? diff : 0;
-                return;
-              }
-              map[row.id] = 0;
-            }
-          );
-        }
-        setMonthClubEventDurationById(map);
-      } else {
-        setMonthClubEventDurationById({});
-      }
-
-      const attendeeRes = await supabase
-        .from("club_event_attendees")
-        .select("event_id")
-        .eq("player_id", effectiveUid)
-        .eq("status", "present");
-      const attendeeEventIds = Array.from(
-        new Set(((attendeeRes.data ?? []) as Array<{ event_id: string | null }>).map((r) => r.event_id).filter((v): v is string => Boolean(v)))
-      );
-      if (attendeeEventIds.length > 0) {
-        const nowIso = new Date().toISOString();
-        const plannedRes = await supabase
-          .from("club_events")
-          .select("id,starts_at,ends_at,duration_minutes,status")
-          .in("id", attendeeEventIds)
-          .neq("status", "cancelled")
-          .gte("starts_at", start.toISOString())
-          .lt("starts_at", end.toISOString())
-          .lt("starts_at", nowIso);
-        if (!plannedRes.error) {
-          setMonthPlannedClubEvents((plannedRes.data ?? []) as Array<{ starts_at: string; ends_at: string | null; duration_minutes: number | null }>);
-          const total = (plannedRes.data ?? []).reduce((sum, row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
-            const mins = Number(row.duration_minutes ?? 0);
-            if (Number.isFinite(mins) && mins > 0) return sum + mins;
-            if (row.starts_at && row.ends_at) {
-              const diff = Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000);
-              return sum + (Number.isFinite(diff) && diff > 0 ? diff : 0);
-            }
-            return sum;
-          }, 0);
-          setMonthPlannedClubMinutes(total);
-        } else {
-          setMonthPlannedClubMinutes(0);
-          setMonthPlannedClubEvents([]);
-        }
-      } else {
-        setMonthPlannedClubMinutes(0);
-        setMonthPlannedClubEvents([]);
-      }
-    } else {
-      setMonthSessions([]);
-      setMonthClubEventDurationById({});
-      setMonthPlannedClubMinutes(0);
-      setMonthItems([]);
-    }
-
-    // Upcoming activities are intentionally sourced only from the server preview API.
-    // This avoids client-side permission or join differences that can overwrite
-    // the correct camp-day list a few seconds later.
-
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : t("common.errorLoading"));
-      setLatestItems([]);
-      setThumbByItemId({});
-      setMarketplaceLoading(false);
-      setMonthSessions([]);
-      setMonthClubEventDurationById({});
-      setMonthPlannedClubMinutes(0);
-      setMonthItems([]);
-      setUpcomingActivities([]);
-      setUpcomingLoading(false);
-      setLatestNews([]);
-      setNewsLoading(false);
-    } finally {
-      setLoading(false);
+      if (!signal.aborted) setMarketplaceLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
+    const controller = new AbortController();
+    const signal = controller.signal;
+    const load = async () => {
+      try {
+        const ctx = await resolveEffectivePlayerContext({ home: true, initialRead: initialHomeRead, initialReadOwner: initialHomeReadOwner.current });
+        if (signal.aborted) return;
+        if (!ctx.home) throw new Error("Player home context unavailable");
+        const userId = ctx.effectiveUserId, viewerId = ctx.viewerUserId;
+        const role = ctx.role === "parent" ? "parent" : "player";
+        const organizationIds = ctx.home.organizations.map(organization => organization.id);
+        const cached = readClientPageCache<PlayerHomePageCache>(playerHomeCacheKey(userId, viewerId, organizationIds), PLAYER_HOME_CACHE_TTL_MS);
+        if (cached) {
+          setLatestItems(cached.latestItems); setThumbByItemId(cached.thumbByItemId);
+          setMonthSessions(cached.monthSessions); setMonthItems(cached.monthItems);
+          setMonthClubEventDurationById(cached.monthClubEventDurationById ?? {});
+          setMonthPlannedClubMinutes(cached.monthPlannedClubMinutes ?? 0);
+          setUpcomingActivities(cached.upcomingActivities);
+          setAttendeeStatusByEventId(cached.attendeeStatusByEventId);
+          setClubNameById(cached.clubNameById); setGroupNameById(cached.groupNameById);
+          setCoachNamesByEventId(cached.coachNamesByEventId ?? {}); setEventStructureByEventId(cached.eventStructureByEventId);
+          setUpcomingLoading(false); setMarketplaceLoading(false);
+        }
+        setViewerUserId(viewerId); setEffectiveUserId(userId); setViewerRole(role);
+        setProfile(ctx.home.profile); setClubs(ctx.home.organizations);
+        setIsPerformanceEnabled(ctx.home.performanceEnabled); setHeroLoading(false);
+        setHomeContext({ userId, viewerId, role, organizationIds,
+          performanceEnabled: ctx.home.performanceEnabled, handicap: ctx.home.profile?.handicap ?? null });
+        void loadUpcomingPreview(userId, viewerId, signal);
+        void loadLatestNews(userId, role, signal);
+        void loadLatestMarketplace(organizationIds, signal);
+      } catch (cause) {
+        if (signal.aborted) return;
+        setError(cause instanceof Error ? cause.message : t("common.errorLoading"));
+        setLoading(false); setHeroLoading(false); setUpcomingLoading(false);
+        setMarketplaceLoading(false); setNewsLoading(false);
+        setInsightsLoading(false); setValidationsLoading(false); setMeritLoading(false);
+      }
+    };
+    void load();
+    return () => controller.abort();
+    // The shell remounts the page when the selected parent child changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (loading || !effectiveUserId) return;
-    writeClientPageCache(playerHomeCacheKey(effectiveUserId), {
+    writeClientPageCache(playerHomeCacheKey(effectiveUserId, viewerUserId, clubs.map(club => club.id)), {
       profile,
       clubs,
       latestItems,
@@ -1412,6 +1112,7 @@ export default function PlayerHomePage() {
   }, [profile?.avatar_url]);
 
   useEffect(() => {
+    if (!viewerUserId) return;
     let cancelled = false;
     const loadConsent = async () => {
       if (viewerRole !== "player") {
@@ -1634,7 +1335,7 @@ export default function PlayerHomePage() {
             </section>
 
             <section className={playerUiStyles.panel}>
-              <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Actualités de mes clubs", "News from my clubs")}</h2><p>{pickLocaleText(locale, "Les dernières nouvelles publiées par mes clubs.", "The latest news published by my clubs.")}</p></div><Link className={playerUiStyles.textLink} href={allNewsHref} aria-label={pickLocaleText(locale, "Toutes les actualités", "All news")}><ArrowRight size={16} /></Link></div>
+              <div className={playerUiStyles.panelHeader}><div><h2>{t("organization.newsTitle")}</h2><p>{t("organization.newsLead")}</p></div><Link className={playerUiStyles.textLink} href={allNewsHref} aria-label={pickLocaleText(locale, "Toutes les actualités", "All news")}><ArrowRight size={16} /></Link></div>
               {newsLoading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : latestNews.length ? (
                 <div className={`${playerUiStyles.eventList} ${styles.alignedCardContent}`}>
                   {latestNews.map((news) => <Link key={news.id} href={allNewsHref} className={styles.newsHomeItem}>
@@ -1681,14 +1382,14 @@ export default function PlayerHomePage() {
             <div className={styles.learningGrid}>
               <section className={`${playerUiStyles.panel} ${styles.homeValidationCard}`}>
                 <div className={`${playerUiStyles.panelHeader} ${styles.learningCardHeader}`}><div><h2>{pickLocaleText(locale, "Mes prochaines validations", "My next validations")}</h2><p>{pickLocaleText(locale, "Les prochains objectifs de chaque section.", "The next goal in each section.")}</p></div><Link className={playerUiStyles.textLink} href="/player/validations" aria-label={pickLocaleText(locale, "Toutes mes validations", "All my validations")}><ArrowRight size={16} /></Link></div>
-                {insightsLoading ? <div className={`${playerUiStyles.skeleton} ${styles.homeValidationLoading}`}><span /><span /><span /><span /></div> : validationHighlights.length ? (
+                {validationsLoading ? <div className={`${playerUiStyles.skeleton} ${styles.homeValidationLoading}`}><span /><span /><span /><span /></div> : validationHighlights.length ? (
                   <div className={`${playerUiStyles.eventList} ${styles.alignedCardContent}`}>
                     {validationHighlights.map(({ section, next }) => {
                       const attempts = next?.attempts.length ?? 0;
                       const href = `/player/validations?section_id=${encodeURIComponent(section.id)}${next ? `&exercise_id=${encodeURIComponent(next.id)}` : ""}`;
                       return <Link key={section.id} href={href} className={styles.validationHomeItem}>
                         <span className={styles.validationThumbnail}>
-                          {next?.illustration_url ? <Image src={next.illustration_url} alt="" fill sizes="92px" unoptimized /> : <ShieldCheck size={22} aria-hidden="true" />}
+                          {next?.illustration_url ? <Image src={next.illustration_url} alt="" fill sizes="92px" /> : <ShieldCheck size={22} aria-hidden="true" />}
                         </span>
                         <span className={styles.validationHomeContent}>
                           <small>{section.name}</small>
@@ -1709,7 +1410,7 @@ export default function PlayerHomePage() {
 
           <section className={styles.benchmarksSection}>
             <div className={styles.benchmarksHeader}><div><h2>{pickLocaleText(locale, "Mes repères", "My benchmarks")}</h2><p>{pickLocaleText(locale, "Quelques indices en un coup d'oeil", "Your progress at a glance.")}</p></div></div>
-            {insightsLoading ? <div className={styles.benchmarks}>{Array.from({ length: 2 }, (_, index) => <div className={`${styles.benchmark} ${styles.benchmarkSkeleton}`} key={index}><span /><span /><span /></div>)}</div> : <div className={styles.benchmarks}>
+            {insightsLoading || meritLoading ? <div className={styles.benchmarks}>{Array.from({ length: 2 }, (_, index) => <div className={`${styles.benchmark} ${styles.benchmarkSkeleton}`} key={index}><span /><span /><span /></div>)}</div> : <div className={styles.benchmarks}>
               <article className={styles.benchmark}>
                 <div className={styles.benchmarkHeading}><span className={playerUiStyles.dateBox}><CalendarCheck2 size={17} /></span><h3>{pickLocaleText(locale, "Assiduité", "Attendance")}</h3><Link className={styles.benchmarkLink} href="/player/golf?section=stats" aria-label={pickLocaleText(locale, "Voir les statistiques d’assiduité", "View attendance statistics")}><ArrowRight size={15} /></Link></div>
                 {attendanceInsight ? <>

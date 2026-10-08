@@ -1,3 +1,4 @@
+import { organizationGuardians } from "@/lib/server/organizationGuardians";
 import { activeClubMember, requireManagerClub } from "@/lib/server/managerAccess";
 import { managerMutationError } from "@/lib/server/managerMutationError";
 import { NextResponse, type NextRequest } from "next/server";
@@ -19,7 +20,7 @@ async function load(database: any, clubId: string, playerId: string) {
     database.from("club_members").select("id,player_consent_status").eq("club_id", clubId).eq("user_id", playerId).eq("role", "player").maybeSingle(),
     database.from("player_consents").select("*").eq("club_id", clubId).eq("player_user_id", playerId).maybeSingle(),
     database.from("player_consent_history").select("*").eq("club_id", clubId).eq("player_user_id", playerId).order("changed_at", { ascending: false }).limit(100),
-    database.from("player_guardians").select("guardian_user_id,is_primary,relation").eq("player_id", playerId),
+    organizationGuardians(database, clubId, [playerId]),
   ]);
   if (membership.error || !membership.data) throw new Error(membership.error?.message ?? "Junior introuvable");
   const consentTableErrors = [consent.error?.message, history.error?.message].filter(Boolean);
@@ -44,7 +45,7 @@ async function sendReminder(database: any, clubId: string, playerId: string, cal
   const guardian = dataset.guardians.find((row: any) => row.is_primary && row.email) ?? dataset.guardians.find((row: any) => row.email);
   if (!guardian?.email) throw new Error("Aucun parent lié ne possède d’adresse e-mail exploitable.");
   const [club, player, mailConfig] = await Promise.all([
-    database.from("clubs").select("name").eq("id", clubId).single(),
+    database.from("organizations").select("name").eq("id", clubId).single(),
     database.from("profiles").select("first_name,last_name").eq("id", playerId).single(),
     database.from("club_access_invitation_mail_configs").select("consent_subject,consent_body").eq("club_id", clubId).maybeSingle(),
   ]);

@@ -1,5 +1,6 @@
+import { organizationSubjectAccess } from "@/lib/server/organizationAccess";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { canCoachAccessEvent, resolveCoachAssignments } from "@/lib/coachAccess";
+import { canCoachAccessEvent, requireCoachEventPlayer, resolveCoachAssignments } from "@/lib/coachAccess";
 
 type CoachPlayerAccessResult = {
   sharedClubIds: string[];
@@ -13,16 +14,18 @@ type CoachPlayerAccessResult = {
 type CampCoachPlayerAccessResult = { allowed: boolean; clubId: string | null };
 
 export async function resolveCoachPlayerAccess(
-  supabaseAdmin: SupabaseClient, callerId: string, playerId: string
+  supabaseAdmin: SupabaseClient, callerId: string, playerId: string, organizationId?: string | null
 ): Promise<CoachPlayerAccessResult> {
   const [scope, playerRes] = await Promise.all([
-    resolveCoachAssignments(supabaseAdmin, callerId),
+    resolveCoachAssignments(supabaseAdmin, callerId,organizationId),
     supabaseAdmin.from("club_members").select("club_id")
       .eq("user_id", playerId).eq("role", "player").eq("is_active", true),
   ]);
   if (playerRes.error) throw new Error(playerRes.error.message);
   const playerClubIds = new Set((playerRes.data ?? []).map((row) => String(row.club_id)));
-  const sharedClubIds = scope.clubIds.filter((id) => playerClubIds.has(id));
+  const candidateIds=scope.clubIds.filter(id=>playerClubIds.has(id));
+  const allowed=await Promise.all(candidateIds.map(async id=>await organizationSubjectAccess(supabaseAdmin,callerId,playerId,id)?id:null));
+  const sharedClubIds=allowed.filter((id):id is string=>id!==null);
   const empty = { sharedClubIds, sensitiveClubIds: [], isManagerForSharedClub: false,
     canAccessSensitiveSections: false, sharedGroupIds: [], sharedEventIds: [] };
   if (!sharedClubIds.length) return empty;
@@ -84,6 +87,8 @@ export async function resolveCampCoachPlayerAccess(
   if (!event?.id || event?.event_type !== "camp" || !clubId) {
     return { allowed: false, clubId };
   }
+  try { await requireCoachEventPlayer(supabaseAdmin, normalizedEventId, playerId, callerId, clubId); }
+  catch { return { allowed: false, clubId }; }
   if (!(await canCoachAccessEvent(supabaseAdmin, callerId, normalizedEventId, event.group_id ?? null, clubId))) {
     return { allowed: false, clubId };
   }

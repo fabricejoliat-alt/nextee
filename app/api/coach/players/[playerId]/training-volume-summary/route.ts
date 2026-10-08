@@ -1,3 +1,5 @@
+import { personalOrOrganizationFilter } from "@/lib/personalHistoryScope";
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
@@ -75,6 +77,7 @@ async function loadPerformanceSummary(args: PerformanceSummaryArgs) {
     .from("training_sessions")
     .select("id,session_type,club_id,coach_user_id")
     .eq("user_id", playerId)
+    .or(personalOrOrganizationFilter("club_id", sharedClubIds))
     .order("start_at", { ascending: true })
     .limit(2000);
 
@@ -135,6 +138,7 @@ async function loadNonPerformanceSummary(args: NonPerformanceSummaryArgs) {
     .from("training_sessions")
     .select("id,session_type,club_id,total_minutes,club_event_id")
     .eq("user_id", playerId)
+    .or(personalOrOrganizationFilter("club_id", sharedClubIds))
     .in("session_type", ["private", "individual"])
     .is("club_event_id", null)
     .limit(2000);
@@ -160,6 +164,7 @@ async function loadNonPerformanceSummary(args: NonPerformanceSummaryArgs) {
     .from("club_events")
     .select("duration_minutes,starts_at,ends_at,club_id,status")
     .in("id", attendeeEventIds)
+    .or(personalOrOrganizationFilter("club_id", sharedClubIds))
     .neq("status", "cancelled")
     .lt("starts_at", new Date().toISOString())
     .limit(5000);
@@ -196,7 +201,7 @@ export async function GET(
     const prevTo = String(req.nextUrl.searchParams.get("prev_to") ?? "").trim() || null;
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId,requestedOrganizationId(req.url));
     if (access.sharedClubIds.length === 0) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -205,6 +210,7 @@ export async function GET(
       .from("club_members")
       .select("id")
       .eq("user_id", playerId)
+      .in("club_id",access.sharedClubIds)
       .eq("role", "player")
       .eq("is_active", true)
       .eq("is_performance", true)

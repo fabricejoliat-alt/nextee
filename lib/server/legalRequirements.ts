@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { eligibleLegalRole, findMissingLegalActions, type RequiredLegalDocument } from "@/lib/legalRequirements";
 
-export async function loadLegalGateStatus(db: SupabaseClient, actorId: string) {
+export async function loadLegalGateStatus(db: SupabaseClient, actorId: string, organizationId?: string | null, allOrganizations = false) {
   const control = await db.from("legal_enforcement_control").select("enabled").eq("singleton", true).maybeSingle();
   if (control.error || !control.data) throw new Error("Legal direct-access gate is unavailable");
   if (!control.data.enabled) return { enabled: false, missing: [] };
@@ -13,7 +13,8 @@ export async function loadLegalGateStatus(db: SupabaseClient, actorId: string) {
   ]);
   for (const result of [memberships, admin, docs]) if (result.error) throw new Error(result.error.message);
   const applicableDocs = (docs.data ?? []).filter((doc) =>
-    eligibleLegalRole(doc as RequiredLegalDocument, memberships.data ?? [], Boolean(admin.data)));
+    (allOrganizations || doc.scope === "platform" || doc.club_id === organizationId)
+    && eligibleLegalRole(doc as RequiredLegalDocument, memberships.data ?? [], Boolean(admin.data)));
   for (const doc of applicableDocs) {
     if (["terms", "privacy", "junior_notice"].includes(doc.kind)
       && (doc.applicability as { rule?: string } | null)?.rule !== "all_members") {
@@ -28,8 +29,7 @@ export async function loadLegalGateStatus(db: SupabaseClient, actorId: string) {
       .eq("beneficiary_id", actorId).in("document_id", documentIds),
   ]);
   if (versions.error || states.error) throw new Error(versions.error?.message ?? states.error?.message);
-  for (const doc of applicableDocs) {
-    if (!["terms", "privacy", "junior_notice"].includes(doc.kind)) continue;
+  await Promise.all(applicableDocs.filter(doc => ["terms", "privacy", "junior_notice"].includes(doc.kind)).map(async doc => {
     const latest = (versions.data ?? []).filter((version) => version.document_id === doc.id)
       .sort((a, b) => b.version_number - a.version_number)[0];
     if (!latest) {
@@ -39,7 +39,7 @@ export async function loadLegalGateStatus(db: SupabaseClient, actorId: string) {
     // Apply the same invariant before letting an old acceptance unlock business data.
     const matching = await db.rpc("legal_version_matches_document", { p_document: doc.id, p_version: latest.id });
     if (matching.error || matching.data !== true) throw new Error("Published legal metadata changed");
-  }
+  }));
   const missing = findMissingLegalActions({ memberships: memberships.data ?? [], isAdmin: Boolean(admin.data),
     documents: applicableDocs as Parameters<typeof findMissingLegalActions>[0]["documents"],
     versions: versions.data ?? [], states: states.data ?? [] });

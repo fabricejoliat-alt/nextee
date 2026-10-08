@@ -20,10 +20,10 @@ export async function GET(req: NextRequest) {
     const callerId = callerData.user.id;
 
     const { data: memberships, error: membershipsError } = await supabaseAdmin
-      .from("club_members")
-      .select("club_id")
+      .from("organization_members")
+      .select("club_id:organization_id")
       .eq("user_id", callerId)
-      .eq("role", "manager")
+      .in("role", ["owner", "admin", "manager"])
       .eq("is_active", true);
 
     if (membershipsError) return NextResponse.json({ error: membershipsError.message }, { status: 400 });
@@ -34,8 +34,8 @@ export async function GET(req: NextRequest) {
     if (clubIds.length === 0) return NextResponse.json({ clubs: [] });
 
     const { data: clubsRows, error: clubsError } = await supabaseAdmin
-      .from("clubs")
-      .select("id,name")
+      .from("organizations")
+      .select("id,name,org_type")
       .in("id", clubIds);
     if (clubsError) return NextResponse.json({ error: clubsError.message }, { status: 400 });
 
@@ -47,6 +47,7 @@ export async function GET(req: NextRequest) {
     const clubs = clubIds.map((id) => ({
       id,
       name: clubNameById.get(id) ?? "Club",
+      org_type: clubsRows?.find(row => row.id === id)?.org_type ?? "club",
     }));
 
     return NextResponse.json({ clubs });

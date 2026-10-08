@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { loadValidationDashboard, resolveValidationPlayerAccess } from "@/app/api/validations/_lib";
 
@@ -15,7 +16,7 @@ export async function DELETE(
 
     if (!attemptId) return NextResponse.json({ error: "Missing attemptId" }, { status: 400 });
 
-    const access = await resolveValidationPlayerAccess(accessToken, childId, "edit");
+    const access = await resolveValidationPlayerAccess(accessToken, childId, "edit", requestedOrganizationId(req.url));
 
     const attemptRes = await access.supabaseAdmin
       .from("player_validation_attempts")

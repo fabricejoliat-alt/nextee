@@ -215,15 +215,15 @@ export default function ManagerHomePage() {
     : [];
 
   const heroClubLine = stats.clubsCount > 0
-    ? `${count("club", stats.clubsCount)} • ${count("user", stats.activeUsersCount)}`
+    ? `${t(stats.clubsCount===1?"organization.managedOrganization":"organization.managedOrganizations").replace("{count}",String(stats.clubsCount))} • ${count("user", stats.activeUsersCount)}`
     : "—";
 
   const overviewCards = [
     { label: t("manager.home.activeUsers"), value: stats.activeUsersCount, detail: format("total", { count: stats.usersCount.toLocaleString(dateLocale) }), icon: UserCheck, href: "/manager/user-management/players" },
     { label: t("manager.nav.juniors"), value: stats.playersCount, detail: format("genderSummary", { girls: count("girl", stats.girlsCount), boys: count("boy", stats.boysCount) }), icon: Users, href: "/manager/user-management/players" },
     { label: t("manager.home.activeGroups"), value: stats.activeGroupsCount, detail: format("archived", { count: stats.archivedGroupsCount.toLocaleString(dateLocale) }), icon: Layers3, href: "/manager/groups" },
-    { label: t("manager.home.pastEvents"), value: stats.pastEventsCount, detail: t("manager.home.clubHistory"), icon: CalendarDays, href: "/manager/calendar" },
-    { label: t("manager.home.upcomingEvents"), value: stats.plannedEventsCount, detail: t("manager.home.clubCalendar"), icon: CalendarDays, href: "/manager/calendar" },
+    { label: t("manager.home.pastEvents"), value: stats.pastEventsCount, detail: t("organization.organizationHistory"), icon: CalendarDays, href: "/manager/calendar" },
+    { label: t("manager.home.upcomingEvents"), value: stats.plannedEventsCount, detail: t("organization.organizationCalendar"), icon: CalendarDays, href: "/manager/calendar" },
     { label: t("manager.nav.notifications"), value: stats.unreadNotificationsCount, detail: t("manager.home.sentNotifications"), icon: Bell, href: "/manager/notifications" },
   ];
 

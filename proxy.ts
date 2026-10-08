@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
-import { playerConsentAllowsAccess } from "@/lib/playerConsent";
-import { selectPrimaryApplicationRole } from "@/lib/playerAccessPolicy";
+import { loadOrganizationAccessSummary } from "@/lib/server/organizationSummary";
+import { organizationGateBlocks, requestedOrganizationId } from "@/lib/organizationPolicy";
 import { loadLegalGateStatus } from "@/lib/server/legalRequirements";
-import { pendingEditableParentChildren } from "@/lib/server/parentConsentRequirements";
 import { legalRouteKind } from "@/lib/legalRouteCoverage";
+import { readOnceFetch } from "@/lib/readOnceFetch";
 
 export async function proxy(req: NextRequest) {
   const res = NextResponse.next({
@@ -33,10 +33,23 @@ export async function proxy(req: NextRequest) {
     }
   );
 
-  // ✅ refresh / récupère l'utilisateur si session encore valable
-  const { data } = await supabase.auth.getUser();
+  const bearerToken = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const database = serviceRoleKey && supabaseUrl
+    ? createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false }, global: { fetch: readOnceFetch } }) : null;
+  // Verify the credential actually used by this request once. Cookie-based page
+  // requests still refresh their session; bearer API calls remain server-verified.
+  const { data } = bearerToken && database
+    ? await database.auth.getUser(bearerToken)
+    : await supabase.auth.getUser();
 
   const path = req.nextUrl.pathname;
+  const legalRoute = legalRouteKind(path);
+  // Independent reads overlap; neither gate can release business data alone.
+  const legalCheck = legalRoute && database && data.user
+    ? loadLegalGateStatus(database, data.user.id, requestedOrganizationId(req.url))
+      .then(value => ({ value, error: null }), error => ({ value: null, error })) : null;
   const isPlayerPage = path === "/player" || path.startsWith("/player/");
   const isConsentPage = path === "/player/consent-required";
   const isConsentEndpoint = path === "/api/player/consent";
@@ -47,89 +60,41 @@ export async function proxy(req: NextRequest) {
     path === "/api/profile/custom-fields";
 
   if (requiresPlayerConsent) {
-    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    if (!serviceRoleKey || !supabaseUrl) {
+    if (!database) {
       return NextResponse.json(
         { error: "Server misconfigured" },
         { status: 500, headers: { "Cache-Control": "no-store" } }
       );
     }
 
-    const bearerToken = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
-    const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false },
-    });
-
-    let userId = data.user?.id ?? "";
-    if (bearerToken) {
-      const { data: bearerData, error: bearerError } = await supabaseAdmin.auth.getUser(bearerToken);
-      if (bearerError || !bearerData.user) {
+    const supabaseAdmin = database;
+    const userId = data.user?.id ?? "";
+    if (bearerToken && !userId) {
         return NextResponse.json(
           { error: "Invalid token" },
           { status: 401, headers: { "Cache-Control": "no-store" } }
         );
-      }
-      userId = bearerData.user.id;
     }
 
     if (userId) {
-      const membershipsRes = await supabaseAdmin
-        .from("club_members")
-        .select("role,player_consent_status")
-        .eq("user_id", userId)
-        .eq("is_active", true);
-
-      if (membershipsRes.error) {
-        return NextResponse.json(
-          { error: "Unable to verify player consent" },
-          { status: 503, headers: { "Cache-Control": "no-store" } }
-        );
-      }
-
-      const memberships = membershipsRes.data ?? [];
-      const playerMemberships = memberships.filter((row) => row.role === "player");
-      if (
-        playerMemberships.length > 0 &&
-        !playerConsentAllowsAccess(playerMemberships.map((row) => row.player_consent_status))
-      ) {
-        if (isPlayerPage) {
-          const url = req.nextUrl.clone();
-          url.pathname = "/legal/my";
-          url.search = "";
-          const redirect = NextResponse.redirect(url);
-          redirect.headers.set("Cache-Control", "private, no-store");
-          return redirect;
-        }
-        return NextResponse.json(
-          { error: "Player consent required", code: "PLAYER_CONSENT_REQUIRED" },
-          { status: 403, headers: { "Cache-Control": "no-store" } }
-        );
-      }
-
-      if (selectPrimaryApplicationRole(memberships.map((row) => row.role)) === "parent") {
-        const guardianLinks = await supabaseAdmin.from("player_guardians")
-          .select("player_id,can_view,can_edit").eq("guardian_user_id", userId);
-        if (guardianLinks.error) return NextResponse.json({ error: "Unable to verify parent consent" },
-          { status: 503, headers: { "Cache-Control": "no-store" } });
-        try {
-          const pendingChildren = await pendingEditableParentChildren(supabaseAdmin,
-            (guardianLinks.data ?? []).map((link) => ({ playerId: String(link.player_id ?? ""), canView: link.can_view,
-              canEdit: link.can_edit, isPrimary: false, createdAt: null })), userId);
-          if (pendingChildren.length) {
+      try {
+        const memberships = await supabaseAdmin.from("organization_members").select("role")
+          .eq("user_id", userId).eq("is_active", true);
+        if (memberships.error) throw memberships.error;
+        if ((memberships.data ?? []).some(row => ["player", "parent"].includes(row.role))) {
+          const organizations = await loadOrganizationAccessSummary(supabaseAdmin, userId);
+          if (organizationGateBlocks(organizations, requestedOrganizationId(req.url))) {
             if (isPlayerPage) {
-              const url = req.nextUrl.clone(); url.pathname = "/legal/my"; url.search = "";
-              const redirect = NextResponse.redirect(url);
-              redirect.headers.set("Cache-Control", "private, no-store");
-              return redirect;
+              const destination = req.nextUrl.clone(); destination.pathname = "/legal/my"; destination.search = "";
+              return NextResponse.redirect(destination);
             }
-            return NextResponse.json({ error: "Parent authorization required", code: "PARENT_CHILD_CONSENT_REQUIRED" },
+            return NextResponse.json({ error: "Organization authorization required", code: "PLAYER_CONSENT_REQUIRED" },
               { status: 403, headers: { "Cache-Control": "no-store" } });
           }
-        } catch {
-          return NextResponse.json({ error: "Unable to verify parent consent" },
-            { status: 503, headers: { "Cache-Control": "no-store" } });
         }
+      } catch {
+        return NextResponse.json({ error: "Unable to verify organization access" },
+          { status: 503, headers: { "Cache-Control": "no-store" } });
       }
     }
   }
@@ -150,30 +115,21 @@ export async function proxy(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  const legalRoute = legalRouteKind(path);
   if (legalRoute) {
     res.headers.set("Cache-Control", "private, no-store");
-    const bearerToken = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim() ?? "";
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!url || !key) return NextResponse.json({ error: "Legal gate unavailable" },
+    if (!database) return NextResponse.json({ error: "Legal gate unavailable" },
       { status: 503, headers: { "Cache-Control": "no-store" } });
-    const database = createClient(url, key, { auth: { persistSession: false } });
     try {
-      const control = await database.from("legal_enforcement_control")
-        .select("enabled").eq("singleton", true).maybeSingle();
-      if (control.error || !control.data) throw new Error("Legal control unavailable");
-      if (control.data.enabled) {
-        let actorId = data.user?.id ?? "";
-        if (bearerToken) {
-          const actor = await database.auth.getUser(bearerToken);
-          if (actor.error || !actor.data.user) return NextResponse.json({ error: "Invalid token" },
-            { status: 401, headers: { "Cache-Control": "no-store" } });
-          actorId = actor.data.user.id;
-        }
-        if (!actorId) return NextResponse.json({ error: "Unauthorized" },
+      if (!legalCheck) {
+        const control = await database.from("legal_enforcement_control")
+          .select("enabled").eq("singleton", true).maybeSingle();
+        if (control.error || !control.data) throw new Error("Legal control unavailable");
+        if (control.data.enabled) return NextResponse.json({ error: "Unauthorized" },
           { status: 401, headers: { "Cache-Control": "no-store" } });
-        const { missing } = await loadLegalGateStatus(database, actorId);
+      } else {
+        const result = await legalCheck;
+        if (result.error) throw result.error;
+        const { missing } = result.value!;
         if (missing.length) {
           if (legalRoute === "page") {
             const destination = req.nextUrl.clone(); destination.pathname = "/legal/my"; destination.search = "";

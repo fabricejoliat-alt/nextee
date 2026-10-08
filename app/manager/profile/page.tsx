@@ -225,7 +225,7 @@ export default function ManagerProfilePage() {
         .filter(Boolean);
 
       if (cids.length > 0) {
-        const clubsRes = await supabase.from("clubs").select("id,name").in("id", cids);
+        const clubsRes = await supabase.from("organizations").select("id,name").in("id", cids);
         if (!clubsRes.error) setClubs((clubsRes.data ?? []) as Club[]);
         else setClubs(cids.map((id) => ({ id, name: null })));
       } else {

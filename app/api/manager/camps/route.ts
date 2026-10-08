@@ -104,7 +104,7 @@ export async function GET(req: NextRequest) {
             .select("camp_id,player_id,registration_status")
             .in("camp_id", campIds)
         : ({ data: [], error: null } as const),
-      clubIds.length ? supabaseAdmin.from("clubs").select("id,name").in("id", clubIds) : ({ data: [], error: null } as const),
+      clubIds.length ? supabaseAdmin.from("organizations").select("id,name").in("id", clubIds) : ({ data: [], error: null } as const),
       headCoachIds.length
         ? supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", headCoachIds)
         : ({ data: [], error: null } as const),

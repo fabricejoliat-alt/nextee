@@ -1,8 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireCaller } from "@/app/api/messages/_lib";
-import { canCoachAccessEvent, requireCoachEventPlayer } from "@/lib/coachAccess";
+import { authorizedCoachPlayers, canCoachAccessEvent, requireCoachEventPlayer } from "@/lib/coachAccess";
 import { signPlayerDocumentRows } from "@/lib/playerDocumentStorage";
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -41,9 +42,11 @@ export async function GET(
     const event = eventRes.data as any;
     const groupId = String(event.group_id ?? "").trim();
     const clubId = String(event.club_id ?? "").trim();
+    const selectedOrganization = requestedOrganizationId(req.url);
+    if (selectedOrganization && selectedOrganization !== clubId) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const allowed = await canCoachAccessEvent(supabaseAdmin, callerId, eventId, groupId, clubId);
     if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    await requireCoachEventPlayer(supabaseAdmin, eventId, playerId);
+    await requireCoachEventPlayer(supabaseAdmin, eventId, playerId, callerId, clubId);
 
     const [playerRes, eventStructureRes, playerStructureRes, sessionRes, attendeeRes, feedbackRowsRes, attendanceRes, playerFeedbackRes] = await Promise.all([
       supabaseAdmin
@@ -151,7 +154,9 @@ export async function GET(
       sessionItems = sessionItemsRes.data ?? [];
     }
 
-    const attendeeIds = uniq((attendeeRes.data ?? []).map((row: any) => String(row.player_id ?? "").trim()));
+    const candidateAttendeeIds = uniq((attendeeRes.data ?? []).map((row: any) => String(row.player_id ?? "").trim()));
+    const authorized = await authorizedCoachPlayers(supabaseAdmin, callerId, clubId, candidateAttendeeIds, eventId);
+    const attendeeIds = candidateAttendeeIds.filter(id => authorized.has(id));
     let orderedPlayerIds = [playerId];
     if (attendeeIds.length > 0) {
       const attendeeProfilesRes = await supabaseAdmin
@@ -234,7 +239,7 @@ export async function GET(
     });
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "Server error";
-    return NextResponse.json({ error: message }, { status: message === "unknown_attendee" ? 404 : 500 });
+    return NextResponse.json({ error: message }, { status: message === "forbidden" ? 403 : message === "unknown_attendee" ? 404 : 500 });
   }
 }
 

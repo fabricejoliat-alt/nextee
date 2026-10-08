@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
@@ -15,7 +16,7 @@ export async function GET(
     if (!playerId) return NextResponse.json({ error: "Missing playerId" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId,requestedOrganizationId(req.url));
     if (access.sharedClubIds.length === 0) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }

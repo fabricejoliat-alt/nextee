@@ -24,7 +24,7 @@ export default function ClubsPage() {
       }
 
       const { data, error } = await supabase
-        .from("clubs")
+        .from("organizations")
         .select("id,name,slug,created_at")
         .order("created_at", { ascending: false });
 

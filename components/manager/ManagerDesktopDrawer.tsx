@@ -37,6 +37,7 @@ const ROUTES = {
   rules: "/manager/rules",
   etiquette: "/manager/etiquette",
   profileEdit: "/manager/profile",
+  partners: "/manager/partners",
 } as const;
 
 type Props = {
@@ -149,6 +150,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
               { label: t("manager.nav.managers"), icon: ShieldCheck, href: ROUTES.userManagementManagers },
               { label: t("manager.fields.title"), icon: SlidersHorizontal, href: ROUTES.userManagementCustomFields },
               { label: t("manager.nav.familyAccess"), icon: KeyRound, href: ROUTES.access },
+              { label: t("organization.partners"), icon: Network, href: ROUTES.partners },
             ],
           },
           {

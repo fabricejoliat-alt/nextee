@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import PlayerHeader from "@/components/player/PlayerHeader";
 import PlayerMobileNav from "@/components/player/PlayerMobileNav";
@@ -8,6 +8,7 @@ import PlayerConnectivityStatus from "@/components/player/PlayerConnectivityStat
 
 export default function PlayerLayoutShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
+  const params=useSearchParams();
   const isPlayerHome = pathname === "/player";
 
   return (
@@ -15,7 +16,7 @@ export default function PlayerLayoutShell({ children }: { children: ReactNode })
       <PlayerHeader />
       <PlayerConnectivityStatus />
       <div className={`player-scroll-area${isPlayerHome ? " player-scroll-area--home" : ""}`} data-scroll-container>
-        <main className="app-shell player-shell">{children}</main>
+        <main className="app-shell player-shell"><div key={`${pathname}:${params.get("child_id")??"self"}`}>{children}</div></main>
       </div>
       <PlayerMobileNav />
 

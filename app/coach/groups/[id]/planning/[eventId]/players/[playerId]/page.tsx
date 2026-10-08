@@ -1,5 +1,7 @@
 "use client";
 
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
@@ -271,7 +273,7 @@ export default function CoachEventPlayerDetailPage() {
       setLinkedDocuments((json?.linkedDocuments ?? []) as LinkedPlayerEventDocument[]);
 
       if (ev?.club_id) {
-        const cRes = await supabase.from("clubs").select("id,name").eq("id", ev.club_id).maybeSingle();
+        const cRes = await supabase.from("organizations").select("id,name").eq("id", ev.club_id).maybeSingle();
         setClubName(!cRes.error && cRes.data ? (cRes.data as ClubRow).name ?? "Club" : "Club");
       } else {
         setClubName("");

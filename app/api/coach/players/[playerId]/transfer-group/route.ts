@@ -1,3 +1,5 @@
+import { organizationSubjectAccess } from "@/lib/server/organizationAccess";
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { isFutureTransferAction } from "@/lib/coachPermissions";
@@ -13,6 +15,8 @@ async function context(req: NextRequest, playerId: string, sourceGroupId: string
   if (caller.error || !caller.data.user) return { error: "Invalid token", status: 401 } as const;
   const source = await db.from("coach_groups").select("id,club_id,name").eq("id", sourceGroupId).maybeSingle();
   if (source.error || !source.data) return { error: "Groupe source introuvable.", status: 404 } as const;
+  const selected=requestedOrganizationId(req.url);
+  if((selected&&selected!==source.data.club_id)||!(await organizationSubjectAccess(db,caller.data.user.id,playerId,source.data.club_id,true)))return {error:"Forbidden",status:403} as const;
   const membership = await db.from("club_members")
     .select("id,can_transfer_players_between_club_groups")
     .eq("club_id", source.data.club_id).eq("user_id", caller.data.user.id).eq("role", "coach").eq("is_active", true).maybeSingle();

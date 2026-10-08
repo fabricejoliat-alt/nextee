@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
+import { organizationSubjectAccess } from "@/lib/server/organizationAccess";
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ deliveryId: string }> }) {
   try {
@@ -16,9 +17,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ deliveryId:
     if (links.error) throw new Error(links.error.message);
     const allowed = new Set((links.data ?? []).filter((link) => link.can_view !== false).map((link) => String(link.player_id)));
     if (playerIds.some((id) => !allowed.has(id))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const scopeChecks = await Promise.all(playerIds.map((id: string) => organizationSubjectAccess(db, callerId, id, delivery.data!.club_id)));
+    if (scopeChecks.some(ok => !ok)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const reports = await db.from("player_periodic_reports").select("id,club_id,player_user_id,period_label,published_content,personalized_comment").in("id", delivery.data.report_ids ?? []);
     if (reports.error) throw new Error(reports.error.message);
-    const club = await db.from("clubs").select("name").eq("id", delivery.data.club_id).maybeSingle();
+    if ((reports.data ?? []).some(report => report.club_id !== delivery.data!.club_id || !allowed.has(report.player_user_id)))
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const club = await db.from("organizations").select("name").eq("id", delivery.data.club_id).maybeSingle();
     return NextResponse.json({ reports: (reports.data ?? []).map((report) => ({ ...report, club_name: club.data?.name ?? "Club" })) });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });

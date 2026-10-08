@@ -1,3 +1,5 @@
+import { authorizedCoachPlayers } from "@/lib/coachAccess";
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveCoachAssignments } from "@/lib/coachAccess";
@@ -48,7 +50,7 @@ export async function GET(req: NextRequest) {
       .maybeSingle();
     const me = !meRes.error && meRes.data ? meRes.data : null;
 
-    const scope = await resolveCoachAssignments(supabaseAdmin, coachId);
+    const scope = await resolveCoachAssignments(supabaseAdmin, coachId, requestedOrganizationId(req.url));
     const groupIds = scope.groups.map((group) => group.id);
     const eventIdsFromAssign = scope.eventIds;
 
@@ -146,7 +148,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (clubIds.size > 0) {
-      const clubsRes = await supabaseAdmin.from("clubs").select("id,name").in("id", Array.from(clubIds));
+      const clubsRes = await supabaseAdmin.from("organizations").select("id,name").in("id", Array.from(clubIds));
       if (clubsRes.error) return NextResponse.json({ error: clubsRes.error.message }, { status: 400 });
       organizationNames = Array.from(
         new Set((clubsRes.data ?? []).map((c: { name: string | null }) => String(c.name ?? "").trim()).filter(Boolean))
@@ -190,10 +192,12 @@ export async function GET(req: NextRequest) {
       ? await supabaseAdmin.from("coach_group_players").select("player_user_id").in("group_id", groupIds)
       : { data: [], error: null };
     if (groupPlayersRes.error) return NextResponse.json({ error: groupPlayersRes.error.message }, { status: 400 });
-    const followedPlayerIds = new Set(
+    const candidatePlayers = new Set(
       (groupPlayersRes.data ?? []).map((row: { player_user_id: string | null }) => String(row.player_user_id ?? "")).filter(Boolean)
     );
 
+    const allowedByOrg=await Promise.all(scope.clubIds.map(id=>authorizedCoachPlayers(supabaseAdmin,coachId,id,[...candidatePlayers])));
+    const followedPlayerIds=new Set(allowedByOrg.flatMap(ids=>[...ids]));
     if (pastEvents.length === 0) {
       return NextResponse.json({
         me,

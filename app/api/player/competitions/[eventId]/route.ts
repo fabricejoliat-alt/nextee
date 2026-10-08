@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   bearerTokenFromRequest,
@@ -19,6 +20,7 @@ export async function GET(
       accessToken: bearerTokenFromRequest(req),
       requestedPlayerId: childId,
       mode: "view",
+      requestedOrganizationId: requestedOrganizationId(req.url),
     });
     const { supabaseAdmin } = access;
 
@@ -35,6 +37,7 @@ export async function GET(
       .from("club_events")
       .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status,competition_level,competition_category,external_registration_url,competition_note")
       .eq("id", eventId)
+      .in("club_id",access.organizationIds)
       .maybeSingle();
     if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
     if (!eventRes.data) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -44,7 +47,7 @@ export async function GET(
 
     const [clubRes, groupRes, reminderRes, membershipsRes] = await Promise.all([
       eventRes.data.club_id
-        ? supabaseAdmin.from("clubs").select("name").eq("id", eventRes.data.club_id).maybeSingle()
+        ? supabaseAdmin.from("organizations").select("name").eq("id", eventRes.data.club_id).maybeSingle()
         : Promise.resolve({ data: null, error: null }),
       eventRes.data.group_id
         ? supabaseAdmin.from("coach_groups").select("name").eq("id", eventRes.data.group_id).maybeSingle()

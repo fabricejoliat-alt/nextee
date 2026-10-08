@@ -1,5 +1,7 @@
 "use client";
 
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
 /* eslint-disable @next/next/no-img-element -- Club and profile images are dynamic Storage URLs. */
 
 import { useCallback, useEffect, useMemo, useState } from "react";

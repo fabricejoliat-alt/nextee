@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { ensureExerciseUnlockedForPlayer, loadValidationDashboard, resolveValidationPlayerAccess } from "@/app/api/validations/_lib";
 
@@ -27,7 +28,7 @@ export async function POST(req: NextRequest) {
       attemptedAtIso = parsed.toISOString();
     }
 
-    const access = await resolveValidationPlayerAccess(accessToken, childId, "edit");
+    const access = await resolveValidationPlayerAccess(accessToken, childId, "edit", requestedOrganizationId(req.url));
     await ensureExerciseUnlockedForPlayer(access.supabaseAdmin, access.effectivePlayerId, exerciseId);
 
     const insertRes = await access.supabaseAdmin

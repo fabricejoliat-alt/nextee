@@ -174,7 +174,7 @@ export default function ManagerEventPlayerDetailPage() {
         const info = await loadManagerParticipant<{ event: EventRow; player: ProfileRow; attendanceStatus: AttendeeRow["status"]; playerFeedback: PlayerFeedbackRow | null; feedback: CoachFeedbackRow | null; session: TrainingSessionRow | null; sessionItems: TrainingItemRow[] }>(eventId, playerId, groupId);
         if (current !== version.current) return;
         const [club, group] = await Promise.all([
-          supabase.from("clubs").select("id,name").eq("id", info.event.club_id).maybeSingle(),
+          supabase.from("organizations").select("id,name").eq("id", info.event.club_id).maybeSingle(),
           supabase.from("coach_groups").select("id,name").eq("id", groupId).maybeSingle(),
         ]);
         if (current !== version.current) return;

@@ -1,3 +1,5 @@
+import { readablePlayerHistoryIds } from "@/lib/server/personalHistoryAccess";
+import { personalOrOrganizationFilter } from "@/lib/personalHistoryScope";
 import { NextResponse, type NextRequest } from "next/server";
 import { calculateAttendance, calculateProratedTrainingObjective, calculateRegularity, handicapProgression, uniqueTrainingRows } from "@/lib/playerStatistics";
 import type { ManagerProgressSignal } from "@/lib/managerPerformancePresentation";
@@ -25,7 +27,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
     const { range, previous, season, seasons } = await resolveRange(req, auth.db, clubId);
     const earliest = previous.from;
-    const [members, groups, seasonRecords, events, settingsResult, targets] = await Promise.all([
+    const [candidateMembers, groups, seasonRecords, events, settingsResult, targets] = await Promise.all([
       queryRows<MemberRow>(auth.db.from("club_members").select("id,user_id,is_active").eq("club_id", clubId).eq("role", "player")),
       queryRows<GroupRow>(auth.db.from("coach_groups").select("id,name").eq("club_id", clubId).eq("club_season_id", season?.id ?? "00000000-0000-0000-0000-000000000000").eq("is_active", true)),
       season ? queryRows<SeasonRecord>(auth.db.from("club_player_season_records").select("club_member_id,group_id,registration_status").eq("club_season_id", season.id)) : Promise.resolve([]),
@@ -34,11 +36,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       queryRows<TargetRow>(auth.db.from("training_volume_targets").select("ftem_code,level_label,handicap_min,handicap_max,minutes_offseason,minutes_inseason").eq("organization_id", clubId).order("sort_order")),
     ]);
     if (settingsResult.error) throw new Error(settingsResult.error.message);
+    const readableIds = new Set(await readablePlayerHistoryIds(auth.db, auth.callerId, candidateMembers.map(member => member.user_id), clubId));
+    const members = candidateMembers.filter(member => readableIds.has(member.user_id));
     const memberIds = members.map((member) => member.user_id); const profiles = memberIds.length ? await queryRows<ProfileRow>(auth.db.from("profiles").select("id,first_name,last_name,birth_date,handicap,avatar_url").in("id", memberIds)) : []; const profileMap = new Map(profiles.map((profile) => [profile.id, profile])); for (const member of members) member.profiles = profileMap.get(member.user_id) ?? null; const eventIds = events.map((event) => event.id);
     const [attendees, trainings, rounds, handicaps, feedback] = await Promise.all([
       eventIds.length && memberIds.length ? queryRows<AttendeeRow>(auth.db.from("club_event_attendees").select("event_id,player_id,status").in("event_id", eventIds).in("player_id", memberIds).limit(30000)) : Promise.resolve([]),
-      memberIds.length ? queryRows<TrainingRow>(auth.db.from("training_sessions").select("id,user_id,start_at,total_minutes,session_type,club_event_id,club_id").in("user_id", memberIds).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(30000)) : Promise.resolve([]),
-      memberIds.length ? queryRows<RoundRow>(auth.db.from("golf_rounds").select("id,user_id,start_at,round_type,total_score").in("user_id", memberIds).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(10000)) : Promise.resolve([]),
+      memberIds.length ? queryRows<TrainingRow>(auth.db.from("training_sessions").select("id,user_id,start_at,total_minutes,session_type,club_event_id,club_id").or(personalOrOrganizationFilter("club_id", [clubId])).in("user_id", memberIds).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(30000)) : Promise.resolve([]),
+      memberIds.length ? queryRows<RoundRow>(auth.db.from("golf_rounds").select("id,user_id,start_at,round_type,total_score").or(personalOrOrganizationFilter("club_id", [clubId])).in("user_id", memberIds).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(10000)) : Promise.resolve([]),
       memberIds.length ? queryRows<HandicapRow>(auth.db.from("player_handicap_history").select("user_id,effective_date,value").in("user_id", memberIds).lte("effective_date", range.to).limit(20000)) : Promise.resolve([]),
       eventIds.length && memberIds.length ? queryRows<FeedbackRow>(auth.db.from("club_event_coach_feedback").select("event_id,player_id,coach_id").in("event_id", eventIds).in("player_id", memberIds).limit(30000)) : Promise.resolve([]),
     ]);

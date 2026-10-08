@@ -1,0 +1,15 @@
+{
+  "target": "wizbeuuvjibmmuxyynly",
+  "applied_at": "2026-10-07T18:35:00.101Z",
+  "source_sha256": "6ea20b93beed093931522c03c4f910ce3789861bd7dad79b6af7a1fef8101d14",
+  "backup": "backups/organizations/test-before-personal-remodel-1791398089229.enc",
+  "migrations": 17,
+  "created_reference_catalogs": [
+    "legal_club_templates",
+    "training_volume_default_targets"
+  ],
+  "history_preservation": "passed",
+  "catalog_legal_preservation": "passed",
+  "postflight": "passed",
+  "storage_changes": false
+}

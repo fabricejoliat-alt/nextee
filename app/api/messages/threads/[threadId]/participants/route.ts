@@ -56,8 +56,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ threadId: s
         .in("user_id", userIds),
       threadRes.data.player_id
         ? supabaseAdmin
-            .from("player_guardians")
-            .select("guardian_user_id,can_view")
+            .from("player_guardian_scopes").select("guardian_user_id,can_view")
+            .eq("organization_id", threadRes.data.organization_id).eq("status", "active").eq("can_view", true)
+
             .eq("player_id", String(threadRes.data.player_id))
         : Promise.resolve({ data: [], error: null } as any),
     ]);

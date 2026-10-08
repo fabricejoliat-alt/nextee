@@ -1,0 +1,22 @@
+✔ canonique: aucune académie dans clubs, projections et FTEM cohérents (1474.536041ms)
+✔ recherche minimale: relation active, acteur et capacités contrôlés (4.844417ms)
+✔ demande: ni autorisation implicite, ni duplication, validation source obligatoire (7.133916ms)
+✔ Admin ne se substitue pas au parent; preuve avec organisation_name rendue (6.892375ms)
+✔ RLS: Manager étranger, parent hors périmètre et écriture directe refusés (7.52925ms)
+✔ retrait Centre: historique immuable et Sion toujours accessible (5.997083ms)
+✔ conflit et nouvelle version: nouvelle décision obligatoire, historique conservé (18.386833ms)
+✔ propriétaire sportif obligatoire et notifications limitées aux droits du parent (30.292291ms)
+✔ ancien RPC golf: droit d’édition par organisation et cascade contrôlée (21.544459ms)
+✔ club externe: revendication sans accès, rapprochement humain sans nouveaux comptes (6.908917ms)
+✔ refus parental Centre: activation interdite, affiliation Sion indépendante (5.668791ms)
+✔ suppression organisation: refus avec histoire, comptes et autres affiliations préservés (4.712458ms)
+✔ rollback refuse après une utilisation; replay et rollback vierge restaurent les fonctions (1154.900208ms)
+✔ preuves anciennes: migration et retour arrière conservent versions, présentations et décisions (1117.236541ms)
+ℹ tests 14
+ℹ suites 0
+ℹ pass 14
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3980.284042

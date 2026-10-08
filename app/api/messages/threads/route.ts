@@ -38,8 +38,9 @@ async function ensureDefaultPlayerStaffThreads(
       .eq("is_active", true)
       .in("role", ["manager", "coach"]),
     supabaseAdmin
-      .from("player_guardians")
-      .select("guardian_user_id")
+      .from("player_guardian_scopes").select("guardian_user_id")
+            .eq("organization_id", organizationId).eq("status", "active").eq("can_view", true)
+
       .eq("player_id", callerId)
       .or("can_view.is.null,can_view.eq.true"),
   ]);
@@ -148,10 +149,9 @@ export async function GET(req: NextRequest) {
       if (["manager", "coach"].includes(role)) staffOrgIds.add(oid);
       if (role === "player") playerOrgIds.add(oid);
     }
-    if (!memberOrgIds.has(organizationId)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!(await isOrgMemberActive(supabaseAdmin, organizationId, callerId)) || !memberOrgIds.has(organizationId)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const scopedOrgIds = playerOrgIds.size > 0 ? Array.from(playerOrgIds) : [organizationId];
-    if (!scopedOrgIds.includes(organizationId)) scopedOrgIds.push(organizationId);
+    const scopedOrgIds = [organizationId];
 
     const [threadsRes, participantsRes] = await Promise.all([
       supabaseAdmin
@@ -339,8 +339,9 @@ export async function GET(req: NextRequest) {
         : Promise.resolve({ data: [], error: null } as any),
       playerIds.length
         ? supabaseAdmin
-            .from("player_guardians")
-            .select("player_id,guardian_user_id,can_view")
+            .from("player_guardian_scopes").select("player_id,guardian_user_id,can_view")
+            .eq("organization_id", organizationId).eq("status", "active").eq("can_view", true)
+
             .in("player_id", playerIds)
         : Promise.resolve({ data: [], error: null } as any),
     ]);
@@ -710,8 +711,9 @@ export async function POST(req: NextRequest) {
           const playerIds = (gp.data ?? []).map((x: any) => String(x.player_user_id)).filter(Boolean);
           if (!playerIds.length) return { data: [] as any[] };
           return supabaseAdmin
-            .from("player_guardians")
-            .select("guardian_user_id")
+            .from("player_guardian_scopes").select("guardian_user_id")
+            .eq("organization_id", organizationId).eq("status", "active").eq("can_view", true)
+
             .in("player_id", playerIds)
             .or("can_view.is.null,can_view.eq.true");
         })(),
@@ -725,8 +727,9 @@ export async function POST(req: NextRequest) {
       setParticipant(playerId, true);
       const [guardiansRes, managersRes] = await Promise.all([
         supabaseAdmin
-          .from("player_guardians")
-          .select("guardian_user_id")
+          .from("player_guardian_scopes").select("guardian_user_id")
+            .eq("organization_id", organizationId).eq("status", "active").eq("can_view", true)
+
           .eq("player_id", playerId)
           .or("can_view.is.null,can_view.eq.true"),
         supabaseAdmin

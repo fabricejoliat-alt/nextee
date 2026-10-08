@@ -1,4 +1,6 @@
 "use client";
+
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
 /* eslint-disable @next/next/no-img-element */
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
@@ -140,7 +142,7 @@ export default function CoachGroupEditPage() {
       if (auth.error || !uid) throw new Error("coach.error.session");
       const [linkRes, gRes] = await Promise.all([
         supabase.from("coach_group_coaches").select("id").eq("group_id", groupId).eq("coach_user_id", uid).maybeSingle(),
-        supabase.from("coach_groups").select("id,created_at,club_id,name,is_active,head_coach_user_id,clubs:clubs ( id, name )").eq("id", groupId).maybeSingle(),
+        supabase.from("coach_groups").select("id,created_at,club_id,name,is_active,head_coach_user_id,clubs:organizations!coach_groups_club_id_fkey ( id, name )").eq("id", groupId).maybeSingle(),
       ]);
       if (linkRes.error || gRes.error) throw new Error("coach.error.load");
       const g = gRes.data as unknown as CoachGroup | null;

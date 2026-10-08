@@ -3,6 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { inFlightRead } from "@/lib/inFlightRead";
+import { organizationGateBlocks, requestedOrganizationId, type OrganizationAccessSummary } from "@/lib/organizationPolicy";
+import { startInitialPlayerHomeRead } from "@/lib/effectivePlayer";
+import type { InitialPlayerHomeRead } from "@/lib/playerHomeBootstrap";
+import { PlayerHomeBootstrapContext } from "@/components/player/PlayerHomeBootstrapContext";
 
 type Allowed = "admin" | "player" | "coach" | "manager" | "parent";
 type GuardStatus = "checking" | "allowed" | "redirecting" | "error";
@@ -33,23 +38,32 @@ function needsLegalCheck(path: string) {
     && path !== "/player/consent-required" && path !== "/player/help";
 }
 
+function currentLegalOrganization() {
+  return /^\/player(\/|$)/.test(window.location.pathname) ? null : requestedOrganizationId(window.location.href);
+}
+
 async function readLegalStatus(token: string) {
-  const response = await fetch("/api/legal/status", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
-  if (!response.ok) throw new Error("Vérification des documents indisponible. Réessayez en ligne.");
-  const result = await response.json();
-  if (typeof result?.enforcement_enabled !== "boolean" || !Array.isArray(result.missing))
-    throw new Error("Réponse de validation invalide.");
-  return result as { enforcement_enabled: boolean; missing: unknown[] };
+  const organizationId = currentLegalOrganization();
+  return inFlightRead(`legal-status:${token}:${organizationId ?? ""}`, async () => {
+    const response = await fetch(`/api/legal/status${organizationId ? `?organization_id=${encodeURIComponent(organizationId)}` : ""}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+    if (!response.ok) throw new Error("Vérification des documents indisponible. Réessayez en ligne.");
+    const result = await response.json();
+    if (typeof result?.enforcement_enabled !== "boolean" || !Array.isArray(result.missing))
+      throw new Error("Réponse de validation invalide.");
+    return result as { enforcement_enabled: boolean; missing: unknown[]; organizations: OrganizationAccessSummary[] };
+  });
 }
 
 export default function RoleGuard({
   allow,
   children,
   inline = false,
+  prefetchPlayerHome = false,
 }: {
   allow: Allowed | Allowed[];
   children: React.ReactNode;
   inline?: boolean;
+  prefetchPlayerHome?: boolean;
 }) {
   const router = useRouter();
   const allowedKey = useMemo(
@@ -59,6 +73,7 @@ export default function RoleGuard({
   const [status, setStatus] = useState<GuardStatus>("checking");
   const [errorMessage, setErrorMessage] = useState("");
   const [retryNonce, setRetryNonce] = useState(0);
+  const [initialHomeRead, setInitialHomeRead] = useState<InitialPlayerHomeRead | null>(null);
   const statusRef = useRef<GuardStatus>("checking");
 
   useEffect(() => {
@@ -113,6 +128,7 @@ export default function RoleGuard({
     async function checkAccess() {
       setStatus("checking");
       setErrorMessage("");
+      setInitialHomeRead(null);
 
       try {
         const { data, error: sessionError } = await supabase.auth.getSession();
@@ -167,6 +183,7 @@ export default function RoleGuard({
 
         const role = membership.role as "player" | "coach" | "manager" | "parent";
         const currentPath = window.location.pathname;
+        let checkedLegalStatus: Awaited<ReturnType<typeof readLegalStatus>> | undefined;
 
         if (role === "parent" && json.parentHasChildren === false) {
           redirect("/no-access");
@@ -174,12 +191,23 @@ export default function RoleGuard({
         }
 
         if (role === "player" || role === "parent") {
-          const consentResponse = await fetch("/api/player/consent", {
-            method: "GET",
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
-          });
-          const consentJson = await readJsonResponse(consentResponse);
+          if (cancelled) return;
+          if (prefetchPlayerHome && currentPath === "/player" && allowed.includes(role)) {
+            setInitialHomeRead(startInitialPlayerHomeRead(token));
+          }
+          const [consentRead, legalRead] = await Promise.allSettled([
+            (async () => {
+              const response = await fetch("/api/player/consent", {
+                method: "GET",
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+              });
+              return { response, json: await readJsonResponse(response) };
+            })(),
+            readLegalStatus(token),
+          ]);
+          if (consentRead.status === "rejected") throw consentRead.reason;
+          const { response: consentResponse, json: consentJson } = consentRead.value;
 
           if (consentResponse.status === 401) {
             goLogin();
@@ -198,7 +226,10 @@ export default function RoleGuard({
           const parentHasPendingChild = role === "parent" && consentJson.viewerRole === "parent"
             && Array.isArray(consentJson.pendingChildren) && consentJson.pendingChildren.length > 0;
 
-          if (consentPending || parentHasPendingChild) {
+          if (legalRead.status === "rejected") throw legalRead.reason;
+          const available = legalRead.value;
+          checkedLegalStatus = available;
+          if ((consentPending || parentHasPendingChild) && organizationGateBlocks(available.organizations, currentLegalOrganization())) {
             redirect("/legal/my");
             return;
           }
@@ -206,7 +237,7 @@ export default function RoleGuard({
 
         if (allowed.includes(role)) {
           if (needsLegalCheck(currentPath)) {
-            const legal = await readLegalStatus(token);
+            const legal = checkedLegalStatus ?? await readLegalStatus(token);
             if (legal.enforcement_enabled && legal.missing.length) { redirect("/legal/my"); return; }
           }
           if (!cancelled) setStatus("allowed");
@@ -253,7 +284,7 @@ export default function RoleGuard({
       subscription.unsubscribe();
       window.removeEventListener("online", retryWhenOnline);
     };
-  }, [allowedKey, retryNonce, router]);
+  }, [allowedKey, retryNonce, router, prefetchPlayerHome]);
 
   if (status === "error") {
     return (
@@ -275,5 +306,5 @@ export default function RoleGuard({
     );
   }
 
-  return <>{children}</>;
+  return <PlayerHomeBootstrapContext.Provider value={initialHomeRead}>{children}</PlayerHomeBootstrapContext.Provider>;
 }

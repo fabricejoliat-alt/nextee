@@ -448,7 +448,7 @@ export default function GolfDashboardPage() {
             .select("id,first_name,last_name,handicap,avatar_url")
             .eq("id", playerId)
             .maybeSingle(),
-          supabase.from("clubs").select("id,name").in("id", sharedClubIds),
+          supabase.from("organizations").select("id,name").in("id", sharedClubIds),
         ]);
 
         if (profileRes.error) throw new Error(profileRes.error.message);

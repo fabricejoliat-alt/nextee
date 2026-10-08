@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { canCoachAccessEvent } from "../coachAccess.ts";
+import { canCoachAccessEvent, requireCoachEventPlayer } from "../coachAccess.ts";
 import { isCoachTrainingAssistanceEnabled } from "./coachTrainingAssistance.ts";
 import { minorRewriteProvider } from "./coachAiRewrite.ts";
 
@@ -147,6 +147,8 @@ export async function requireCoachAiGrant(
     .eq("event_id", eventId).eq("player_id", playerId).maybeSingle();
   if (attendee.error) throw new Error("AI authorization unavailable");
   if (!attendee.data) throw new CoachAiAuthorizationError();
+  try { await requireCoachEventPlayer(db, eventId, playerId, coachId, clubId); }
+  catch { throw new CoachAiAuthorizationError(); }
   const grant = await loadCoachAiPlayerGrant(db, clubId, playerId, usage);
   if (!grant || (expected !== undefined && expected !== grant)) throw new CoachAiAuthorizationError();
   return grant;

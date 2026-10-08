@@ -1,10 +1,9 @@
 "use client";
 
+import { readPlayerPage } from "@/lib/playerPageRead";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { supabase } from "@/lib/supabaseClient";
-import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
-import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { AlertCircle, ArrowLeft, CheckCircle2, ClipboardCheck, MapPin } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -13,31 +12,6 @@ import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import activityStyles from "../PlayerActivities.module.css";
 import dashboardStyles from "@/app/player/PlayerDashboard.module.css";
 import styles from "./PlayerTrainingsToComplete.module.css";
-
-type SessionRow = {
-  id: string;
-  start_at: string;
-  club_event_id: string | null;
-  location_text: string | null;
-  motivation: number | null;
-  difficulty: number | null;
-  satisfaction: number | null;
-};
-
-type SessionItemRow = {
-  session_id: string;
-  minutes: number;
-};
-
-type EventAttendeeRow = {
-  event_id: string | null;
-  status: "expected" | "present" | "absent" | "excused" | "not_registered" | null;
-};
-
-type ClubNameRow = {
-  id: string;
-  name: string | null;
-};
 
 type PlannedEventRow = {
   id: string;
@@ -72,7 +46,12 @@ type IncompleteSession = {
   location_text: string | null;
 };
 
-type Row = IncompleteEvent | IncompleteSession;
+type Row = (IncompleteEvent | IncompleteSession) & { href: string };
+type PendingPayload = {
+  viewerUserId: string; effectiveUserId: string; role: "player" | "parent";
+  rows: Row[]; performanceEnabled: boolean; clubNameById: Record<string, string>;
+  groupNameById: Record<string, string>; eventById: Record<string, PlannedEventRow>;
+};
 
 function dateLocale(locale: string) {
   return locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-US";
@@ -89,207 +68,18 @@ export default function PlayerTrainingsToCompletePage() {
   const [performanceEnabled, setPerformanceEnabled] = useState(false);
 
   useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
-        const perfEnabled = await isEffectivePlayerPerformanceEnabled(uid);
-        setPerformanceEnabled(perfEnabled);
-        if (!perfEnabled) {
-          setRows([]);
-          setClubNameById({});
-          setGroupNameById({});
-          setEventById({});
-          setLoading(false);
-          return;
-        }
-
-        const sRes = await supabase
-          .from("training_sessions")
-          .select("id,start_at,club_event_id,location_text,motivation,difficulty,satisfaction")
-          .eq("user_id", uid)
-          .order("start_at", { ascending: false });
-        if (sRes.error) throw new Error(sRes.error.message);
-        const sessions = (sRes.data ?? []) as SessionRow[];
-
-        const sessionIds = sessions.map((s) => s.id);
-        const itemMap: Record<string, SessionItemRow[]> = {};
-        if (sessionIds.length > 0) {
-          const itemsRes = await supabase
-            .from("training_session_items")
-            .select("session_id,minutes")
-            .in("session_id", sessionIds);
-          if (itemsRes.error) throw new Error(itemsRes.error.message);
-          for (const row of (itemsRes.data ?? []) as SessionItemRow[]) {
-            if (!itemMap[row.session_id]) itemMap[row.session_id] = [];
-            itemMap[row.session_id].push(row);
-          }
-        }
-
-        const completeSessionIds = new Set<string>();
-        for (const s of sessions) {
-          const items = itemMap[s.id] ?? [];
-          const hasPoste = items.some((it) => (it.minutes ?? 0) > 0);
-          const hasSensations =
-            typeof s.motivation === "number" &&
-            typeof s.difficulty === "number" &&
-            typeof s.satisfaction === "number";
-          if (hasPoste && hasSensations) completeSessionIds.add(s.id);
-        }
-
-        const nowTs = Date.now();
-        const completedEventIds = new Set(
-          sessions
-            .filter((s) => completeSessionIds.has(s.id))
-            .map((s) => s.club_event_id)
-            .filter((x): x is string => !!x)
-        );
-        const eventIdsWithAnySession = new Set(
-          sessions.map((s) => s.club_event_id).filter((x): x is string => !!x)
-        );
-
-        const aRes = await supabase
-          .from("club_event_attendees")
-          .select("event_id,status")
-          .eq("player_id", uid);
-        if (aRes.error) throw new Error(aRes.error.message);
-        const attendanceMap: Record<string, "expected" | "present" | "absent" | "excused" | "not_registered" | null> = {};
-        ((aRes.data ?? []) as EventAttendeeRow[]).forEach((row) => {
-          const eventId = String(row.event_id ?? "").trim();
-          if (!eventId) return;
-          attendanceMap[eventId] = row.status ?? null;
-        });
-
-        const incompletePastSessions: IncompleteSession[] = sessions
-          .filter((s) => new Date(s.start_at).getTime() < nowTs)
-          .filter((s) => {
-            if (!s.club_event_id) return true;
-            const status = attendanceMap[s.club_event_id] ?? null;
-            return status !== "absent" && status !== "excused" && status !== "not_registered";
-          })
-          .filter((s) => !completeSessionIds.has(s.id))
-          .map((s) => ({
-            kind: "session",
-            id: s.id,
-            starts_at: s.start_at,
-            club_event_id: s.club_event_id,
-            location_text: s.location_text ?? null,
-          }));
-        const eventIds = Array.from(
-          new Set(
-            ((aRes.data ?? []) as EventAttendeeRow[])
-              .map((r) => String(r.event_id ?? "").trim())
-              .filter((v) => v.length > 0)
-          )
-        );
-
-        let events: PlannedEventRow[] = [];
-        if (eventIds.length > 0) {
-          const eRes = await supabase
-            .from("club_events")
-            .select("id,event_type,starts_at,ends_at,duration_minutes,location_text,status,club_id,group_id,requires_evaluation")
-            .in("id", eventIds);
-          if (eRes.error) throw new Error(eRes.error.message);
-          events = (eRes.data ?? []) as PlannedEventRow[];
-        }
-        const byEventId: Record<string, PlannedEventRow> = {};
-        events.forEach((ev) => {
-          byEventId[ev.id] = ev;
-        });
-        setEventById(byEventId);
-
-        const clubIds = Array.from(
-          new Set(events.map((ev) => String(ev.club_id ?? "").trim()).filter((v) => v.length > 0))
-        );
-        if (clubIds.length > 0) {
-          const cRes = await supabase.from("clubs").select("id,name").in("id", clubIds);
-          if (!cRes.error) {
-            const map: Record<string, string> = {};
-            (cRes.data ?? []).forEach((c: ClubNameRow) => {
-              map[String(c.id)] = String(c.name ?? "").trim() || t("common.club");
-            });
-            setClubNameById(map);
-          } else {
-            setClubNameById({});
-          }
-        } else {
-          setClubNameById({});
-        }
-
-        const groupIds = Array.from(
-          new Set(events.map((ev) => String(ev.group_id ?? "").trim()).filter((v) => v.length > 0))
-        );
-        if (groupIds.length > 0) {
-          const { data: sessionData } = await supabase.auth.getSession();
-          const token = sessionData.session?.access_token ?? "";
-          if (token) {
-            const query = new URLSearchParams({ ids: groupIds.join(","), child_id: uid });
-            const gRes = await fetch(`/api/player/group-names?${query.toString()}`, {
-              method: "GET",
-              headers: { Authorization: `Bearer ${token}` },
-              cache: "no-store",
-            });
-            const gJson = await gRes.json().catch(() => ({}));
-            if (gRes.ok) {
-              const map: Record<string, string> = {};
-              ((gJson?.groups ?? []) as Array<{ id: string; name: string | null }>).forEach((g) => {
-                map[g.id] = g.name ?? "Groupe";
-              });
-              setGroupNameById(map);
-            } else {
-              setGroupNameById({});
-            }
-          } else {
-            setGroupNameById({});
-          }
-        } else {
-          setGroupNameById({});
-        }
-
-        const incompleteEvents: IncompleteEvent[] = events
-          .filter((ev) => ev.status === "scheduled")
-          .filter((ev) => ev.requires_evaluation)
-          .filter((ev) => ev.event_type === "training" || ev.event_type === "camp")
-          .filter((ev) => new Date(ev.starts_at).getTime() < nowTs)
-          .filter((ev) => {
-            const status = attendanceMap[ev.id] ?? null;
-            return status !== "absent" && status !== "excused" && status !== "not_registered";
-          })
-          .filter((ev) => !completedEventIds.has(ev.id))
-          .filter((ev) => !eventIdsWithAnySession.has(ev.id))
-          .map((ev) => ({
-            kind: "event",
-            id: ev.id,
-            event_type: ev.event_type === "camp" ? "camp" : "training",
-            starts_at: ev.starts_at,
-            ends_at: ev.ends_at,
-            duration_minutes: ev.duration_minutes,
-            location_text: ev.location_text,
-            club_id: ev.club_id,
-            group_id: ev.group_id,
-          }));
-
-        const evaluationEventIds = new Set(events.filter((event) => event.requires_evaluation).map((event) => event.id));
-        const merged = [
-          ...incompleteEvents,
-          ...incompletePastSessions.filter((session) => !session.club_event_id || evaluationEventIds.has(session.club_event_id)),
-        ].sort(
-          (a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime()
-        );
-        setRows(merged);
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : t("common.errorLoading");
-        setError(message);
-        setRows([]);
-        setClubNameById({});
-        setGroupNameById({});
-        setEventById({});
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [t]);
+    let alive = true;
+    void readPlayerPage<PendingPayload>("/api/player/golf-data?view=pending").then(data => {
+      if (!alive) return;
+      setRows(data.rows); setPerformanceEnabled(data.performanceEnabled);
+      setClubNameById(data.clubNameById); setGroupNameById(data.groupNameById); setEventById(data.eventById);
+    }).catch(error => {
+      if (!alive) return;
+      setError(error instanceof Error ? error.message : "Unable to load evaluations");
+      setRows([]); setClubNameById({}); setGroupNameById({}); setEventById({});
+    }).finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
 
   return (
     <div className={`player-dashboard-bg ${styles.page}`}>
@@ -337,14 +127,14 @@ export default function PlayerTrainingsToCompletePage() {
                   const clubName = row.club_id ? clubNameById[row.club_id] ?? t("common.club") : t("common.club");
                   const groupName = row.group_id ? groupNameById[row.group_id] ?? pickLocaleText(locale, "Groupe", "Group") : pickLocaleText(locale, "Groupe", "Group");
                   const type = row.event_type === "camp" ? pickLocaleText(locale, "Stage", "Camp") : pickLocaleText(locale, "Entraînement", "Training");
-                  return <EvaluationActivityCard key={`event-${row.id}`} start={row.starts_at} type={type} title={`${type} · ${groupName}`} organizer={clubName} location={row.location_text} href={`/player/golf/trainings/new?club_event_id=${row.id}`} locale={locale}/>;
+                  return <EvaluationActivityCard key={`event-${row.id}`} start={row.starts_at} type={type} title={`${type} · ${groupName}`} organizer={clubName} location={row.location_text} href={row.href} locale={locale}/>;
                 }
 
                 const linkedEvent = row.club_event_id ? eventById[row.club_event_id] : null;
                 const clubName = linkedEvent?.club_id ? clubNameById[linkedEvent.club_id] ?? t("common.club") : pickLocaleText(locale, "Activité personnelle", "Personal activity");
                 const groupName = linkedEvent?.group_id ? groupNameById[linkedEvent.group_id] ?? pickLocaleText(locale, "Groupe", "Group") : null;
                 const type = linkedEvent?.event_type === "camp" ? pickLocaleText(locale, "Stage", "Camp") : pickLocaleText(locale, "Entraînement", "Training");
-                return <EvaluationActivityCard key={`session-${row.id}`} start={linkedEvent?.starts_at ?? row.starts_at} type={type} title={groupName ? `${type} · ${groupName}` : pickLocaleText(locale, "Entraînement personnel", "Personal training")} organizer={clubName} location={row.location_text ?? linkedEvent?.location_text ?? null} href={`/player/golf/trainings/${row.id}/edit`} locale={locale}/>;
+                return <EvaluationActivityCard key={`session-${row.id}`} start={linkedEvent?.starts_at ?? row.starts_at} type={type} title={groupName ? `${type} · ${groupName}` : pickLocaleText(locale, "Entraînement personnel", "Personal training")} organizer={clubName} location={row.location_text ?? linkedEvent?.location_text ?? null} href={row.href} locale={locale}/>;
               })}
             </div>
           )}

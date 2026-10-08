@@ -45,6 +45,7 @@ async function assertCampOwnership(supabaseAdmin: ReturnType<typeof createAdminC
     .select("id,user_id,title,coach_name,notes,status")
     .eq("id", campId)
     .eq("user_id", userId)
+    .is("organization_id", null)
     .maybeSingle();
   if (campRes.error) return { error: campRes.error.message, status: 400 as const };
   if (!campRes.data?.id) return { error: "Not found", status: 404 as const };

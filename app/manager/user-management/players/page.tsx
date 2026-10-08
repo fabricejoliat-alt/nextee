@@ -1,5 +1,5 @@
-import PlayersManagementPage from "@/components/manager/PlayersManagementPage";
+import OrganizationPlayersPage from "@/components/manager/OrganizationPlayersPage";
 
 export default function ManagerUserManagementPlayersPage() {
-  return <PlayersManagementPage />;
+  return <OrganizationPlayersPage />;
 }

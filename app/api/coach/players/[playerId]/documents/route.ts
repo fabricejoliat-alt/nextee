@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { resolveCampCoachPlayerAccess, resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
     if (!playerId) return NextResponse.json({ error: "Missing playerId" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId,requestedOrganizationId(req.url));
     const url = new URL(req.url);
     const requestedEventId = String(url.searchParams.get("club_event_id") ?? "").trim();
     const campAccess = requestedEventId
@@ -128,7 +129,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
     if (!playerId) return NextResponse.json({ error: "Missing playerId" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(accessToken);
-    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId);
+    const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId,requestedOrganizationId(req.url));
 
     const contentType = req.headers.get("content-type") ?? "";
     if (contentType.includes("application/json")) {

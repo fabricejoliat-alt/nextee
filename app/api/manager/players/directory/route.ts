@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
     const clubs: Club[] = [];
     const members: Member[] = [];
     for (const ids of batches(clubIds, 150)) {
-      const { data: clubRows, error: clubError } = await db.from("clubs").select("id,name").in("id", ids);
+      const { data: clubRows, error: clubError } = await db.from("organizations").select("id,name").in("id", ids);
       if (clubError) throw clubError;
       clubs.push(...((clubRows ?? []) as Club[]));
       members.push(...await allMembers(db, () => db.from("club_members").select("id,club_id,user_id")

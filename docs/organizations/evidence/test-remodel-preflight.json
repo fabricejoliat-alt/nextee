@@ -1,0 +1,60 @@
+{
+  "checked_at": "2026-10-07T17:18:06.084Z",
+  "target": "wizbeuuvjibmmuxyynly",
+  "mode": "read-only REST preflight",
+  "organization_counts": {
+    "club": 6,
+    "academy": 1,
+    "federation": 0
+  },
+  "legacy_clubs": 7,
+  "orphan_legacy_clubs": 0,
+  "nonclub_legacy_rows": 1,
+  "checks": [
+    {
+      "table": "training_sessions",
+      "total": 33,
+      "requiring_owner": 4,
+      "ambiguous": 4,
+      "players_requiring_review": 1
+    },
+    {
+      "table": "golf_rounds",
+      "total": 16,
+      "requiring_owner": 14,
+      "ambiguous": 13,
+      "players_requiring_review": 1
+    },
+    {
+      "table": "player_activity_events",
+      "total": 10,
+      "requiring_owner": 10,
+      "ambiguous": 10,
+      "players_requiring_review": 1
+    },
+    {
+      "table": "player_camps",
+      "total": 0,
+      "requiring_owner": 0,
+      "ambiguous": 0,
+      "players_requiring_review": 0
+    },
+    {
+      "table": "player_validation_attempts",
+      "total": 2,
+      "requiring_owner": 2,
+      "ambiguous": 2,
+      "players_requiring_review": 1
+    }
+  ],
+  "status": "personal_history_confirmed_by_user",
+  "migration": "not_applied",
+  "classification": {
+    "validation_attempts": "player owned; global progression",
+    "individual_trainings": "personal (4)",
+    "rounds": "personal (14); OM scoring organization is not ownership",
+    "activities": "personal (10)",
+    "remaining_records_to_classify": 0
+  },
+  "original_metrics_note": "requiring_owner and ambiguous describe the superseded owner-only model; no reassignment is requested"
+}

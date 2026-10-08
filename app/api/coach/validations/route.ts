@@ -1,5 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
+import { uuidPattern } from "@/lib/server/organizationAccess";
 import { buildCoachValidations } from "@/lib/coachValidations";
 
 function mustEnv(name: string) {
@@ -65,6 +67,8 @@ export async function GET(req: NextRequest) {
     if (callerErr || !callerData.user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
 
     const callerId = callerData.user.id;
+    const organizationId = req.nextUrl.searchParams.get("organization_id");
+    if (organizationId && !uuidPattern.test(organizationId)) return NextResponse.json({ error: "Invalid organization" }, { status: 400 });
     const membershipsRes = await supabaseAdmin
       .from("club_members")
       .select("club_id")
@@ -73,7 +77,8 @@ export async function GET(req: NextRequest) {
       .in("role", ["coach", "manager"]);
     if (membershipsRes.error) return NextResponse.json({ error: membershipsRes.error.message }, { status: 400 });
 
-    const clubIds = Array.from(new Set(((membershipsRes.data ?? []) as Array<{ club_id: string | null }>).map((row) => String(row.club_id ?? "").trim()).filter(Boolean)));
+    const membershipClubIds = Array.from(new Set(((membershipsRes.data ?? []) as Array<{ club_id: string | null }>).map((row) => String(row.club_id ?? "").trim()).filter(Boolean)));
+    const clubIds = organizationId ? membershipClubIds.filter(id => id === organizationId) : membershipClubIds;
     if (clubIds.length === 0) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const [sectionRows, exerciseRows, playerMemberships] = await Promise.all([
@@ -86,7 +91,22 @@ export async function GET(req: NextRequest) {
         .eq("is_active", true).in("club_id", clubIds).eq("role", "player").order("user_id").order("club_id").range(from, to)),
     ]);
 
-    const playerIds = Array.from(new Set(playerMemberships.map((row) => row.user_id).filter(Boolean)));
+    const candidatePlayerIds = Array.from(new Set(playerMemberships.map((row) => row.user_id).filter(Boolean)));
+    const playerIds: string[] = [];
+    // Shared membership alone does not grant access to a junior's progression.
+    for (let index = 0; index < candidatePlayerIds.length; index += 10) {
+      const eligible = await Promise.all(candidatePlayerIds.slice(index, index + 10).map(async playerId => {
+        const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId, organizationId);
+        if (!access.canAccessSensitiveSections) return null;
+        const authorized = await Promise.all(access.sensitiveClubIds.map(async org => {
+          const result = await supabaseAdmin.rpc("organization_player_authorized", { p_org: org, p_player: playerId });
+          if (result.error) throw result.error;
+          return result.data === true;
+        }));
+        return authorized.some(Boolean) ? playerId : null;
+      }));
+      playerIds.push(...eligible.filter((id): id is string => id !== null));
+    }
     const profiles: PlayerProfileRow[] = [];
     const attempts: PlayerValidationAttemptRow[] = [];
     // Bound URL size as well as PostgREST row limits for large clubs.

@@ -159,7 +159,7 @@ async function loadEmails(supabaseAdmin: SupabaseAdminClient, userIds: string[])
 async function processReminder(supabaseAdmin: SupabaseAdminClient, reminder: ReminderRow) {
   const eventRes = await supabaseAdmin
     .from("club_events")
-    .select("id,event_type,title,starts_at,ends_at,status,competition_level,competition_category,external_registration_url")
+    .select("id,club_id,event_type,title,starts_at,ends_at,status,competition_level,competition_category,external_registration_url")
     .eq("id", reminder.event_id)
     .maybeSingle();
   if (eventRes.error) throw new Error(eventRes.error.message);
@@ -177,7 +177,7 @@ async function processReminder(supabaseAdmin: SupabaseAdminClient, reminder: Rem
   const playerIds = uniq(((attendeesRes.data ?? []) as AttendeeRow[]).map((row) => row.player_id));
 
   const guardiansRes = playerIds.length > 0
-    ? await supabaseAdmin.from("player_guardians").select("player_id,guardian_user_id,can_view").in("player_id", playerIds)
+    ? await supabaseAdmin.from("player_guardian_scopes").select("player_id,guardian_user_id,can_view").eq("organization_id", event.club_id).eq("status", "active").eq("can_view", true).in("player_id", playerIds)
     : ({ data: [], error: null } as const);
   if (guardiansRes.error) throw new Error(guardiansRes.error.message);
   const guardianIds = uniq(((guardiansRes.data ?? []) as GuardianRow[]).filter((row) => row.can_view !== false).map((row) => row.guardian_user_id));

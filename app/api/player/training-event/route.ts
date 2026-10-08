@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   bearerTokenFromRequest,
@@ -32,6 +33,7 @@ export async function GET(req: NextRequest) {
       accessToken: bearerTokenFromRequest(req),
       requestedPlayerId: childId,
       mode: "view",
+      requestedOrganizationId: requestedOrganizationId(req.url),
     });
     const { supabaseAdmin } = access;
     const effectivePlayerId = access.subjectPlayerId;
@@ -49,6 +51,7 @@ export async function GET(req: NextRequest) {
       .from("club_events")
       .select("id,group_id,club_id,event_type,starts_at,duration_minutes,location_text,status,title,requires_evaluation")
       .eq("id", eventId)
+      .in("club_id",access.organizationIds)
       .maybeSingle();
     if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
     if (!eventRes.data) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -82,7 +85,7 @@ export async function GET(req: NextRequest) {
         ? supabaseAdmin.from("coach_groups").select("name").eq("id", event.group_id).maybeSingle()
         : ({ data: null, error: null } as const),
       event.club_id
-        ? supabaseAdmin.from("clubs").select("name").eq("id", event.club_id).maybeSingle()
+        ? supabaseAdmin.from("organizations").select("name").eq("id", event.club_id).maybeSingle()
         : ({ data: null, error: null } as const),
       supabaseAdmin
         .from("club_event_coach_feedback")

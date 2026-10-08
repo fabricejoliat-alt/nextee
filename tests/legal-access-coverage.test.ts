@@ -10,7 +10,10 @@ const businessApis = ["/api/player/documents", "/api/coach/events/event", "/api/
 function proxyFixture(options: { enabled?: boolean; missing?: boolean; failure?: boolean; actor?: string | null; invalidBearer?: boolean;
   playerConsent?: string; parentChildConsent?: string; parentCanEdit?: boolean } = {}) {
   const cookieActor = options.actor === undefined ? "coach" : options.actor;
-  const { db } = managerDatabase({ club_members: [
+  const { db } = managerDatabase({ organization_members: [
+    ...(options.playerConsent ? [{ user_id: "player", organization_id: "A", role: "player", is_active: true }] : []),
+    ...(options.parentChildConsent ? [{ user_id: "parent", organization_id: "A", role: "parent", is_active: true }] : []),
+  ], club_members: [
     ...(options.playerConsent ? [{ user_id: "player", club_id: "A", role: "player", is_active: true, player_consent_status: options.playerConsent }] : []),
     ...(options.parentChildConsent ? [{ user_id: "parent", club_id: "A", role: "parent", is_active: true },
       { user_id: "child", club_id: "A", role: "player", is_active: true, player_consent_status: options.parentChildConsent }] : []),
@@ -26,6 +29,10 @@ function proxyFixture(options: { enabled?: boolean; missing?: boolean; failure?:
     } },
     "@supabase/ssr": { createServerClient: () => ({ auth: { getUser: async () => ({ data: { user: cookieActor ? { id: cookieActor } : null } }) } }) },
     "@supabase/supabase-js": { createClient: () => ({ ...db, auth: { getUser: async () => ({ data: { user: options.invalidBearer ? null : { id: "bearer-actor" } }, error: options.invalidBearer ? {} : null }) } }) },
+    "@/lib/server/organizationSummary": { loadOrganizationAccessSummary: async () => [{
+      organization_id: "A", name: "Fictitious club A", org_type: "club", player_id: options.playerConsent ? "player" : "child",
+      accessible: (options.playerConsent ?? options.parentChildConsent) === "granted", reason: "parent_authorization_pending",
+    }] },
     "@/lib/server/legalRequirements": { loadLegalGateStatus: async (_db: unknown, actor: string) => {
       checked.push(actor);
       if (options.failure) throw new Error("Unavailable");
@@ -80,15 +87,15 @@ test("a parent with an editable child awaiting consent reaches /legal/my and can
   assert.equal(page.headers.get("location"), "https://test.invalid/legal/my");
   const api = await fixture.run("/api/parent/children");
   assert.equal(api.status, 403);
-  assert.equal((await api.json()).code, "PARENT_CHILD_CONSENT_REQUIRED");
+  assert.equal((await api.json()).code, "PLAYER_CONSENT_REQUIRED");
   const readOnly = proxyFixture({ actor: "parent", parentChildConsent: "pending", parentCanEdit: false, enabled: false });
-  assert.equal((await readOnly.run("/player")).status, 200);
+  assert.equal((await readOnly.run("/player")).status, 307);
 });
 
 test("gate off reads its database switch and leaves business routes reachable", async () => {
   const off = proxyFixture({ enabled: false });
   for (const path of businessApis) assert.equal((await off.run(path)).status, 200);
-  assert.deepEqual(off.checked, []);
+  assert.deepEqual(off.checked, businessApis.map(() => "coach"));
   for (const path of ["/legal/my", "/api/legal/decide", "/api/legal/data-request", "/api/auth/me",
     "/player/help", "/player/consent-required", "/api/player/consent", "/api/admin/legal"]) {
     assert.equal(legalRouteKind(path), null, path);
@@ -125,10 +132,10 @@ test("metadata drift rejects an otherwise accepted current version; only the lat
   const calls: unknown[] = [];
   let matching = true;
   const database = { ...db, rpc: async (name: string, args: unknown) => { calls.push({ name, args }); return { data: matching, error: null }; } };
-  const requirements = loadManagerModule<{ loadMissingLegalActions: (db: unknown, actor: string) => Promise<unknown[]> }>("lib/server/legalRequirements.ts", {});
-  assert.deepEqual(await requirements.loadMissingLegalActions(database, "coach"), []);
+  const requirements = loadManagerModule<{ loadLegalGateStatus: (db: unknown, actor: string, organization: string) => Promise<{ enabled: boolean; missing: unknown[] }> }>("lib/server/legalRequirements.ts", {});
+  assert.deepEqual(await requirements.loadLegalGateStatus(database, "coach", "A"), { enabled: true, missing: [] });
   matching = false;
-  await assert.rejects(() => requirements.loadMissingLegalActions(database, "coach"), /metadata changed/);
+  await assert.rejects(() => requirements.loadLegalGateStatus(database, "coach", "A"), /metadata changed/);
   assert.deepEqual(calls, [1, 2].map(() => ({ name: "legal_version_matches_document", args: { p_document: "terms", p_version: "v2" } })));
 });
 

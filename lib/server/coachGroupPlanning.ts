@@ -1,3 +1,4 @@
+import { authorizedCoachPlayers } from "@/lib/coachAccess";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CoachPlanningData, CoachPlanningEvent, CoachPlanningPerson } from "../coachPlanning.ts";
 import { loadCoachPreparationStatus } from "./coachPreparationStatus";
@@ -40,10 +41,12 @@ export async function loadCoachGroupPlanning(db: SupabaseClient, callerId: strin
   const assigned = group.head_coach_user_id === callerId || Boolean(linkResult.data);
   if (!member || !["coach", "manager"].includes(member.role) ||
     (member.role !== "manager" && !assigned && !member.can_transfer_players_between_club_groups)) throw new CoachPlanningAccessError(403);
+  const ready=await db.rpc("organization_actor_legal_ready",{p_org:group.club_id,p_actor:callerId});
+  if(ready.error||ready.data!==true)throw new CoachPlanningAccessError(403);
   const canPlan = member.role === "manager" || (assigned && Boolean(member.can_manage_assigned_group_planning));
 
   const [clubResult, events] = await Promise.all([
-    db.from("clubs").select("name").eq("id", group.club_id).maybeSingle(),
+    db.from("organizations").select("name").eq("id", group.club_id).maybeSingle(),
     allRows<EventSource>((from, to) => db.from("club_events")
       .select("id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,series_id,status,requires_evaluation")
       .eq("group_id", group.id).eq("club_id", group.club_id).order("starts_at").order("id").range(from, to)),
@@ -65,7 +68,9 @@ export async function loadCoachGroupPlanning(db: SupabaseClient, callerId: strin
     Object.assign(completion, evaluation.completeByEvent);
   }
   // Fetch only people actually attached to authorized events, not the whole club directory.
-  const personIds = [...new Set([...attendees.map((row) => row.player_id), ...coaches.map((row) => row.coach_id)])];
+  const allowedPlayers=await authorizedCoachPlayers(db,callerId,group.club_id,attendees.map(row=>row.player_id));
+  const visibleAttendees=attendees.filter(row=>allowedPlayers.has(row.player_id));
+  const personIds = [...new Set([...visibleAttendees.map((row) => row.player_id), ...coaches.map((row) => row.coach_id)])];
   const profiles = new Map<string, CoachPlanningPerson>();
   const playerIds = new Set<string>();
   for (const batch of chunks(personIds)) {
@@ -93,7 +98,7 @@ export async function loadCoachGroupPlanning(db: SupabaseClient, callerId: strin
       evaluation_complete: completion[event.id] ?? false,
       preparation_pending: preparation[event.id] ?? false,
       coaches: [...new Set(coaches.filter((row) => row.event_id === event.id).map((row) => row.coach_id))].map(person),
-      attendees: [...new Map(attendees.filter((row) => row.event_id === event.id).map((row) => [row.player_id, row])).values()]
+      attendees: [...new Map(visibleAttendees.filter((row) => row.event_id === event.id).map((row) => [row.player_id, row])).values()]
         .map((row) => ({ ...person(row.player_id), is_player: playerIds.has(row.player_id), status: row.status, coach_recorded_status: row.coach_recorded_status })),
     })),
   };

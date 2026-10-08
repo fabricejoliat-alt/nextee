@@ -2,11 +2,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Check, ChevronDown, Download, FileText, Globe2, LockKeyhole, LogOut, ShieldCheck, X } from "lucide-react";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import type { OrganizationAccessSummary } from "@/lib/organizationPolicy";
 import { supabase } from "@/lib/supabaseClient";
 import styles from "./MyLegalPage.module.css";
 import { parentAuthorizationItems, type LegalChild } from "@/lib/parentAuthorization";
 
-type Doc = { id: string; document_key: string; kind: string; purpose_key: string; scope: string; club_id: string | null; club_name: string | null; audience_roles: string[]; eligible_role: string | null; action_kind: string; required: boolean;
+type Doc = { id: string; document_key: string; kind: string; purpose_key: string; scope: string; club_id: string | null; club_name: string | null; org_type?: string | null; audience_roles: string[]; eligible_role: string | null; action_kind: string; required: boolean;
   version: { id: string; version_number: number; published_at: string; snapshot: { translations?: Record<string, { title: string }> } } | null;
   own_choice: { version_id: string; decision: string } | null;
   state: { version_id: string; decision: string; conflict: boolean } | null };
@@ -19,7 +21,7 @@ const homeDestinations = new Set(["/admin", "/manager", "/coach", "/player"]);
 const languages = [{ code: "fr", label: "Français" }, { code: "en", label: "English" }, { code: "de", label: "Deutsch" }, { code: "it", label: "Italiano" }];
 const decisionLabels: Record<string, string> = { accepted: "Accepté", acknowledged: "Lu et confirmé", authorized: "Autorisé", consented: "Consentement donné", refused: "Refusé", withdrawn: "Retiré" };
 const requiredActionLabels: Record<string, string> = { accept: "À accepter", acknowledge: "À lire et confirmer", read: "À lire et confirmer" };
-function displayTitle(value: string, doc?: Doc) { return value.replace(/\{\{\s*club_name\s*\}\}/gi, doc?.club_name ?? "votre club").replace(/\{\{\s*child_name\s*\}\}/gi, "votre enfant"); }
+function displayTitle(value: string, doc?: Doc) { return value.replace(/\{\{\s*(?:club_name|organization_name)\s*\}\}/gi, doc?.club_name ?? "votre organisation").replace(/\{\{\s*child_name\s*\}\}/gi, "votre enfant"); }
 function DecisionHistory({ rows, onDownload, empty }: { rows: Decision[]; onDownload: (row: Decision) => void; empty: string }) {
   if (!rows.length) return <p className={styles.emptyHistory}>{empty}</p>;
   return <div className={styles.historyList}>{rows.map((row) => <details key={row.id} className={styles.historyItem}>
@@ -28,6 +30,9 @@ function DecisionHistory({ rows, onDownload, empty }: { rows: Decision[]; onDown
   </details>)}</div>;
 }
 export default function MyLegalPage() {
+  const { t } = useI18n();
+  const [organizationFilter, setOrganizationFilter] = useState("all");
+  const [organizations, setOrganizations] = useState<OrganizationAccessSummary[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]); const [history, setHistory] = useState<Decision[]>([]);
   const [childHistory, setChildHistory] = useState<Decision[]>([]);
   const [children, setChildren] = useState<Child[]>([]); const [historyChild, setHistoryChild] = useState<string | null>(null);
@@ -53,6 +58,7 @@ export default function MyLegalPage() {
       ]);
       if (typeof gate.enforcement_enabled !== "boolean" || !Array.isArray(gate.missing)
         || typeof redirect.redirectTo !== "string") throw new Error("État de l’accès indisponible.");
+      setOrganizations(gate.organizations ?? []);
       setDocs(d.documents); setHistory(h.decisions); setChildren(c.children); setParentConfirmation(c.parent_confirmation ?? { email_ready: false, delivery_ready: false, code_required: true });
       setAccess({ state: "ready", enforcementEnabled: gate.enforcement_enabled,
         missing: gate.missing, destination: redirect.redirectTo, consentRequired: redirect.consentRequired === true,
@@ -94,8 +100,8 @@ export default function MyLegalPage() {
   function download(row: Decision) { const blob = new Blob([JSON.stringify(row, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `activitee-decision-${row.id}.json`;
     link.click(); URL.revokeObjectURL(url); }
-  const parentItems = parentAuthorizationItems(docs, children, locale);
-  const personalDocs = docs.filter((doc) => !(doc.kind === "parent_authorization" && doc.purpose_key === "service.parent_authorization"));
+  const parentItems = parentAuthorizationItems(docs, children, locale).filter(item => organizationFilter === "all" || item.child.club_id === organizationFilter);
+  const personalDocs = docs.filter((doc) => (organizationFilter === "all" || doc.scope === "platform" || doc.club_id === organizationFilter) && !(doc.kind === "parent_authorization" && doc.purpose_key === "service.parent_authorization"));
   const requiredDocs = personalDocs.filter((doc) => doc.required);
   const optionalDocs = personalDocs.filter((doc) => !doc.required);
   const verifiedChildren = children.filter((child) => child.representation_verified);
@@ -103,7 +109,7 @@ export default function MyLegalPage() {
   const destination = access.state === "ready" ? access.destination : "";
   const juniorConsentMissing = access.state === "ready" && access.consentRequired;
   const pendingClubNames = access.state === "ready" ? access.pendingClubNames ?? [] : [];
-  const parentConsentMissing = access.state === "ready" && (access.parentConsentRequired || parentItems.some((item) => !item.complete && item.child.can_authorize));
+  const parentConsentMissing = access.state === "ready" && (access.parentConsentRequired);
   const requiresParentCode = subject !== "self" && (selected?.kind !== "parent_authorization"
     || selected.purpose_key !== "service.parent_authorization" || parentConfirmation.code_required);
   const canEnter = access.state === "ready" && accessMissing.length === 0 && !juniorConsentMissing && !parentConsentMissing && homeDestinations.has(destination);
@@ -120,7 +126,7 @@ export default function MyLegalPage() {
     return <article key={doc.id} className={styles.docCard}>
       <div className={styles.docTop}><span className={styles.docIcon}><FileText size={20} aria-hidden="true" /></span><span className={styles.statusPill}>{stateLabel}</span></div>
       <h3>{title}</h3>
-      <p className={styles.docMeta}>Version {doc.version?.version_number ?? "—"} <span aria-hidden="true">·</span> {doc.scope === "platform" ? "ActiviTee" : doc.club_name ?? "Club"}</p>
+      <p className={styles.docMeta}>Version {doc.version?.version_number ?? "—"} <span aria-hidden="true">·</span> {doc.scope === "platform" ? "ActiviTee" : doc.club_name ?? t("organization.context")}</p>
       <p className={styles.docDescription}>{doc.kind === "parent_authorization" ? "À lire et décider pour chaque enfant concerné."
         : doc.purpose_key === "coaching.rewrite" ? "Le choix du junior reste nécessaire, même avec l’accord du parent."
         : doc.required ? "Lisez cette version avant de confirmer votre choix." : "Vous pouvez donner ou retirer ce consentement à tout moment."}</p>
@@ -131,6 +137,12 @@ export default function MyLegalPage() {
       </div>
     </article>;
   }
+  function documentGroups(items: Doc[]) {
+    return Array.from(new Set(items.map(doc => doc.club_id))).map(id => <div key={id ?? "platform"}>
+      <h3>{id ? items.find(doc => doc.club_id === id)?.club_name : t("organization.platform")}</h3>
+      <div className={styles.cardGrid}>{items.filter(doc => doc.club_id === id).map(renderDoc)}</div>
+    </div>);
+  }
   async function showChildHistory(child: Child) {
     setHistoryChild(`${child.child_id}:${child.club_id}`); setChildHistory([]);
     try { const result = await api(`/api/legal/history?beneficiary_id=${encodeURIComponent(child.child_id)}&club_id=${encodeURIComponent(child.club_id)}`);
@@ -140,8 +152,14 @@ export default function MyLegalPage() {
   return <main className={styles.page}><div className={styles.shell}>
     <header className={styles.hero}><span className={styles.eyebrow}><ShieldCheck size={17} aria-hidden="true" /> Mon espace</span><h1>Documents et consentements</h1><p>Retrouvez les textes qui vous concernent, consultez leur version actuelle et gardez une trace de vos décisions.</p></header>
     <div className={styles.content}>
+      <div className={styles.documentControls}>
       <div className={styles.toolbar}><div><strong>Mes documents</strong><span>Les choix facultatifs restent indépendants des documents requis.</span></div>
         <label className={styles.languageSelect}><Globe2 size={17} aria-hidden="true" /><span>Langue</span><select value={locale} onChange={(event) => { setLocale(event.target.value); closePresentation(); }}>{languages.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}</select></label>
+      </div>
+      <div className={styles.toolbar}><label className={styles.languageSelect}>{t("organization.context")} <select value={organizationFilter} onChange={event => setOrganizationFilter(event.target.value)}>
+        <option value="all">{t("organization.all")}</option>{Array.from(new Map(organizations.map(org => [org.organization_id, org])).values()).map(org => <option key={org.organization_id} value={org.organization_id}>{org.name} · {t(`organization.${org.org_type}`)}</option>)}
+      </select></label><span>{t("organization.ownAccess")}</span></div>
+      {organizations.length > 0 && <div className={styles.childTabs}>{organizations.map(org => <span key={`${org.organization_id}:${org.player_id}`} className={styles.childButton}>{org.name} · {t(`organization.${org.org_type}`)} · {t(org.accessible ? "organization.ready" : "organization.legalNeeded")}</span>)}</div>}
       </div>
       <section className={styles.accessCard} aria-labelledby="access-title">
         <div className={styles.accessHeading}><span className={styles.accessIcon}><ShieldCheck size={21} aria-hidden="true" /></span><div><h2 id="access-title">Accès à ActiviTee</h2>
@@ -171,10 +189,10 @@ export default function MyLegalPage() {
         </button>}
         {parentItems.length > 0 && <div className={styles.parentChildrenNotice}>
           <div className={styles.parentChildrenHeading}><LockKeyhole size={19} aria-hidden="true" /><div><strong>Autorisations pour mes enfants</strong>
-            <p>Une autorisation distincte pour chaque enfant et chaque club. Lisez le document complet ci-dessous ; votre décision sera enregistrée avec son contenu et sa version.</p></div></div>
+            <p>{t("organization.legalScope")}</p></div></div>
           <ul>{parentItems.map((item) => <li key={item.key}><div className={styles.parentChildDetails}>
-            <strong>{item.child.child_name ?? "Mon enfant"} <span>· {item.child.club_name ?? "Club"}</span></strong>
-            <span>{item.title}</span><small>{item.complete ? "Autorisation enregistrée" : item.conflict ? "Retrait ou refus à examiner avec le club" : "Autorisation à donner"}{item.doc?.version ? ` · Version ${item.doc.version.version_number}` : ""}</small>
+            <strong>{item.child.child_name ?? "Mon enfant"} <span>· {item.child.club_name ?? t("organization.context")}</span></strong>
+            <span>{displayTitle(item.title,item.doc)}</span><small>{item.complete ? "Autorisation enregistrée" : item.conflict ? "Retrait ou refus à examiner avec l’organisation" : "Autorisation à donner"}{item.doc?.version ? ` · Version ${item.doc.version.version_number}` : ""}</small>
             {Boolean(item.child.other_clubs_pending?.length) && <small>L’accès de cet enfant reste aussi en attente auprès de {item.child.other_clubs_pending!.join(", ")}. Ce club doit activer votre accès Parent pour que vous puissiez y donner l’autorisation.</small>}
             {!item.child.can_authorize && <small>Votre club doit vérifier votre habilitation à autoriser cet enfant.</small>}
             {!item.doc?.version && <small>Le document de ce club n’est pas disponible. Contactez votre club.</small>}
@@ -186,13 +204,13 @@ export default function MyLegalPage() {
       </section>
       {status && <p className={styles.notice} role="status">{status}</p>}
       {loading ? <div className={styles.loadingGrid} aria-label="Chargement des documents"><div /><div /><div /></div> : <>
-        {requiredDocs.length > 0 && <section className={styles.section} aria-labelledby="required-title"><div className={styles.sectionHeading}><div><span className={styles.sectionEyebrow}>À consulter</span><h2 id="required-title">Documents requis</h2></div><span className={styles.count}>{requiredDocs.length}</span></div><div className={styles.cardGrid}>{requiredDocs.map(renderDoc)}</div></section>}
-        {optionalDocs.length > 0 && <section className={styles.section} aria-labelledby="optional-title"><div className={styles.sectionHeading}><div><span className={styles.sectionEyebrow}>À votre choix</span><h2 id="optional-title">Consentements facultatifs</h2></div><span className={styles.count}>{optionalDocs.length}</span></div><div className={styles.cardGrid}>{optionalDocs.map(renderDoc)}</div></section>}
+        {requiredDocs.length > 0 && <section className={styles.section} aria-labelledby="required-title"><div className={styles.sectionHeading}><div><span className={styles.sectionEyebrow}>À consulter</span><h2 id="required-title">Documents requis</h2></div><span className={styles.count}>{requiredDocs.length}</span></div>{documentGroups(requiredDocs)}</section>}
+        {optionalDocs.length > 0 && <section className={styles.section} aria-labelledby="optional-title"><div className={styles.sectionHeading}><div><span className={styles.sectionEyebrow}>À votre choix</span><h2 id="optional-title">Consentements facultatifs</h2></div><span className={styles.count}>{optionalDocs.length}</span></div>{documentGroups(optionalDocs)}</section>}
         {!docs.length && <div className={styles.emptyDocuments}><Check size={22} aria-hidden="true" /><h2>Aucun document à traiter</h2><p>Vos documents apparaîtront ici lorsqu’ils vous concerneront.</p></div>}
       </>}
       <section className={styles.section} aria-labelledby="history-title"><div className={styles.sectionHeading}><div><span className={styles.sectionEyebrow}>Vos preuves</span><h2 id="history-title">Historique de mes décisions</h2></div></div><DecisionHistory rows={history} onDownload={download} empty="Aucune décision enregistrée pour le moment." /></section>
       {verifiedChildren.length > 0 && <section className={styles.section} aria-labelledby="children-title"><div className={styles.sectionHeading}><div><span className={styles.sectionEyebrow}>Représentation parentale</span><h2 id="children-title">Décisions concernant mes enfants</h2></div></div>
-        <div className={styles.childTabs}>{verifiedChildren.map((child) => <button type="button" key={`${child.child_id}-${child.club_id}`} className={historyChild === `${child.child_id}:${child.club_id}` ? styles.activeChild : styles.childButton} onClick={() => showChildHistory(child)}>{child.child_name ?? "Mon enfant"} <span>· {child.club_name ?? "Club"}</span></button>)}</div>
+        <div className={styles.childTabs}>{verifiedChildren.map((child) => <button type="button" key={`${child.child_id}-${child.club_id}`} className={historyChild === `${child.child_id}:${child.club_id}` ? styles.activeChild : styles.childButton} onClick={() => showChildHistory(child)}>{child.child_name ?? "Mon enfant"} <span>· {child.club_name ?? t("organization.context")}</span></button>)}</div>
         {historyChild && <div className={styles.childHistory}><h3>{currentHistoryChild?.child_name ?? "Mon enfant"}</h3><DecisionHistory rows={childHistory} onDownload={download} empty="Aucune décision enregistrée pour cet enfant." /></div>}
       </section>}
       <footer className={styles.footer}><div><Link href="/legal">Textes publics</Link><Link href="/legal/request">Demande relative à mes données</Link></div><button type="button" onClick={async () => { await supabase.auth.signOut(); window.location.assign("/"); }}><LogOut size={16} aria-hidden="true" /> Se déconnecter</button></footer>

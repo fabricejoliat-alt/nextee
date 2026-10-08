@@ -1,3 +1,5 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
+import { requireCoachEventPlayer } from "@/lib/coachAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { requireCoachEventAccess } from "@/app/api/coach/events/_access";
@@ -24,7 +26,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: st
     if (!eventId) return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
 
     const { supabaseAdmin, callerId } = await requireCaller(token);
-    const event = await requireCoachEventAccess(supabaseAdmin, callerId, eventId);
+    const event = await requireCoachEventAccess(supabaseAdmin, callerId, eventId, requestedOrganizationId(req.url));
     if (event.event_type !== "training") {
       return NextResponse.json({ error: "Only training sessions can be evaluated." }, { status: 400 });
     }
@@ -35,6 +37,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: st
       (typeof body.expected_recorded_at !== "string" || !Number.isFinite(Date.parse(body.expected_recorded_at))))) {
       return NextResponse.json({ error: "Reload the evaluation before saving." }, { status: 400 });
     }
+    await requireCoachEventPlayer(supabaseAdmin, eventId, normalized.player_id, callerId, event.club_id);
     const attendeeRes = await supabaseAdmin
       .from("club_event_attendees")
       .select("player_id")

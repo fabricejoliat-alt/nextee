@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireCaller } from "@/app/api/messages/_lib";
@@ -79,6 +80,7 @@ export async function GET(req: NextRequest) {
     const requestedEventId = String(url.searchParams.get("club_event_id") ?? "").trim();
     const access = await resolveAuthenticatedPlayerAccess({
       accessToken: bearerTokenFromRequest(req),
+      requestedOrganizationId: requestedOrganizationId(req.url),
       requestedPlayerId: requestedPlayerId || requestedChildId,
       mode: "view",
     });
@@ -89,6 +91,7 @@ export async function GET(req: NextRequest) {
       .from("player_dashboard_documents")
       .select("id,organization_id,player_id,uploaded_by,file_name,storage_bucket,storage_path,mime_type,size_bytes,coach_only,club_event_id,created_at")
       .eq("player_id", playerId)
+      .in("organization_id", access.organizationIds)
       .or("coach_only.is.null,coach_only.eq.false")
       .order("created_at", { ascending: false });
     if (requestedEventId) docsQuery = docsQuery.eq("club_event_id", requestedEventId);

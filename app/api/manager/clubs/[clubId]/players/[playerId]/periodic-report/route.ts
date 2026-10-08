@@ -1,3 +1,4 @@
+import { organizationGuardians } from "@/lib/server/organizationGuardians";
 import { authorizedReportRecipients } from "@/lib/server/periodicReportAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
@@ -32,7 +33,7 @@ async function authUsers(db: any, ids: string[]) {
   return result;
 }
 async function recipients(db: any, clubId: string, playerId: string) {
-  const links = await db.from("player_guardians").select("guardian_user_id,relation,is_primary,can_view").eq("player_id", playerId);
+  const links = await organizationGuardians(db, clubId, [playerId], false);
   if (links.error) throw new Error(links.error.message);
   const ids = await authorizedReportRecipients(db, clubId, playerId, (links.data ?? []).map((row: any) => String(row.guardian_user_id)));
   const users = await authUsers(db, ids);

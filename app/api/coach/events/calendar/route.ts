@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveCoachAssignments } from "@/lib/coachAccess";
@@ -38,7 +39,7 @@ export async function GET(req: NextRequest) {
     if (callerErr || !callerData.user) return NextResponse.json({ error: "Invalid token" }, { status: 401 });
 
     const coachId = callerData.user.id;
-    const scope = await resolveCoachAssignments(supabaseAdmin, coachId);
+    const scope = await resolveCoachAssignments(supabaseAdmin, coachId, requestedOrganizationId(req.url));
     const groupIds = scope.groups.map((group) => group.id);
     const eventIdsFromAssign = scope.eventIds;
 
@@ -85,7 +86,7 @@ export async function GET(req: NextRequest) {
         ? supabaseAdmin.from("coach_groups").select("id,name,club_id").in("id", gIds)
         : Promise.resolve({ data: [], error: null } as const),
       cIds.length > 0
-        ? supabaseAdmin.from("clubs").select("id,name").in("id", cIds)
+        ? supabaseAdmin.from("organizations").select("id,name").in("id", cIds)
         : Promise.resolve({ data: [], error: null } as const),
       campEventIds.length > 0
         ? supabaseAdmin.from("club_camp_days").select("camp_id,event_id,day_index").in("event_id", campEventIds)

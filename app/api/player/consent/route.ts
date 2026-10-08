@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { loadOrganizationAccessSummary } from "@/lib/server/organizationSummary";
 import { resolvePlayerConsentStatus } from "@/lib/playerConsent";
 import {
   bearerTokenFromRequest,
@@ -15,6 +16,7 @@ export async function GET(req: NextRequest) {
   try {
     const caller = await requirePlayerActor(bearerTokenFromRequest(req));
     const { supabaseAdmin, actorUserId: userId, actorRoles } = caller;
+    const organizationAccess = await loadOrganizationAccessSummary(supabaseAdmin, userId);
     const visibleLinks = visibleGuardianLinks(caller.guardianLinks);
     const requestedChildId = String(new URL(req.url).searchParams.get("child_id") ?? "").trim();
     const useParentContext =
@@ -47,7 +49,7 @@ export async function GET(req: NextRequest) {
           .in("id", playerIds),
         supabaseAdmin
           .from("club_members")
-          .select("user_id,player_consent_status")
+          .select("user_id,club_id,player_consent_status")
           .in("user_id", playerIds)
           .eq("role", "player")
           .eq("is_active", true),
@@ -60,7 +62,7 @@ export async function GET(req: NextRequest) {
       const statusesByPlayer = new Map<string, string[]>();
       for (const row of membershipsRes.data ?? []) {
         const pid = String((row as any).user_id ?? "");
-        if (!pid) continue;
+        if (!pid || !organizationAccess.some(scope => scope.player_id === pid && scope.organization_id === row.club_id)) continue;
         const list = statusesByPlayer.get(pid) ?? [];
         list.push(((row as any).player_consent_status ?? null) as string | null);
         statusesByPlayer.set(pid, list);
@@ -86,7 +88,7 @@ export async function GET(req: NextRequest) {
             isPrimary: primaryById.get(playerId) ?? false,
             canEdit: editableById.get(playerId) ?? false,
             consentStatus: status,
-            pending: status !== "granted" && status !== "adult",
+            pending: !organizationAccess.some(row => row.player_id === playerId && row.accessible),
           };
         })
         .sort((a, b) => {
@@ -99,6 +101,7 @@ export async function GET(req: NextRequest) {
 
       return NextResponse.json({
         viewerRole: "parent",
+        organizations: organizationAccess,
         children,
         pendingChildren: children.filter((c) => c.pending && c.canEdit && statusesByPlayer.has(c.playerId)).map((c) => c.playerId),
       });
@@ -112,7 +115,7 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from("profiles").select("id,first_name,last_name,birth_date").eq("id", userId).maybeSingle(),
       supabaseAdmin
         .from("club_members")
-        .select("player_consent_status")
+        .select("club_id,player_consent_status")
         .eq("user_id", userId)
         .eq("role", "player")
         .eq("is_active", true),
@@ -130,13 +133,14 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       viewerRole: "player",
+      organizations: organizationAccess,
       player: {
         playerId: userId,
         firstName: (profileRes.data?.first_name ?? null) as string | null,
         lastName: (profileRes.data?.last_name ?? null) as string | null,
         birthDate,
         consentStatus: status,
-        pending: status !== "granted" && status !== "adult",
+        pending: !organizationAccess.some(row => row.player_id === userId && row.accessible),
       },
     });
   } catch (error: unknown) {

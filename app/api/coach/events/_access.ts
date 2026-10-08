@@ -17,7 +17,8 @@ export type CoachEventAccessRow = {
 export async function requireCoachEventAccess(
   supabaseAdmin: SupabaseClient,
   callerId: string,
-  eventId: string
+  eventId: string,
+  organizationId?: string | null
 ): Promise<CoachEventAccessRow> {
   const eventRes = await supabaseAdmin
     .from("club_events")
@@ -28,6 +29,7 @@ export async function requireCoachEventAccess(
   if (!eventRes.data?.id) throw new Error("event_not_found");
 
   const event = eventRes.data as CoachEventAccessRow;
+  if (organizationId && event.club_id !== organizationId) throw new Error("forbidden");
   if (!(await canCoachAccessEvent(supabaseAdmin, callerId, eventId, event.group_id, event.club_id))) {
     throw new Error("forbidden");
   }

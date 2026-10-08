@@ -38,9 +38,9 @@ export async function GET(
 
     if (playerClubIds.length === 0) return NextResponse.json({ organizations: [] });
     const clubsRes = await supabaseAdmin
-      .from("clubs")
+      .from("organizations")
       .select("id,name")
-      .in("id", playerClubIds);
+      .in("id", playerClubIds.filter(id => myClubIds.has(id)));
     if (clubsRes.error) return NextResponse.json({ error: clubsRes.error.message }, { status: 400 });
 
     const organizations = (clubsRes.data ?? [])

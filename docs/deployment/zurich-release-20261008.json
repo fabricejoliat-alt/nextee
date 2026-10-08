@@ -1,0 +1,58 @@
+{
+  "checked_at": "2026-10-08T19:11:21.543Z",
+  "source_sha256": "335953c0041ee219d1ec42feac32e9ae679807978a26917550ecb8b5d0d2aac3",
+  "project": "soivxpdcilgltbjbpimt",
+  "branch": "codex/activitee-app-production",
+  "migration": {
+    "file": "supabase/migrations/20261126_personal_player_history.sql",
+    "status": "committed",
+    "execution": "Supabase SQL Editor; guarded transaction with 20 protected-table fingerprints",
+    "exact_transaction_pglite": "passed"
+  },
+  "database": {
+    "clubs": 0,
+    "organizations": 0,
+    "auth_users": 1,
+    "profiles": 1,
+    "superadmins": 1,
+    "nonadmin_profiles": 0,
+    "members": 0,
+    "rules_cards": 72,
+    "etiquette_cards": 36,
+    "validation_exercises": 60,
+    "ftem_defaults": 10,
+    "legal_templates": 3,
+    "organization_templates": 3,
+    "legal_versions": 4,
+    "legal_fingerprint": "35475d527b52cb2a245c7e89b6d4332b88f26277386d84f095ffb833cf61311f",
+    "legal_presentations": 0,
+    "legal_decisions": 0,
+    "illustrations": 40,
+    "personal_history_migration": true,
+    "nullable_history_owners": 5,
+    "child_rls_policies": 3
+  },
+  "verification": {
+    "personal_history_and_prerequisites_tests": 7,
+    "coach_security_and_legal_tests": 92,
+    "player_performance_tests_prior_turn": 22,
+    "typescript": "passed",
+    "diff_check": "passed",
+    "production_build_prior_turn": "passed; 205 pages"
+  },
+  "backup": {
+    "path": "backups/organizations/zurich-clean-after-remodel-1791392587353.enc",
+    "sha256": "a7aa6939261d25efeb84df05011c9eabb18c19f532d4176177e06f65e762466d",
+    "integrity": "passed",
+    "restore_verified": false
+  },
+  "legal": {
+    "published_versions": "unchanged",
+    "personal_history_drafts": "needs_review; not republished"
+  },
+  "vercel": {
+    "project": "activitee-app",
+    "production_supabase_url": "https://soivxpdcilgltbjbpimt.supabase.co",
+    "status": "deployment_pending"
+  }
+}

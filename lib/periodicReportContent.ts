@@ -29,10 +29,10 @@ export async function buildPeriodicReportContent(db: SupabaseClient, config: Rep
   const [profile, attendanceRows, trainingsResult, rounds, handicaps, club, settings, targets, coachFeedback] = await Promise.all([
     db.from("profiles").select("first_name,last_name,handicap").eq("id", config.player_user_id).maybeSingle(),
     db.from("club_event_attendees").select("event_id,status").eq("player_id", config.player_user_id).limit(5000),
-    db.from("training_sessions").select("id,start_at,total_minutes,session_type,club_event_id,club_id,motivation,difficulty,satisfaction").eq("user_id", config.player_user_id).gte("start_at", `${period.from}T00:00:00Z`).lte("start_at", `${period.to}T23:59:59Z`).limit(5000),
-    db.from("golf_rounds").select("id,start_at,round_type,total_score,total_putts,gir,fairways_hit,fairways_total,eagles,birdies,pars,bogeys,doubles_plus").eq("user_id", config.player_user_id).gte("start_at", `${period.from}T00:00:00Z`).lte("start_at", `${period.to}T23:59:59Z`).limit(2000),
+    db.from("training_sessions").select("id,start_at,total_minutes,session_type,club_event_id,club_id,motivation,difficulty,satisfaction").eq("user_id", config.player_user_id).eq("club_id",config.club_id).gte("start_at", `${period.from}T00:00:00Z`).lte("start_at", `${period.to}T23:59:59Z`).limit(5000),
+    db.from("golf_rounds").select("id,start_at,round_type,total_score,total_putts,gir,fairways_hit,fairways_total,eagles,birdies,pars,bogeys,doubles_plus").eq("user_id", config.player_user_id).eq("club_id",config.club_id).gte("start_at", `${period.from}T00:00:00Z`).lte("start_at", `${period.to}T23:59:59Z`).limit(2000),
     db.from("player_handicap_history").select("effective_date,value").eq("user_id", config.player_user_id).lte("effective_date", period.to).order("effective_date"),
-    db.from("clubs").select("name").eq("id", config.club_id).maybeSingle(),
+    db.from("organizations").select("name").eq("id", config.club_id).maybeSingle(),
     db.from("training_volume_settings").select("season_months,offseason_months").eq("organization_id", config.club_id).maybeSingle(),
     db.from("training_volume_targets").select("ftem_code,level_label,handicap_min,handicap_max,minutes_offseason,minutes_inseason,sort_order").eq("organization_id", config.club_id).order("sort_order"),
     db.from("club_event_coach_feedback").select("event_id,engagement,attitude,performance,visible_to_player").eq("player_id", config.player_user_id).limit(3000),

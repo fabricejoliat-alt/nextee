@@ -1,0 +1,31 @@
+✔ All 17 migrations and postflight are inside one transaction; rollback restores the original schema (1609.268167ms)
+✔ Encrypted backup preserves database and images and rejects corruption/wrong password (114.261084ms)
+✔ canonique: aucune académie dans clubs, projections et FTEM cohérents (1603.580208ms)
+✔ recherche minimale: relation active, acteur et capacités contrôlés (5.048417ms)
+✔ demande: ni autorisation implicite, ni duplication, validation source obligatoire (10.820209ms)
+✔ Admin ne se substitue pas au parent; preuve avec organisation_name rendue (5.779583ms)
+✔ RLS: Manager étranger, parent hors périmètre et écriture directe refusés (6.931583ms)
+✔ retrait Centre: historique immuable et Sion toujours accessible (4.976958ms)
+✔ conflit et nouvelle version: nouvelle décision obligatoire, historique conservé (14.981292ms)
+✔ propriétaire sportif obligatoire et notifications limitées aux droits du parent (28.646125ms)
+✔ ancien RPC golf: droit d’édition par organisation et cascade contrôlée (21.317083ms)
+✔ club externe: revendication sans accès, rapprochement humain sans nouveaux comptes (5.549709ms)
+✔ refus parental Centre: activation interdite, affiliation Sion indépendante (4.351667ms)
+✔ suppression organisation: refus avec histoire, comptes et autres affiliations préservés (5.023542ms)
+✔ rollback refuse après une utilisation; replay et rollback vierge restaurent les fonctions (1074.229208ms)
+✔ preuves anciennes: migration et retour arrière conservent versions, présentations et décisions (1023.933042ms)
+✔ migration peuplée: deux affiliations, histoires personnelles intactes, aucune attribution depuis OM (1608.920916ms)
+✔ Player: mêmes histoires personnelles dans les deux contextes, données du club isolées (238.546458ms)
+✔ Parent: lecture personnelle permise, modification selon droits du contexte; tiers refusé (91.68175ms)
+✔ Coach affecté: progression personnelle lisible, écriture personnelle interdite (32.6485ms)
+✔ Raw TEST schema: both absent catalogs are seeded atomically, club FTEM and published legal evidence preserved (1880.368917ms)
+✔ Existing catalogs and seed function: preserve custom defaults, templates and existing club targets (1048.321167ms)
+✔ Only the two known missing reference catalogs are optional; missing published evidence stops preparation (0.606916ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 3905.95525

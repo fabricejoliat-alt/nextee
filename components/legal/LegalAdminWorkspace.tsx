@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, FileText, Plus, Search } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { legalAdminGroups } from "@/lib/legalAdminGroups";
 import styles from "./LegalAdminWorkspace.module.css";
 
@@ -24,6 +25,7 @@ const translationStatusLabels: Record<string, string> = {
 const translationStatusLabel = (status?: string) => status ? translationStatusLabels[status] ?? status : "manquante";
 
 export default function LegalAdminWorkspace() {
+  const { t } = useI18n();
   const [docs, setDocs] = useState<Doc[]>([]); const [drafts, setDrafts] = useState<Draft[]>([]); const [versions, setVersions] = useState<Version[]>([]);
   const [clubs, setClubs] = useState<Array<{ id: string; name: string }>>([]);
   const [clubTemplatePurposes, setClubTemplatePurposes] = useState<string[]>([]);
@@ -59,7 +61,7 @@ export default function LegalAdminWorkspace() {
   }, []);
   useEffect(() => { load().catch((e) => setMessage(String(e))); }, [load]);
   const document = docs.find((d) => d.id === selected);
-  const selectedClubTemplateDocuments = docs.filter((d) => d.scope === "club" && d.club_id === templateClubId
+  const selectedClubTemplateDocuments = docs.filter((d) => d.scope !== "platform" && d.club_id === templateClubId
     && clubTemplatePurposes.includes(d.purpose_key));
   const audienceConfigured = document?.applicability.status === "approved" && document.applicability.rule === "all_members";
   const { groups, fixtures } = useMemo(() => legalAdminGroups(docs), [docs]);
@@ -121,7 +123,7 @@ export default function LegalAdminWorkspace() {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
       const response = await fetch("/api/admin/legal", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json(); if (!response.ok) throw new Error(data.error);
-      await load(); setMessage(payload.operation === "create_club_templates" ? "Les trois brouillons du club sont créés et restent inactifs." : "Enregistré.");
+      await load(); setMessage(payload.operation === "create_club_templates" ? t("organization.draftCreated") : "Enregistré.");
       if (data.id) setSelected(data.id);
     } catch (error) {
       if (["publish", "set_enforcement", "set_document_active"].includes(String(payload.operation))) {
@@ -171,16 +173,16 @@ export default function LegalAdminWorkspace() {
         {enforcementEnabled ? "Désactiver le contrôle" : "Activer le contrôle"}</button>
     </section>
     {clubTemplatePurposes.length === 3 && <section className={styles.panel}>
-      <div className={styles.sectionHeader}><div><h2>Documents d’un nouveau club</h2><span>3 modèles disponibles</span></div></div>
-      <p>Après la création du club, prépare ses trois documents à partir des modèles. Ils restent inactifs jusqu’à leur revue, publication et activation.</p>
+      <div className={styles.sectionHeader}><div><h2>{t("organization.templatesTitle")}</h2><span>3 modèles disponibles</span></div></div>
+      <p>{t("organization.templatesLead")}</p>
       <label>Club <select disabled={busy} value={templateClubId} onChange={(event) => setTemplateClubId(event.target.value)}>
-        <option value="">Choisir un club</option>{clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}
+        <option value="">{t("organization.choose")}</option>{clubs.map((club) => <option key={club.id} value={club.id}>{club.name}</option>)}
       </select></label>
       {templateClubId && selectedClubTemplateDocuments.length > 0 && <p role="status">{selectedClubTemplateDocuments.length} document{selectedClubTemplateDocuments.length > 1 ? "s" : ""} déjà créé{selectedClubTemplateDocuments.length > 1 ? "s" : ""} pour ce club.</p>}
       <div className={styles.actionRow}><button className={styles.primaryButton}
         disabled={busy || !templateClubId || selectedClubTemplateDocuments.length > 0}
         onClick={() => mutate({ operation: "create_club_templates", club_id: templateClubId })}>
-        <Plus size={16} aria-hidden="true" /> Créer les 3 brouillons du club
+        <Plus size={16} aria-hidden="true" /> {t("organization.createDrafts")}
       </button></div>
     </section>}
     <section className={styles.panel}>
@@ -190,14 +192,14 @@ export default function LegalAdminWorkspace() {
         <label>Finalité <input disabled={busy} value={purpose} onChange={(e) => setPurpose(e.target.value)} placeholder="utilisation du service" /></label>
         <label>Type <select disabled={busy} value={kind} onChange={(e) => { const next = e.target.value; setKind(next);
           setAction(({ terms: "accept", privacy: "acknowledge", parent_authorization: "authorize", specific_consent: "consent", junior_notice: "read" } as Record<string,string>)[next]);
-          if (next === "parent_authorization") setScope("club"); }}>{["terms","privacy","parent_authorization","specific_consent","junior_notice"].map((v) => <option key={v} value={v}>{kindLabels[v]}</option>)}</select></label>
+          if (next === "parent_authorization") setScope("organization"); }}>{["terms","privacy","parent_authorization","specific_consent","junior_notice"].map((v) => <option key={v} value={v}>{kindLabels[v]}</option>)}</select></label>
         <label>Action <select disabled={busy} value={action} onChange={(e) => setAction(e.target.value)}>{["accept","acknowledge","authorize","consent","read"].map((v) => <option key={v} value={v}>{actionLabels[v]}</option>)}</select></label>
         <label>Audience <input disabled={busy} value={audience} onChange={(e) => setAudience(e.target.value)} /></label>
-        <label>Portée <select disabled={busy} value={scope} onChange={(e) => setScope(e.target.value)}><option value="platform">Plateforme</option><option value="club">Club</option></select></label>
-        {scope === "club" && <label>Club <select disabled={busy} value={clubId} onChange={(e) => setClubId(e.target.value)}><option value="">Choisir un club</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}
+        <label>Portée <select disabled={busy} value={scope} onChange={(e) => setScope(e.target.value)}><option value="platform">Plateforme</option><option value="organization">{t("organization.context")}</option></select></label>
+        {scope !== "platform" && <label>{t("organization.context")} <select disabled={busy} value={clubId} onChange={(e) => setClubId(e.target.value)}><option value="">{t("organization.choose")}</option>{clubs.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>}
         <label className={styles.checkboxField}><input disabled={busy} type="checkbox" checked={required} onChange={(e) => setRequired(e.target.checked)} /> Validation requise</label>
-      </div><button className={styles.primaryButton} disabled={busy || !key || !purpose.trim() || (scope === "club" && !clubId)} onClick={() => mutate({ operation: "create", key, kind,
-        purpose_key: purpose, action, audience: audience.split(",").map((x) => x.trim()), scope, club_id: scope === "club" ? clubId : null,
+      </div><button className={styles.primaryButton} disabled={busy || !key || !purpose.trim() || (scope !== "platform" && !clubId)} onClick={() => mutate({ operation: "create", key, kind,
+        purpose_key: purpose, action, audience: audience.split(",").map((x) => x.trim()), scope, club_id: scope !== "platform" ? clubId : null,
         required })}><Plus size={16} aria-hidden="true" /> Créer le brouillon</button>
     </section>
     <section className={styles.workspaceGrid}>
@@ -206,7 +208,7 @@ export default function LegalAdminWorkspace() {
         {filteredGroups.length ? <div className={styles.tableFrame}><table className={styles.table}><thead><tr><th>Modèle</th><th>Portée</th><th>État</th></tr></thead><tbody>
           {filteredGroups.map((group) => <tr key={group.key} className={selectedGroup?.key === group.key ? styles.selectedRow : ""}>
             <td data-label="Modèle"><button type="button" disabled={busy} className={styles.docSelect} aria-current={selectedGroup?.key === group.key ? "true" : undefined} onClick={() => setSelected(group.documents[0].id)}>{group.label}<span>{group.shared ? `${group.documents.length} clubs · ${kindLabels[group.documents[0].kind] ?? group.documents[0].kind}` : group.documents[0].document_key}</span></button></td>
-            <td data-label="Portée">{group.shared ? `${group.documents.length} clubs` : group.documents[0].scope === "club" ? clubs.find((club) => club.id === group.documents[0].club_id)?.name ?? "Club" : "Plateforme"}</td>
+            <td data-label="Portée">{group.shared ? `${group.documents.length} ${t("organization.context")}` : group.documents[0].scope !== "platform" ? clubs.find((club) => club.id === group.documents[0].club_id)?.name ?? t("organization.context") : t("organization.platform")}</td>
             <td data-label="État"><span className={group.documents.every((doc) => doc.active) ? styles.activeBadge : styles.inactiveBadge}>{group.documents.every((doc) => doc.active) ? "Actif" : group.documents.some((doc) => doc.active) ? "Mixte" : "Inactif"}</span></td>
           </tr>)}</tbody></table></div> : <p className={styles.emptyState}>{groups.length ? "Aucun modèle ne correspond à cette recherche." : "Aucun modèle pour le moment."}</p>}
         {fixtures.length > 0 && <details><summary>{fixtures.length} documents de test masqués</summary>
@@ -215,7 +217,7 @@ export default function LegalAdminWorkspace() {
       </div>
       <div className={`${styles.panel} ${styles.editorPanel}`}>
         {!document ? <p>Sélectionne un document.</p> : <>
-          <h2>{selectedGroup?.label ?? document.document_key}</h2><p>{document.scope === "club" ? "Club" : "Plateforme"} · {document.audience_roles.join(", ")} · public {audienceConfigured ? "configuré" : "à configurer"}</p>
+          <h2>{selectedGroup?.label ?? document.document_key}</h2><p>{document.scope !== "platform" ? t("organization.context") : t("organization.platform")} · {document.audience_roles.join(", ")} · public {audienceConfigured ? "configuré" : "à configurer"}</p>
           {selectedGroup?.shared && <div className={styles.clubSwitcher}><label>Club concerné <select disabled={busy || editorDirty} value={selected} onChange={(event) => setSelected(event.target.value)}>{selectedGroup.documents.map((item) => <option key={item.id} value={item.id}>{clubs.find((club) => club.id === item.club_id)?.name ?? item.document_key}</option>)}</select></label>
             <p>Le texte peut être enregistré pour tous les clubs. Le public, l’approbation et la publication se contrôlent ensuite pour chaque club.</p>
             {editorDirty && <><p role="status">Enregistre ou annule tes modifications avant de changer de club.</p><button type="button" disabled={busy} onClick={() => {
@@ -226,7 +228,7 @@ export default function LegalAdminWorkspace() {
           </div>}
           <fieldset className={styles.fieldset}><legend>Variables du modèle</legend>
             <p>Les valeurs viennent des profils et du club au moment de l’affichage. Modifier cette liste relance la revue des quatre langues.</p>
-            {(["child_name", "club_name", "user_name"] as const).map((name) => <label key={name} style={{ marginRight: 16 }}>
+            {(["child_name", "club_name", "organization_name", "user_name"] as const).map((name) => <label key={name} style={{ marginRight: 16 }}>
               <input disabled={busy} type="checkbox" checked={variables.includes(name)} onChange={(event) => { setEditorDirty(true); setVariables((current) => event.target.checked
                 ? [...current, name] : current.filter((item) => item !== name)); }} /> {name}</label>)}
             <div className={styles.actionRow}><button disabled={busy || !draft || JSON.stringify([...variables].sort()) === JSON.stringify([...(draft?.allowed_variables ?? [])].sort())}
@@ -243,7 +245,7 @@ export default function LegalAdminWorkspace() {
           {locale !== "fr" && <button disabled={busy || !draft?.translations?.fr?.body} onClick={async () => { setBusy(true); try { const token = (await supabase.auth.getSession()).data.session?.access_token; const response = await fetch("/api/admin/legal/translate", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ document_id: selected, locale }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); await load(); setMessage("Proposition à relire."); } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } finally { setBusy(false); } }}>Proposer une traduction</button>}</div>
           <details><summary>Aperçu utilisateur</summary><h3>{form.title}</h3><p style={{ whiteSpace: "pre-wrap" }}>{form.body}</p><button disabled>{form.action_label}</button></details>
           <details><summary>Public concerné</summary>
-            <p>Ce document s’adresse aux membres actifs des rôles indiqués ci-dessus{document.scope === "club" ? " dans le club sélectionné" : " sur la plateforme"}. Les liens parent–enfant sont vérifiés lors de la décision.</p>
+            <p>Ce document s’adresse aux membres actifs des rôles indiqués ci-dessus{document.scope !== "platform" ? " dans le club sélectionné" : " sur la plateforme"}. Les liens parent–enfant sont vérifiés lors de la décision.</p>
             <button disabled={busy || document.active || audienceConfigured}
               onClick={() => mutate({ operation: "configure_audience", document_id: selected, expected: document.applicability })}>
               Configurer ce public</button>
@@ -352,7 +354,7 @@ export default function LegalAdminWorkspace() {
       <p>Le lien familial et l’accès au club sont contrôlés par le serveur. La qualité permettant une décision parentale nécessite une revue distincte et motivée.</p>
       <p>La liste est limitée à 500 adhésions actives ; la recherche ciblée reste à ajouter pour les clubs plus grands.</p>
       <label>Club <select disabled={busy} value={representativeClub} onChange={(e) => { setRepresentativeClub(e.target.value); setRepresentativeCandidates([]); setRepresentativePair(""); }}>
-        <option value="">Choisir un club</option>{clubs.map((club) => <option value={club.id} key={club.id}>{club.name}</option>)}</select></label>
+        <option value="">{t("organization.choose")}</option>{clubs.map((club) => <option value={club.id} key={club.id}>{club.name}</option>)}</select></label>
       <button disabled={!representativeClub || busy} onClick={async () => { try {
         const token = (await supabase.auth.getSession()).data.session?.access_token;
         const response = await fetch(`/api/admin/legal/representatives?club_id=${encodeURIComponent(representativeClub)}`,

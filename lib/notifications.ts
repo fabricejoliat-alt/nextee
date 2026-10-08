@@ -58,11 +58,11 @@ async function insertNotificationRow(input: AppNotificationInput) {
       body: input.body ?? null,
       data: input.data ?? {},
     })
-    .select("id")
+    .select("id,club_id")
     .single();
 
   if (nIns.error) throw new Error(nIns.error.message);
-  return nIns.data.id as string;
+  return nIns.data as { id: string; club_id: string | null };
 }
 
 export async function createAppNotification(input: AppNotificationInput) {
@@ -78,7 +78,8 @@ export async function createAppNotification(input: AppNotificationInput) {
     },
   };
 
-  const notificationId = await insertNotificationRow(normalizedInput);
+  const notification = await insertNotificationRow(normalizedInput);
+  const notificationId = notification.id;
 
   const rIns = await supabase
     .from("notification_recipients")
@@ -97,8 +98,10 @@ export async function createAppNotification(input: AppNotificationInput) {
 
   // Duplicate player notifications to linked parents (one notification per child+parent pair).
   const gRes = await supabase
-    .from("player_guardians")
+    .from("player_guardian_scopes")
     .select("player_id,guardian_user_id,can_view")
+    .eq("organization_id", notification.club_id ?? "00000000-0000-0000-0000-000000000000")
+    .eq("status", "active")
     .in("player_id", recipients);
 
   if (gRes.error) {
@@ -139,7 +142,7 @@ export async function createAppNotification(input: AppNotificationInput) {
         const parentTitle = `${normalizedInput.title} — ${childName}`;
         const parentBody = normalizedInput.body ?? null;
 
-        const parentNotificationId = await insertNotificationRow({
+        const parentNotification = await insertNotificationRow({
           ...normalizedInput,
           title: parentTitle,
           body: parentBody,
@@ -148,13 +151,13 @@ export async function createAppNotification(input: AppNotificationInput) {
         });
 
         const prIns = await supabase.from("notification_recipients").insert({
-          notification_id: parentNotificationId,
+          notification_id: parentNotification.id,
           user_id: target.parentId,
         });
         if (prIns.error) throw new Error(prIns.error.message);
 
         dispatchPush({
-          notificationId: parentNotificationId,
+          notificationId: parentNotification.id,
           title: parentTitle,
           body: parentBody,
           url: childUrl,

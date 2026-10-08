@@ -8,8 +8,13 @@ export async function activeCoachMemberships(db: SupabaseClient, userId: string)
 }
 
 /** Historical assignments never confer access without a current staff membership. */
-export async function resolveCoachAssignments(db: SupabaseClient, userId: string) {
-  const memberships = await activeCoachMemberships(db, userId);
+export async function resolveCoachAssignments(db: SupabaseClient, userId: string, organizationId?: string | null) {
+  const candidates = (await activeCoachMemberships(db, userId)).filter(row=>!organizationId||row.club_id===organizationId);
+  const readiness = await Promise.all(candidates.map(async row => {
+    const result=await db.rpc("organization_actor_legal_ready",{p_org:row.club_id,p_actor:userId});
+    if(result.error)throw result.error;return result.data===true?row:null;
+  }));
+  const memberships=readiness.filter((row):row is NonNullable<typeof row>=>row!==null);
   const clubIds = [...new Set(memberships.map((row) => row.club_id))];
   if (!clubIds.length) return { memberships, clubIds, groups: [], eventIds: [] as string[] };
 
@@ -40,6 +45,8 @@ export async function canCoachAccessEvent(
   db: SupabaseClient, callerId: string, eventId: string, groupId: string | null, clubId: string
 ) {
   if (!clubId) return false;
+  const ready=await db.rpc("organization_actor_legal_ready",{p_org:clubId,p_actor:callerId});
+  if(ready.error)throw ready.error;if(ready.data!==true)return false;
   const memberships = await activeCoachMemberships(db, callerId);
   const clubMemberships = memberships.filter((row) => row.club_id === clubId);
   if (!clubMemberships.length) return false;
@@ -55,9 +62,24 @@ export async function canCoachAccessEvent(
   return Boolean(assigned.data || (group.data && (group.data.head_coach_user_id === callerId || link.data)));
 }
 
-export async function requireCoachEventPlayer(db: SupabaseClient, eventId: string, playerId: string) {
+export async function requireCoachEventPlayer(db: SupabaseClient, eventId: string, playerId: string, actorId: string, organizationId: string) {
+  const event = await db.from("club_events").select("club_id").eq("id", eventId).maybeSingle();
+  if (event.error) throw event.error;
+  if (event.data?.club_id !== organizationId) throw new Error("forbidden");
+  const access = await db.rpc("organization_event_player_access", { p_actor: actorId, p_event: eventId, p_player: playerId });
+  if (access.error) throw access.error;
+  if (access.data !== true) throw new Error("forbidden");
   const attendee = await db.from("club_event_attendees").select("player_id")
     .eq("event_id", eventId).eq("player_id", playerId).maybeSingle();
   if (attendee.error) throw new Error(attendee.error.message);
   if (!attendee.data) throw new Error("unknown_attendee");
+}
+
+export async function authorizedCoachPlayers(db: SupabaseClient, actorId: string, organizationId: string, ids: string[], eventId?: string) {
+  const results=await Promise.all([...new Set(ids)].map(async playerId=>{
+    const access=eventId
+      ? await db.rpc("organization_event_player_access",{p_actor:actorId,p_event:eventId,p_player:playerId})
+      : await db.rpc("organization_actor_access",{p_org:organizationId,p_actor:actorId,p_player:playerId});
+    if(access.error)throw access.error;return access.data===true?playerId:null;
+  }));return new Set(results.filter((id):id is string=>id!==null));
 }

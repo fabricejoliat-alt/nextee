@@ -1,0 +1,32 @@
+{
+  "validated_at": "2026-10-07T18:31:16.431Z",
+  "target": "wizbeuuvjibmmuxyynly",
+  "source_sha256": "6ea20b93beed093931522c03c4f910ce3789861bd7dad79b6af7a1fef8101d14",
+  "gates": {
+    "sql": "passed",
+    "postgrest": "passed",
+    "typescript": "passed"
+  },
+  "tests": {
+    "sql": 23,
+    "postgrest": 15
+  },
+  "evidence": [
+    "evidence/personal-history-sql.log",
+    "evidence/personal-history-http.log",
+    "evidence/personal-history-typescript.log",
+    "evidence/test-prerequisites-sql.log",
+    "evidence/test-prerequisites-typescript.log",
+    "evidence/test-remodel-result.json",
+    "evidence/test-schema-cache-postflight.json"
+  ],
+  "remote_migration": "applied",
+  "zurich_personal_correction": "not_applied",
+  "production_deployment": "not_performed",
+  "previous_validated_at": "2026-10-07T18:19:39.930Z",
+  "postgrest_evidence_reused": "15 prior HTTP tests; application API/UI code unchanged by prerequisite fix. Not rerun for this preparation-only change.",
+  "prerequisite_regression": "Raw TEST schema missing both catalogs; populated club targets and published legal evidence preserved; failure rolls back catalogs and migrations; existing catalogs untouched.",
+  "remote_applied_at": "2026-10-07T18:35:00.101Z",
+  "remote_postflight": "passed",
+  "schema_cache_postflight": "passed"
+}

@@ -5,6 +5,7 @@
 .hero h1{max-width:760px;margin:16px 0 12px;font-family:var(--font-inter-tight),var(--font-inter),sans-serif;font-size:clamp(32px,4vw,50px);line-height:1.08;letter-spacing:-.035em;font-weight:750}
 .hero p{max-width:700px;margin:0;color:#e6eee3;font-size:16px;line-height:1.65}
 .content{padding:30px 52px 32px}
+.documentControls{display:grid;gap:20px;min-width:0}
 .toolbar{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:19px 22px;background:#fff;border:1px solid #e3e9e2;border-radius:16px;box-shadow:0 12px 30px rgba(27,45,33,.035)}
 .toolbar>div{display:grid;gap:3px}.toolbar strong{font-size:16px;font-weight:750}.toolbar span{font-size:13px;color:#647366}
 .languageSelect{display:flex;align-items:center;gap:9px;color:#35483b;white-space:nowrap}.languageSelect span{font-size:13px;font-weight:650;color:#35483b}.languageSelect select{height:40px;min-width:124px;padding:0 28px 0 11px;color:#35483b;background:#f7f9f5;border:1px solid #dbe4d9;border-radius:9px;font:inherit;font-size:13px;cursor:pointer}

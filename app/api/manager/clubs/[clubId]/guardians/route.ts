@@ -1,3 +1,4 @@
+import { organizationGuardians } from "@/lib/server/organizationGuardians";
 import { managerMutationError } from "@/lib/server/managerMutationError";
 import { requireManagerClub, activeClubMember } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
@@ -52,10 +53,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
 
     let rawLinks: any[] = [];
     if (playerIds.length > 0) {
-      const linksRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("player_id,guardian_user_id,relation,is_primary")
-        .in("player_id", playerIds);
+      const linksRes = await organizationGuardians(supabaseAdmin, clubId, playerIds);
       if (linksRes.error) return NextResponse.json({ error: linksRes.error.message }, { status: 400 });
       rawLinks = linksRes.data ?? [];
     }

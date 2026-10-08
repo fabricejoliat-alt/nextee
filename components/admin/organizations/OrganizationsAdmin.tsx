@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
 import { Building2, ChevronRight, Filter, Plus, Search } from "lucide-react";
 import styles from "./OrganizationsAdmin.module.css";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type OrgType = "club" | "academy" | "federation";
 
@@ -26,6 +27,9 @@ function slugify(input: string) {
 }
 
 export default function OrganizationsAdmin() {
+  const { t } = useI18n();
+  const creating = useRef(false);
+  const [saving, setSaving] = useState(false);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -84,48 +88,29 @@ export default function OrganizationsAdmin() {
 
   async function createOrganization(e: React.FormEvent) {
     e.preventDefault();
+    if (creating.current) return;
+    creating.current = true; setSaving(true);
+    try {
     setError(null);
     setCreatedClubName(null);
 
     const finalSlug = (slug || slugify(name)).trim() || null;
-    const orgId = crypto.randomUUID();
     const finalName = name.trim();
-
-    // Transitional dual-write:
-    // - organizations = source v2 (with org_type)
-    // - clubs = compatibility for existing admin members page and legacy flows
-    const orgRes = await supabase.from("organizations").insert({
-      id: orgId,
-      name: finalName,
-      slug: finalSlug,
-      org_type: orgType,
-      is_active: true,
+    const { data } = await supabase.auth.getSession();
+    const response = await fetch("/api/admin/organizations", {
+      method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+      body: JSON.stringify({ name: finalName, slug: finalSlug, org_type: orgType }),
     });
-
-    if (orgRes.error) {
-      setError(orgRes.error.message);
-      return;
-    }
-
-    const clubRes = await supabase.from("clubs").insert({
-      id: orgId,
-      name: finalName,
-      slug: finalSlug,
-    });
-
-    if (clubRes.error) {
-      // rollback best-effort on organizations if legacy insert fails
-      await supabase.from("organizations").delete().eq("id", orgId);
-      setError(`clubs: ${clubRes.error.message}`);
-      return;
-    }
+    if (!response.ok) { setError(t("organization.operationFailed")); return; }
 
     setName("");
     setSlug("");
     setOrgType("club");
     setSlugTouched(false);
     await loadOrganizations();
-    if (orgType === "club") setCreatedClubName(finalName);
+    if (orgType !== "federation") setCreatedClubName(finalName);
+    } catch { setError(t("organization.operationFailed")); }
+    finally { creating.current = false; setSaving(false); }
   }
 
   return (
@@ -136,6 +121,7 @@ export default function OrganizationsAdmin() {
         <span>Organisations</span>
       </nav>
       <h1 className={styles.pageTitle}>Organisations</h1>
+      <Link href="/admin/organizations/external" className={styles.secondaryButton}>{t("organization.externalReferences")}</Link>
 
       {error && (
         <div className={styles.errorAlert} role="alert">
@@ -143,8 +129,8 @@ export default function OrganizationsAdmin() {
         </div>
       )}
       {createdClubName && <div className={styles.successAlert} role="status">
-        <span>{createdClubName} a été créé. Prépare ses trois brouillons juridiques avant d’ouvrir les accès aux membres.</span>
-        <Link href="/admin/legal">Ouvrir les documents juridiques</Link>
+        <span>{createdClubName} · {t("organization.templatesLead")}</span>
+        <Link href="/admin/legal">{t("organization.documents")}</Link>
       </div>}
 
       <section className={styles.creationCard} id="new-organization">
@@ -192,7 +178,7 @@ export default function OrganizationsAdmin() {
           </label>
 
           <div className={styles.submitField}>
-            <button className={styles.primaryButton} disabled={!canCreate}>
+            <button className={styles.primaryButton} disabled={!canCreate || saving}>
               <Plus size={16} strokeWidth={2.5} /> Créer l’organisation
             </button>
           </div>

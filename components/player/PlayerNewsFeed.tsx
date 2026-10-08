@@ -1,5 +1,7 @@
 "use client";
 
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
 /* eslint-disable @next/next/no-img-element -- News images are dynamic club-managed URLs. */
 
 import { useEffect, useState } from "react";

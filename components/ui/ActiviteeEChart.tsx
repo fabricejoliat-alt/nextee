@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import * as echarts from "echarts";
+import { echarts } from "@/lib/activiteeEcharts";
+import type { EChartsOption } from "echarts";
 
 type ActiviteeEChartProps = {
-  option: echarts.EChartsOption;
+  option: EChartsOption;
   ariaLabel: string;
   height?: number;
 };

@@ -19,8 +19,8 @@ export default function PlayerHeader() {
     let mounted = true;
 
     async function loadUnread() {
-      const authRes = await supabase.auth.getUser();
-      const userId = authRes.data.user?.id;
+      const authRes = await supabase.auth.getSession();
+      const userId = authRes.data.session?.user.id;
       if (!userId || !mounted) return;
       try {
         const count = await getUnreadNotificationsCount(userId, { hideThreadNotifications: true });
@@ -73,8 +73,8 @@ export default function PlayerHeader() {
     let channel: ReturnType<typeof supabase.channel> | null = null;
 
     (async () => {
-      const authRes = await supabase.auth.getUser();
-      const userId = authRes.data.user?.id;
+      const authRes = await supabase.auth.getSession();
+      const userId = authRes.data.session?.user.id;
       if (!userId || cancelled) return;
 
       channel = supabase

@@ -78,7 +78,7 @@ async function dispatchPushForRecipients(
 export async function notifyPlanningDeletion(
   supabaseAdmin: any,
   actorUserId: string,
-  event: { id: string; event_type: string | null; starts_at: string; location_text: string | null },
+  event: { id: string; club_id?: string | null; event_type: string | null; starts_at: string; location_text: string | null },
   recipientUserIds: string[],
   seriesCount?: number,
   seriesId?: string | null,
@@ -111,6 +111,8 @@ export async function notifyPlanningDeletion(
       body,
       data: {
         event_id: event.id,
+        organization_id: event.club_id,
+        ...(guardianChildId ? { child_id: guardianChildId } : {}),
         ...(seriesId ? { series_id: seriesId } : {}),
         url,
       },
@@ -120,10 +122,16 @@ export async function notifyPlanningDeletion(
   if (ins.error || !ins.data?.id) throw new Error(ins.error?.message ?? "Notification insert failed");
 
   const notificationId = String(ins.data.id);
+  const deliveryChecks=await Promise.all(recipients.map(async userId=>{
+    const allowed=await supabaseAdmin.rpc("organization_notification_visible",{p_notification:notificationId,p_actor:userId});
+    if(allowed.error)throw allowed.error;return allowed.data===true?userId:null;
+  }));
+  const deliverable=deliveryChecks.filter((id):id is string=>id!==null);
+  if(!deliverable.length)return;
   const recIns = await supabaseAdmin
     .from("notification_recipients")
     .upsert(
-      recipients.map((userId) => ({ notification_id: notificationId, user_id: userId })),
+      deliverable.map((userId) => ({ notification_id: notificationId, user_id: userId })),
       { onConflict: "notification_id,user_id" }
     );
   if (recIns.error) throw new Error(recIns.error.message);
@@ -132,17 +140,18 @@ export async function notifyPlanningDeletion(
     title,
     body,
     url,
-    recipientUserIds: recipients,
+    recipientUserIds: deliverable,
   });
 
   // Preserve parent delivery when the edit screen delegates deletion to the API.
   // Keep one child context per notification and exclude revoked viewing links.
-  if (!guardianChildId) {
+  if (!guardianChildId && event.club_id) {
     const parents = new Map<string, Set<string>>();
     for (let offset = 0; offset < recipients.length; offset += 150) {
       const batch = recipients.slice(offset, offset + 150);
       for (let from = 0; ; from += 500) {
-        const links = await supabaseAdmin.from("player_guardians").select("player_id,guardian_user_id,can_view")
+        const links = await supabaseAdmin.from("player_guardian_scopes").select("player_id,guardian_user_id,can_view")
+          .eq("organization_id",event.club_id).eq("status","active")
           .in("player_id", batch).order("player_id").order("guardian_user_id").range(from, from + 499);
         if (links.error) throw new Error("guardian_notification_failed");
         for (const link of links.data ?? []) {

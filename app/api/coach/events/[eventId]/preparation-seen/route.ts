@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { requireCoachEventAccess } from "@/app/api/coach/events/_access";
@@ -19,7 +20,7 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: st
       return NextResponse.json({ error: "Invalid acknowledgement" }, { status: 400 });
     }
     const { supabaseAdmin: db, callerId } = await requireCaller(token);
-    const event = await requireCoachEventAccess(db, callerId, eventId);
+    const event = await requireCoachEventAccess(db, callerId, eventId, requestedOrganizationId(req.url));
     if (event.status === "cancelled" || !isFutureTraining(event)
       || !(await isCoachTrainingAssistanceEnabled(db, event.club_id, callerId))) {
       return NextResponse.json({ error: "forbidden" }, { status: 403 });

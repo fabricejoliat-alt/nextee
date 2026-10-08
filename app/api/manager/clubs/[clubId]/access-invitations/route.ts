@@ -1,3 +1,4 @@
+import { organizationGuardians } from "@/lib/server/organizationGuardians";
 import { isPlatformAccount } from "@/lib/server/managerAccess";
 import { createHash, randomBytes } from "crypto";
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -124,9 +125,9 @@ function accessStatus(args: { email: string | null; username: string | null; act
 
 async function loadDataset(db: any, clubId: string) {
   const [club, members, links, logs, tokens] = await Promise.all([
-    db.from("clubs").select("id,name").eq("id", clubId).maybeSingle(),
+    db.from("organizations").select("id,name").eq("id", clubId).maybeSingle(),
     db.from("club_members").select("user_id,role,is_active").eq("club_id", clubId).eq("is_active", true).in("role", ["player", "parent"]),
-    db.from("player_guardians").select("player_id,guardian_user_id,relation,is_primary,can_view,can_edit"),
+    organizationGuardians(db, clubId),
     db.from("access_invitation_logs").select("recipient_user_id,target_user_id,invitation_kind,last_sent_at,send_count,last_error,sent_to_email").eq("club_id", clubId),
     db.from("access_invitation_tokens").select("user_id,expires_at,consumed_at,created_at").eq("club_id", clubId).eq("invitation_kind", "parent_access").order("created_at", { ascending: false }),
   ]);

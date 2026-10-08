@@ -44,10 +44,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ organiza
   const orgType = String(body.organization.org_type ?? "club");
   if (!['club', 'academy', 'federation'].includes(orgType)) return NextResponse.json({ error: "Type d’organisation invalide." }, { status: 400 });
   const orgPayload = { name, slug, org_type: orgType, is_active: Boolean(body.organization.is_active), country_code: String(body.organization.country_code ?? "").trim() || null, region_code: String(body.organization.region_code ?? "").trim() || null };
-  const organizationRes = await access.client.from("organizations").update(orgPayload).eq("id", organizationId);
-  if (organizationRes.error) return NextResponse.json({ error: organizationRes.error.message }, { status: 400 });
-  const settingsRes = await access.client.from("organization_settings").upsert({ organization_id: organizationId, settings: body.settings, updated_at: new Date().toISOString(), updated_by: access.userId }, { onConflict: "organization_id" });
-  if (settingsRes.error) return NextResponse.json({ error: settingsRes.error.message }, { status: 400 });
+  const saved = await access.client.rpc("save_organization_settings_checked", {
+    p_actor: access.userId, p_org: organizationId, p_values: orgPayload, p_settings: body.settings,
+  });
+  if (saved.error) return NextResponse.json({ error: saved.error.message }, { status: 409 });
   return NextResponse.json({ ok: true });
 }
 
@@ -55,25 +55,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ organ
   const access = await ensureAdmin(req);
   if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
   const { organizationId } = await params;
-  const { data: organization, error: lookupError } = await access.client.from("organizations").select("id").eq("id", organizationId).maybeSingle();
-  if (lookupError) return NextResponse.json({ error: lookupError.message }, { status: 400 });
-  if (!organization) return NextResponse.json({ error: "Organisation introuvable" }, { status: 404 });
-
-  // A club with legal documents cannot be deleted through the ordinary flow.
-  // Check before removing the organization half of the legacy dual record.
-  const legal = await access.client.from("legal_documents").select("id").eq("club_id", organizationId).limit(1);
-  if (legal.error) return NextResponse.json({ error: legal.error.message }, { status: 400 });
-  if ((legal.data?.length ?? 0) > 0) return NextResponse.json({ error: "Ce club possède des documents juridiques. Sa suppression nécessite un traitement dédié de leurs preuves et de leurs versions." }, { status: 409 });
-
-  // Legacy data uses clubs while the current administration uses organizations.
-  // Remove dependent legacy records first, then both organization representations.
-  const coachPlayers = await access.client.from("coach_players").delete().eq("club_id", organizationId);
-  if (coachPlayers.error && !coachPlayers.error.message.toLowerCase().includes("does not exist")) return NextResponse.json({ error: coachPlayers.error.message }, { status: 400 });
-  const members = await access.client.from("club_members").delete().eq("club_id", organizationId);
-  if (members.error) return NextResponse.json({ error: members.error.message }, { status: 400 });
-  const deleteOrganization = await access.client.from("organizations").delete().eq("id", organizationId);
-  if (deleteOrganization.error) return NextResponse.json({ error: deleteOrganization.error.message }, { status: 400 });
-  const deleteClub = await access.client.from("clubs").delete().eq("id", organizationId);
-  if (deleteClub.error) return NextResponse.json({ error: deleteClub.error.message }, { status: 400 });
+  const removed = await access.client.rpc("delete_empty_organization_checked", { p_actor: access.userId, p_org: organizationId });
+  if (removed.error) return NextResponse.json({ error: removed.error.message }, { status: 409 });
   return NextResponse.json({ ok: true });
 }

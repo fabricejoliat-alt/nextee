@@ -1,4 +1,5 @@
 "use client";
+import { currentOrganizationFilter } from "@/lib/organizationFetch";
 
 type CacheEnvelope<T> = {
   ts: number;
@@ -35,6 +36,7 @@ function safeSessionStorageRemove(key: string) {
 }
 
 export function readClientPageCache<T>(key: string, ttlMs: number): T | null {
+  if(currentOrganizationFilter())return null;
   const now = Date.now();
 
   const fromMem = mem.get(key) as CacheEnvelope<T> | undefined;
@@ -57,6 +59,7 @@ export function readClientPageCache<T>(key: string, ttlMs: number): T | null {
 }
 
 export function writeClientPageCache<T>(key: string, value: T) {
+  if(currentOrganizationFilter())return;
   const envelope: CacheEnvelope<T> = {
     ts: Date.now(),
     value,

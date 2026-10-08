@@ -153,7 +153,7 @@ export default function CoachEventDetailPage() {
       setEvent(ev);
 
       // club name
-      const cRes = await checked(supabase.from("clubs").select("id,name").eq("id", ev.club_id).maybeSingle());
+      const cRes = await checked(supabase.from("organizations").select("id,name").eq("id", ev.club_id).maybeSingle());
       setClubName(!cRes.error && cRes.data ? (cRes.data as ClubRow).name ?? t("manager.settings.club") : t("manager.settings.club"));
 
       // group name

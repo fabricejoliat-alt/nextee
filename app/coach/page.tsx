@@ -1,5 +1,7 @@
 "use client";
 
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, ClipboardCheck, Newspaper, Users } from "lucide-react";
@@ -109,7 +111,7 @@ export default function CoachHomePage() {
         <EventList loading={loading} events={upcomingPreview} groups={data?.groupNameById ?? {}} clubs={data?.clubNameByGroupId ?? {}} empty={error ? "—" : t("coach.home.noActivity")} />
       </section>
       <section className={styles.panel}>
-        <div className={styles.panelHeader}><div><h2>{t("coach.home.news")}</h2><p>{t("coach.home.newsHint")}</p></div><Link className={styles.textLink} href="/coach/news" aria-label={t("coach.home.allNews")}><ArrowRight size={16} /></Link></div>
+        <div className={styles.panelHeader}><div><h2>{t("organization.newsTitle")}</h2><p>{t("organization.newsLead")}</p></div><Link className={styles.textLink} href="/coach/news" aria-label={t("coach.home.allNews")}><ArrowRight size={16} /></Link></div>
         {loading ? <Skeleton /> : newsPreview.length ? <div className={styles.newsPreviewList}>
           {newsPreview.map((item) => <Link key={item.id} className={styles.newsPreviewItem} href="/coach/news">
             {item.image_url ? <span className={styles.newsThumbnail}><img src={item.image_url} alt="" /></span> : <span className={styles.dateBox}><Newspaper size={16} /></span>}

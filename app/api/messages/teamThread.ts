@@ -130,8 +130,9 @@ export async function ensurePlayerTeamThread({
   }
 
   const guardiansRes = await supabaseAdmin
-    .from("player_guardians")
-    .select("guardian_user_id,can_view")
+    .from("player_guardian_scopes").select("guardian_user_id,can_view")
+    .eq("organization_id", organizationId).eq("status", "active").eq("can_view", true)
+
     .eq("player_id", playerId);
   if (guardiansRes.error) throw new Error(guardiansRes.error.message);
   const guardianIds = uniq(

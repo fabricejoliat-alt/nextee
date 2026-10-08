@@ -29,8 +29,24 @@ function fakeDatabase(tables: Record<string, Row[]>, failureTable?: string) {
   const reads: string[] = [];
   const writes: string[] = [];
   const db = {
+    async rpc(name: string, args: Record<string, unknown>) {
+      reads.push(`rpc:${name}`);
+      if (name === "organization_actor_legal_ready") return { data: !tables.legal_required?.some(row => row.organization_id === args.p_org && row.user_id === args.p_actor), error: null };
+      const event = tables.club_events?.find(row => row.id === args.p_event);
+      const org = args.p_org ?? event?.club_id;
+      const actor = tables.club_members?.find(row => row.club_id === org && row.user_id === args.p_actor && row.is_active && ["coach", "manager"].includes(String(row.role)));
+      const player = tables.club_members?.find(row => row.club_id === org && row.user_id === args.p_player && row.role === "player" && row.is_active);
+      if (name === "organization_player_authorized") return { data: Boolean(player && !tables.academy_roster_entries?.some(row => row.academy_id === org && row.player_id === args.p_player && row.status !== "active")), error: null };
+      const group = tables.coach_groups?.find(row => row.club_id === org && row.is_active && tables.coach_group_players?.some(link => link.group_id === row.id && link.player_user_id === args.p_player)
+        && (row.head_coach_user_id === args.p_actor || tables.coach_group_coaches?.some(link => link.group_id === row.id && link.coach_user_id === args.p_actor)));
+      const assigned = event && tables.club_event_coaches?.some(row => row.event_id === event.id && row.coach_id === args.p_actor);
+      const attendee = event && tables.club_event_attendees?.some(row => row.event_id === event.id && row.player_id === args.p_player);
+      const active = !tables.academy_roster_entries?.some(row => row.academy_id === org && row.player_id === args.p_player && row.status !== "active");
+      const allowed = Boolean(actor && (args.p_player == null || (player && active && (actor.role === "manager" || group || (name === "organization_event_player_access" && assigned && attendee)))));
+      return { data: allowed, error: null };
+    },
     from(table: string) {
-      let rows = [...(tables[table] ?? [])];
+      let rows = [...(tables[table] ?? (table === "organizations" ? tables.clubs : undefined) ?? [])];
       let single = false;
       let writing = false;
       const query = {
@@ -94,18 +110,18 @@ function apiMocks(db: SupabaseClient) {
     "@/lib/playerDocumentStorage": { signPlayerDocumentRows: async (_db: unknown, rows: unknown) => rows },
   };
 }
-const request = (path: string) => new Request(`http://localhost${path}`, { headers: { Authorization: "Bearer test-only" } });
+const request = (path: string) => Object.assign(new Request(`http://localhost${path}`, { headers: { Authorization: "Bearer test-only" } }), { nextUrl: new URL(`http://localhost${path}`) });
 
 test("Coach camps select the stored photo only within the caller's authorized clubs", async () => {
   const { db, reads, writes } = fakeDatabase({
     club_camps: [
       { id: "camp", club_id: "A", title: "Stage", image_url: "/camp-photo.jpg", head_coach_user_id: null },
       { id: "outside", club_id: "B", title: "Outside", image_url: "/private-photo.jpg", head_coach_user_id: null },
-    ], clubs: [{ id: "A", name: "Club A" }],
+    ], clubs: [{ id: "A", name: "Club A" }], club_members: [{user_id:"coach",club_id:"A",role:"manager",is_active:true}],
   });
   let selectedPhoto = false;
   const from = db.from.bind(db);
-  const scopedDb = { from(table: string) {
+  const scopedDb = { rpc: db.rpc.bind(db), from(table: string) {
     const query = from(table);
     if (table === "club_camps") {
       const select = query.select.bind(query);
@@ -261,7 +277,7 @@ test("planning separates read-only transfer access from assigned planning permis
 
 test("planning fails closed on dependent reads without returning SQL details or partial counts", async () => {
   for (const table of ["coach_groups", "club_members", "club_events", "club_event_attendees", "club_event_coaches",
-    "club_event_coach_feedback", "club_event_evaluation_criteria", "club_event_evaluation_responses", "profiles", "clubs"]) {
+    "club_event_coach_feedback", "club_event_evaluation_criteria", "club_event_evaluation_responses", "profiles", "organizations"]) {
     const { route } = planningRoute(planningFixture(), table);
     const response = await route.GET(request("/planning"), planningContext());
     assert.equal(response.status, 500, table);
@@ -283,6 +299,7 @@ test("planning paginates group events and attendee rosters beyond the database r
   data.club_event_attendees = Array.from({ length: 1001 }, (_, index) => ({ event_id: "event-1000", player_id: `player-${index}`, status: "expected", coach_recorded_status: null }));
   data.profiles = Array.from({ length: 1001 }, (_, index) => ({ id: `player-${index}`, first_name: `Junior ${index}`, last_name: null, avatar_url: null }));
   data.club_members.push(...data.profiles.map((person) => ({ club_id: "A", user_id: person.id, role: "player", is_active: true })));
+  data.coach_group_players.push(...data.profiles.map(person => ({group_id:"group-A",player_user_id:person.id})));
   const { route, reads } = planningRoute(data);
   const response = await route.GET(request("/planning"), planningContext());
   const body = await response.json();
@@ -325,6 +342,7 @@ test("validation catalogue does not truncate large club populations or profiles"
     user_id: "p" + i, club_id: "A", role: "player", is_active: true,
   }))];
   data.profiles = Array.from({ length: 1001 }, (_, i) => ({ id: "p" + i, first_name: "Player " + i, last_name: null, avatar_url: null }));
+  data.coach_group_players = data.profiles.map(row => ({ group_id: "group-A", player_user_id: row.id }));
   data.validation_sections = [{ id: "section", slug: "putting", name: "Putting", sort_order: 1, is_active: true }];
   data.validation_exercises = [{ id: "first", section_id: "section", name: "First", sequence_no: 1, is_active: true }];
   const { db } = fakeDatabase(data);
@@ -382,11 +400,12 @@ test("completion loader reads beyond the database's page limit", async () => {
 
 test("guided API forwards one atomic save with the caller identity and maps stale writes to 409", async () => {
   const playerId = "11111111-1111-4111-8111-111111111111";
-  const { db, writes } = fakeDatabase({ club_event_attendees: [{ event_id: "event", player_id: playerId }] });
+  const { db, writes } = fakeDatabase({ ...fixture(), club_events:[{id:"event",club_id:"A",group_id:"group-A"}], club_members:[...fixture().club_members,{club_id:"A",user_id:playerId,role:"player",is_active:true}], coach_group_players:[{group_id:"group-A",player_user_id:playerId}], club_event_attendees: [{ event_id: "event", player_id: playerId }] });
   const calls: Array<{ name: string; args: Row }> = [];
-  Object.assign(db, { rpc: async (name: string, args: Row) => { calls.push({ name,args }); return { data: null, error: { message: "evaluation_conflict" } }; } });
+  const accessRpc=db.rpc.bind(db);
+  Object.assign(db, { rpc: async (name: string, args: Row) => { if(name!=="save_coach_training_player_evaluation_v2")return accessRpc(name,args); calls.push({ name,args }); return { data: null, error: { message: "evaluation_conflict" } }; } });
   const route = loadModule<{ PUT: (req: Request, ctx: unknown) => Promise<Response> }>("app/api/coach/events/[eventId]/debrief/player/route.ts", {
-    ...apiMocks(db), "@/app/api/coach/events/_access": { requireCoachEventAccess: async () => ({ event_type: "training" }) },
+    ...apiMocks(db), "@/app/api/coach/events/_access": { requireCoachEventAccess: async () => ({ event_type: "training", club_id: "A" }) },
   });
   const response = await route.PUT(new Request("http://localhost/api/coach/events/event/debrief/player", {
     method: "PUT", headers: { Authorization: "Bearer test-only", "Content-Type": "application/json" },
@@ -465,7 +484,7 @@ test("sensitive player access is computed separately for each club", async () =>
   const { resolveCoachPlayerAccess } = loadModule<typeof import("../app/api/coach/players/_access")>("app/api/coach/players/_access.ts");
   const data = fixture();
   const access = await resolveCoachPlayerAccess(fakeDatabase(data).db, "coach", "player");
-  assert.deepEqual(access.sharedClubIds, ["A", "B"]);
+  assert.deepEqual(access.sharedClubIds, ["A"]);
   assert.deepEqual(access.sensitiveClubIds, ["A"]);
   data.coach_group_coaches = [];
   data.club_members[0].role = "manager";
@@ -490,13 +509,13 @@ test("an event assignment without a player group does not grant player-wide priv
   data.club_event_coaches.push({ event_id: "event-A", coach_id: "coach" });
   const access = await resolveCoachPlayerAccess(fakeDatabase(data).db, "coach", "player");
   assert.deepEqual(access.sensitiveClubIds, []);
-  assert.deepEqual(access.sharedEventIds, ["event-A"]);
+  assert.deepEqual(access.sharedEventIds, []);
 });
 
 test("only actual event participants pass the player guard", async () => {
   const { db } = fakeDatabase(fixture());
-  await requireCoachEventPlayer(db, "event-A", "player");
-  await assert.rejects(requireCoachEventPlayer(db, "event-A", "unrelated-player"), /unknown_attendee/);
+  await requireCoachEventPlayer(db, "event-A", "player", "coach", "A");
+  await assert.rejects(requireCoachEventPlayer(db, "event-A", "unrelated-player", "coach", "A"), /unknown_attendee|forbidden/);
 });
 
 test("private feedback API does not return another club's feedback", async () => {
@@ -529,7 +548,7 @@ test("individual detail rejects a non-participant before reading player data", a
   const route = loadModule<typeof import("../app/api/coach/events/[eventId]/players/[playerId]/route")>("app/api/coach/events/[eventId]/players/[playerId]/route.ts", apiMocks(db));
   const response = await route.GET(request("/api/coach/events/event-A/players/unrelated") as never,
     { params: Promise.resolve({ eventId: "event-A", playerId: "unrelated" }) });
-  assert.equal(response.status, 404);
+  assert.equal(response.status, 403);
   assert.equal(reads.includes("profiles"), false);
   assert.equal(reads.includes("club_event_coach_feedback"), false);
 });

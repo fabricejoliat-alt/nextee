@@ -107,7 +107,7 @@ export async function GET(req: NextRequest) {
     }
 
     const [clubsRes, membersRes, groupsRes, adminsRes, seasonsRes] = await Promise.all([
-      supabaseAdmin.from("clubs").select("id,name").in("id", clubIds),
+      supabaseAdmin.from("organizations").select("id,name").in("id", clubIds),
       supabaseAdmin
         .from("club_members")
         .select("club_id,user_id,role,is_active,player_course_track")
@@ -202,8 +202,7 @@ export async function GET(req: NextRequest) {
     const guardiansRes =
       activePlayerIds.length > 0
         ? await supabaseAdmin
-            .from("player_guardians")
-            .select("player_id,guardian_user_id")
+            .from("player_guardian_scopes").select("player_id,guardian_user_id").in("organization_id", clubIds).in("status", ["pending", "active"]).eq("can_view", true)
             .in("player_id", activePlayerIds)
         : ({ data: [], error: null } as any);
     if (guardiansRes.error) return NextResponse.json({ error: guardiansRes.error.message }, { status: 400 });

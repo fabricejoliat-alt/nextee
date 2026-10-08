@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { playerConsentAllowsAccess } from "@/lib/playerConsent";
+import { loadOrganizationAccessSummary } from "@/lib/server/organizationSummary";
 import { loadPlayerActorAuthorization, visibleGuardianLinks } from "@/app/api/player/access";
 import { selectPrimaryApplicationRole } from "@/lib/playerAccessPolicy";
 import { pendingEditableParentChildren } from "@/lib/server/parentConsentRequirements";
@@ -14,11 +14,11 @@ async function resolvePlayerConsentPending(supabaseAdmin: SupabaseClient, userId
     .eq("is_active", true);
   if (membershipsRes.error) throw new Error(membershipsRes.error.message);
   const memberships = (membershipsRes.data ?? []) as Array<{ club_id: string; player_consent_status: string | null }>;
-  const pending = !playerConsentAllowsAccess(memberships.map((row) => row.player_consent_status));
+  const pending = !(await loadOrganizationAccessSummary(supabaseAdmin, userId)).some(row => row.accessible);
   const pendingClubIds = [...new Set(memberships.filter((row) => !["granted", "adult"].includes(row.player_consent_status ?? ""))
     .map((row) => row.club_id).filter(Boolean))];
   if (!pending || !pendingClubIds.length) return { pending, pendingClubNames: [] as string[] };
-  const clubs = await supabaseAdmin.from("clubs").select("id,name").in("id", pendingClubIds);
+  const clubs = await supabaseAdmin.from("organizations").select("id,name").in("id", pendingClubIds);
   if (clubs.error) throw new Error(clubs.error.message);
   return { pending, pendingClubNames: pendingClubIds.map((id) => clubs.data?.find((club) => club.id === id)?.name ?? "votre club") };
 }
@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ redirectTo: "/no-access" }, { headers: resHeaders });
       }
       const pendingChildIds = await pendingEditableParentChildren(supabaseAdmin, links, userId);
-      if (pendingChildIds.length) return NextResponse.json({ redirectTo: "/legal/my", parentConsentRequired: true,
+      if (pendingChildIds.length && !(await loadOrganizationAccessSummary(supabaseAdmin, userId)).some(row => row.accessible)) return NextResponse.json({ redirectTo: "/legal/my", parentConsentRequired: true,
         pendingChildIds }, { headers: resHeaders });
       return NextResponse.json({ redirectTo: "/player" }, { headers: resHeaders });
     }

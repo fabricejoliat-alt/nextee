@@ -1,4 +1,6 @@
 "use client";
+
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
 /* eslint-disable @next/next/no-img-element -- editorial images can use administrator-configured HTTPS hosts */
 
 import { useEffect, useState } from "react";

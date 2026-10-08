@@ -1,10 +1,11 @@
-export type LegalMembership = { club_id: string | null; role: string };
+export type LegalMembership = { club_id: string | null; organization_id?: string | null; role: string };
 export type RequiredLegalDocument = {
   id: string;
   document_key: string;
   kind: string;
-  scope: "platform" | "club";
+  scope: "platform" | "club" | "organization";
   club_id: string | null;
+  organization_id?: string | null;
   audience_roles: string[];
   action_kind: string;
   required: boolean;
@@ -20,7 +21,7 @@ const requiredDecision: Record<string, string> = {
 export function eligibleLegalRole(doc: RequiredLegalDocument, memberships: LegalMembership[], isAdmin: boolean) {
   return doc.audience_roles.find((role) => role === "admin" && isAdmin && doc.scope === "platform"
     || memberships.some((membership) => membership.role === role
-      && (doc.scope === "platform" || membership.club_id === doc.club_id)));
+      && (doc.scope === "platform" || (membership.organization_id ?? membership.club_id) === (doc.organization_id ?? doc.club_id))));
 }
 
 export function findMissingLegalActions(input: {

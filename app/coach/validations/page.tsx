@@ -1,5 +1,7 @@
 "use client";
 
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
 import Link from "next/link";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronRight, ClipboardCheck, Flag, ImageIcon, Search, ShieldCheck, Target, Users, X } from "lucide-react";

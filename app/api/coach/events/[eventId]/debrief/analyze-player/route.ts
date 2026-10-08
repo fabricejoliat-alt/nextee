@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { requireCoachEventAccess } from "@/app/api/coach/events/_access";
@@ -54,7 +55,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
     }
 
     const { supabaseAdmin, callerId } = await requireCaller(token);
-    const event = await requireCoachEventAccess(supabaseAdmin, callerId, eventId);
+    const event = await requireCoachEventAccess(supabaseAdmin, callerId, eventId, requestedOrganizationId(req.url));
     if (event.event_type !== "training") return NextResponse.json({ error: "Training only" }, { status: 400 });
     if (!(await isCoachTrainingAssistanceEnabled(supabaseAdmin, event.club_id, callerId))) {
       return NextResponse.json({ error: "Training assistance is disabled for this coach.", code: "assistance_disabled" }, { status: 403 });

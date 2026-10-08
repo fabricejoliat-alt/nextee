@@ -58,8 +58,9 @@ export async function POST(req: NextRequest) {
 
     const getGuardians = async () => {
       const guardiansRes = await supabaseAdmin
-        .from("player_guardians")
-        .select("guardian_user_id,can_view")
+        .from("player_guardian_scopes").select("guardian_user_id,can_view")
+    .eq("organization_id", organizationId).eq("status", "active").eq("can_view", true)
+
         .eq("player_id", effectivePlayerId)
         .or("can_view.is.null,can_view.eq.true");
       if (guardiansRes.error) throw new Error(guardiansRes.error.message);

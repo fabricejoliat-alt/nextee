@@ -3,7 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { useManagerResource } from "./useManagerResource";
-export type ManagerClub = { id: string; name: string | null };
+export type ManagerClub = { id: string; name: string | null; org_type?: "club" | "academy" | "federation" };
 
 export function useManagerClubSelection() {
   const { t } = useI18n();

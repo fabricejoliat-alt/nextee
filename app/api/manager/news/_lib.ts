@@ -122,7 +122,7 @@ export async function getManagerContext(req: Request, supabaseAdmin: any) {
     .maybeSingle();
 
   if (adminRow) {
-    const clubsRes = await supabaseAdmin.from("clubs").select("id,name").order("name", { ascending: true });
+    const clubsRes = await supabaseAdmin.from("organizations").select("id,name").order("name", { ascending: true });
     if (clubsRes.error) return { ok: false as const, status: 400, error: clubsRes.error.message };
     return {
       ok: true as const,
@@ -150,7 +150,7 @@ export async function getManagerContext(req: Request, supabaseAdmin: any) {
     return { ok: true as const, callerId, accessToken, managedClubs: [] as ManagedClubOption[] };
   }
 
-  const clubsRes = await supabaseAdmin.from("clubs").select("id,name").in("id", clubIds);
+  const clubsRes = await supabaseAdmin.from("organizations").select("id,name").in("id", clubIds);
   if (clubsRes.error) return { ok: false as const, status: 400, error: clubsRes.error.message };
 
   const clubNameById = new Map<string, string>();
@@ -700,7 +700,7 @@ export async function resolveNewsRecipients(
       ? supabaseAdmin.from("coach_group_categories").select("group_id,category").in("group_id", clubGroupIds)
       : ({ data: [], error: null } as const),
     includeLinkedParents
-      ? supabaseAdmin.from("player_guardians").select("player_id,guardian_user_id").eq("can_view", true).in(
+      ? supabaseAdmin.from("player_guardian_scopes").select("player_id,guardian_user_id").eq("organization_id", clubId).in("status", ["pending", "active"]).eq("can_view", true).eq("can_view", true).in(
           "player_id",
           activeMembers.filter((member) => member.role === "player").map((member) => member.user_id)
         )

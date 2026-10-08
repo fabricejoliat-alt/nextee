@@ -1,3 +1,5 @@
+import { authorizedCoachPlayers } from "@/lib/coachAccess";
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { deleteCoachPlanning } from "@/lib/server/coachPlanningDeletion";
@@ -40,6 +42,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     const event = eventRes.data as any;
     const groupId = String(event.group_id ?? "").trim();
     const clubId = String(event.club_id ?? "").trim();
+    if(requestedOrganizationId(req.url)&&requestedOrganizationId(req.url)!==clubId)return NextResponse.json({error:"Forbidden"},{status:403});
     const allowed = await canCoachAccessEvent(supabaseAdmin, callerId, eventId, groupId, clubId);
     if (!allowed) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const canManageActivity = clubId
@@ -48,7 +51,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     const coachTrainingAssistanceEnabled = await isCoachTrainingAssistanceEnabled(supabaseAdmin, clubId, callerId);
 
     const [clubRes, groupRes, attendeesRes, eventCoachesRes, structureRes, feedbackRes, campDayRes] = await Promise.all([
-      clubId ? supabaseAdmin.from("clubs").select("id,name").eq("id", clubId).maybeSingle() : Promise.resolve({ data: null, error: null } as const),
+      clubId ? supabaseAdmin.from("organizations").select("id,name").eq("id", clubId).maybeSingle() : Promise.resolve({ data: null, error: null } as const),
       groupId ? supabaseAdmin.from("coach_groups").select("id,name,club_id").eq("id", groupId).maybeSingle() : Promise.resolve({ data: null, error: null } as const),
       supabaseAdmin
         .from("club_event_attendees")
@@ -105,13 +108,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
         attendeeRows = attendeeRows.filter((row) => registeredPlayerIds.has(String(row.player_id ?? "").trim()));
       }
     }
+    const permitted=await authorizedCoachPlayers(supabaseAdmin,callerId,clubId,attendeeRows.map(row=>row.player_id));
+    attendeeRows=attendeeRows.filter(row=>permitted.has(row.player_id));
     const playerIds = uniq(attendeeRows.map((row) => row.player_id));
     const feedbackRows = ((feedbackRes.data ?? []) as Array<{ player_id: string | null; coach_id: string | null }>)
       .map((row) => ({
         player_id: String(row.player_id ?? "").trim(),
         coach_id: String(row.coach_id ?? "").trim() || null,
       }))
-      .filter((row) => row.player_id);
+      .filter((row) => row.player_id && permitted.has(row.player_id));
     const selectedCoachIds = uniq((eventCoachesRes.data ?? []).map((row: any) => String(row.coach_id ?? "").trim()));
 
     const [profilesRes, clubCoachesRes] = await Promise.all([

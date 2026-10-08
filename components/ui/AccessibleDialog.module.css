@@ -1,3 +1,18 @@
-.dialog { padding: 0; color: inherit; }
+.dialog { padding: 0; color: inherit; margin: auto; overflow: auto; overscroll-behavior: contain;
+  max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 32px);
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 32px);
+  max-width: calc(100vw - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px) - 32px);
+}
 .dialog:not([open]) { display: none !important; }
+.dialog:focus { outline: none; }
+.dialog[open]{position:fixed;top:calc(env(safe-area-inset-top, 0px) + 16px);bottom:calc(env(safe-area-inset-bottom, 0px) + 16px)}
 .dialog::backdrop { background: rgba(24, 35, 28, .52); }
+/* WebKit may report zero safe insets in the modal top layer of a web app.
+   Keep a conservative inset on standalone phones, including the home indicator. */
+@media (display-mode: standalone) and (max-width: 600px) {
+  .dialog[open] {
+    top: calc(max(env(safe-area-inset-top, 0px), 59px) + 16px);
+    bottom: calc(max(env(safe-area-inset-bottom, 0px), 34px) + 16px);
+    max-height: calc(100dvh - max(env(safe-area-inset-top, 0px), 59px) - max(env(safe-area-inset-bottom, 0px), 34px) - 32px);
+  }
+}

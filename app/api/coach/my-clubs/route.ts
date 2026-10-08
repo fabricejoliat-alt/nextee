@@ -34,8 +34,8 @@ export async function GET(req: NextRequest) {
     if (clubIds.length === 0) return NextResponse.json({ clubs: [] });
 
     const { data: clubsRows, error: clubsError } = await supabaseAdmin
-      .from("clubs")
-      .select("id,name")
+      .from("organizations")
+      .select("id,name,org_type")
       .in("id", clubIds);
     if (clubsError) return NextResponse.json({ error: clubsError.message }, { status: 400 });
 
@@ -49,6 +49,7 @@ export async function GET(req: NextRequest) {
       const membership: any = membershipByClub.get(id);
       return {
         id,
+        org_type: clubsRows?.find(row => row.id === id)?.org_type,
         name: clubNameById.get(id) ?? "Club",
         permissions: {
           can_manage_assigned_groups: Boolean(membership?.can_manage_assigned_groups),

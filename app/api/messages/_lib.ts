@@ -26,7 +26,12 @@ export async function isOrgMemberActive(supabaseAdmin: any, organizationId: stri
     .eq("is_active", true)
     .limit(1)
     .maybeSingle();
-  return Boolean(memRes.data?.id);
+  if (memRes.error || !memRes.data?.id) return false;
+  const [access,legal] = await Promise.all([
+    supabaseAdmin.rpc("organization_actor_access", { p_org: organizationId, p_actor: userId }),
+    supabaseAdmin.rpc("organization_actor_legal_ready", { p_org: organizationId, p_actor: userId }),
+  ]);
+  return !access.error && !legal.error && access.data === true && legal.data === true;
 }
 
 export async function isOrgStaffMember(supabaseAdmin: any, organizationId: string, userId: string) {

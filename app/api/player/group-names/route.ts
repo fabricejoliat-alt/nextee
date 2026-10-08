@@ -1,3 +1,4 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import {
   bearerTokenFromRequest,
@@ -18,6 +19,7 @@ export async function GET(req: NextRequest) {
     if (ids.length === 0) return NextResponse.json({ groups: [] });
     const access = await resolveAuthenticatedPlayerAccess({
       accessToken: bearerTokenFromRequest(req),
+      requestedOrganizationId: requestedOrganizationId(req.url),
       requestedPlayerId: childIdRaw,
       mode: "view",
     });
@@ -36,6 +38,7 @@ export async function GET(req: NextRequest) {
     const eventsRes = await supabaseAdmin
       .from("club_events")
       .select("group_id")
+      .in("club_id", access.organizationIds)
       .in("id", eventIds)
       .in("group_id", ids);
     if (eventsRes.error) return NextResponse.json({ error: eventsRes.error.message }, { status: 400 });

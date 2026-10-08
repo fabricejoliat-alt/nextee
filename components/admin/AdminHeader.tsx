@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useState } from "react";
 import { Bell } from "lucide-react";
 import AdminDesktopDrawer from "@/components/admin/AdminDesktopDrawer";
+import LanguageToggle from "@/components/i18n/LanguageToggle";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 function BurgerIcon() {
   return (
@@ -19,6 +21,7 @@ function BurgerIcon() {
 
 export default function AdminHeader() {
   const [open, setOpen] = useState(false);
+  const { t } = useI18n();
 
   return (
     <>
@@ -26,7 +29,7 @@ export default function AdminHeader() {
         <div className="app-header-inner">
           <div className="app-header-grid app-header-grid--centered">
             <div className="header-left header-left--icon">
-              <button className="icon-btn" type="button" aria-label="Ouvrir le menu" onClick={() => setOpen(true)}>
+              <button className="icon-btn" type="button" aria-label={t("common.openMenu")} onClick={() => setOpen(true)}>
                 <BurgerIcon />
               </button>
             </div>
@@ -39,6 +42,7 @@ export default function AdminHeader() {
             </div>
 
             <div className="header-right header-right--icon">
+              <LanguageToggle />
               <button className="icon-btn" type="button" aria-label="Notifications (bientôt)">
                 <Bell size={22} strokeWidth={2} aria-hidden="true" />
               </button>
@@ -51,4 +55,3 @@ export default function AdminHeader() {
     </>
   );
 }
-

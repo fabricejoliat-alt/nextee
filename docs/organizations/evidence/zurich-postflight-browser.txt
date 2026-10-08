@@ -1,0 +1,221 @@
+- link "Skip to content":
+  - /url: "#main"
+  - generic: Skip to content
+- banner:
+  - link "Supabase Back to organization home":
+    - /url: /dashboard/org/rtfzdtosqoejffnvbgsf
+    - img "Supabase"
+    - generic: Back to organization home
+  - link "Fabrice Pro":
+    - /url: /dashboard/org/rtfzdtosqoejffnvbgsf
+    - generic: Fabrice
+    - generic: Pro
+  - button "Show organizations":
+  - link "activitee-app-production":
+    - /url: /dashboard/project/soivxpdcilgltbjbpimt
+    - generic "activitee-app-production"
+  - button "Show organization projects":
+  - link "main Production":
+    - /url: /dashboard/project/soivxpdcilgltbjbpimt
+    - generic "main"
+    - generic: Production
+  - button "Show project branches":
+  - button "Connect":
+    - generic: Connect
+  - button "Feedback":
+    - generic: Feedback
+  - button "Search...":
+    - paragraph: Search...
+    - generic: ⌘K
+  - button "Help":
+    - generic: Help
+  - button "Advisor Center":
+    - generic: Advisor Center
+  - button "SQL Editor":
+    - generic: SQL Editor
+  - button "AI Assistant":
+    - generic: AI Assistant
+  - button:
+    - figure:
+- navigation:
+  - list:
+    - link "Project Overview":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt
+      - generic: Project Overview
+    - link "Table Editor":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt/editor
+      - generic: Table Editor
+    - link "SQL Editor":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt/sql
+      - generic: SQL Editor
+  - list:
+    - link "Database":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt/database/schemas
+      - generic: Database
+    - link "Authentication":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt/auth/users
+      - generic: Authentication
+    - link "Storage":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt/storage/files
+      - generic: Storage
+    - link "Edge Functions":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt/functions
+      - generic: Edge Functions
+    - link "Compute New":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt/compute
+      - generic: Compute
+      - generic: New
+    - link "Realtime":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt/realtime/inspector
+      - generic: Realtime
+  - list:
+    - link "Advisors":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt/advisors/security
+      - generic: Advisors
+    - link "Observability":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt/observability
+      - generic: Observability
+    - link "Logs":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt/logs
+      - generic: Logs
+    - link "Integrations":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt/integrations
+      - generic: Integrations
+  - list:
+    - link "Project Settings":
+      - /url: /dashboard/project/soivxpdcilgltbjbpimt/settings/general
+      - generic: Project Settings
+- button "Sidebar control":
+- main:
+  - heading "SQL Editor" [level=4]
+  - generic: Search queries
+  - textbox "Search queries..."
+  - button:
+  - button "Create a new query":
+  - button "Shared":
+    - generic: Shared
+  - button "Favorites":
+    - generic: Favorites
+  - button "PRIVATE" [expanded]:
+    - generic: PRIVATE
+  - tree "private-snippets":
+    - generic "Untitled query":
+      - generic: Untitled query
+  - button "Logs":
+    - generic: Logs
+  - button "Reference" [expanded]:
+    - generic: Reference
+  - link "templates":
+    - /url: /dashboard/project/soivxpdcilgltbjbpimt/sql/templates
+    - text: templates
+  - link "examples":
+    - /url: /dashboard/project/soivxpdcilgltbjbpimt/sql/examples
+    - text: examples
+  - link "View running queries":
+    - /url: /dashboard/project/soivxpdcilgltbjbpimt/observability/connections
+    - generic: View running queries
+  - separator:
+  - main:
+    - button "Collapse sidebar":
+      - generic: Collapse sidebar
+    - tablist:
+      - tab "Untitled query" [selected]:
+        - generic: Untitled query
+      - button "Close tab":
+      - separator
+      - button:
+    - status
+    - generic: Unsaved edits
+    - button "Enable Intellisense":
+    - button "Add to favorites":
+    - button "Prettify SQL":
+    - 'button "Query source: Database"':
+      - generic: Database
+    - button "Save":
+      - generic: Save
+      - generic: ⌘S
+    - button "Run":
+      - generic: Run
+      - generic: ⌘↵
+    - code:
+      - generic: "55"
+      - generic: "56"
+      - generic: "57"
+      - generic: "58"
+      - generic: "59"
+      - generic: "60"
+      - generic: raise exception 'Organization postflight failed; transaction must be rolled back';
+      - generic: end if;
+      - generic: end $$;
+      - generic: select 'PASS' as clean_and_postflight, to_regclass('public.organization_migration_baseline') is not null as remodel_present, (select count(*) from public.app_admins)
+      - generic: as superadmins, (select count(*) from auth.users) as auth_users, (select count(*) from public.organizations) as organizations, (select count(*) from public.clubs) as
+      - generic: clubs, (select count(*) from public.legal_versions) as legal_versions, (select encode(extensions.digest(coalesce(string_agg(id::text||content_sha256,'' order by id),
+      - generic: "''),'sha256'),'hex') from public.legal_versions) as legal_fingerprint, (select count(*) from public.legal_presentations) as legal_presentations, (select count(*)"
+      - generic: from public.legal_decisions) as legal_decisions, (select count(*) from public.legal_organization_templates) as legal_templates, (select count(*) from public.
+      - generic: rules_cards) as rules_cards, (select count(*) from public.etiquette_cards) as etiquette_cards, (select count(*) from public.validation_exercises) as exercises,
+      - generic: (select count(*) from public.training_volume_default_targets) as ftem_defaults, (select count(*) from storage.objects where bucket_id='validation-exercise-images')
+      - generic: as illustrations;
+      - generic: rollback;
+      - textbox "Editor content" [active]: lic.legal_decisions) as legal_decisions, (select count(*) from public.legal_organization_templates) as legal_templates, (select count(*) from public.rules_cards) as rules_cards, (select count(*) from public.etiquette_cards) as etiquette_cards, (select count(*) from public.validation_exercises) as exercises, (select count(*) from public.training_volume_default_targets) as ftem_defaults, (select count(*) from storage.objects where bucket_id='validation-exercise-images') as illustrations; rollback;
+      - generic: "38"
+      - generic: 
+      - list:
+        - generic: do $$ begin
+    - separator:
+    - tablist:
+      - tab "Results" [selected]:
+        - generic: Results
+      - tab "Chart":
+        - generic: Chart
+      - button "1 row":
+        - paragraph:
+          - generic: 1 row
+      - button "Export":
+        - generic: Export
+    - grid:
+      - row "clean_and_postflight remodel_present superadmins auth_users organizations clubs legal_versions legal_fingerprint legal_presentations legal_decisions":
+        - columnheader "clean_and_postflight":
+          - generic: clean_and_postflight
+        - columnheader "remodel_present":
+          - generic: remodel_present
+        - columnheader "superadmins":
+          - generic: superadmins
+        - columnheader "auth_users":
+          - generic: auth_users
+        - columnheader "organizations":
+          - generic: organizations
+        - columnheader "clubs":
+          - generic: clubs
+        - columnheader "legal_versions":
+          - generic: legal_versions
+        - columnheader "legal_fingerprint":
+          - generic: legal_fingerprint
+        - columnheader "legal_presentations":
+          - generic: legal_presentations
+        - columnheader "legal_decisions":
+          - generic: legal_decisions
+      - row "PASS true 1 1 0 0 4 35475d527b52cb2a245c7e89b6d4332b88f26277386d84f095ffb833cf61311f View full cell content 0 0":
+        - gridcell "PASS":
+          - generic: PASS
+        - gridcell "true":
+          - generic: "true"
+        - gridcell "1":
+          - generic: "1"
+        - gridcell "1":
+          - generic: "1"
+        - gridcell "0":
+          - generic: "0"
+        - gridcell "0":
+          - generic: "0"
+        - gridcell "4":
+          - generic: "4"
+        - gridcell "35475d527b52cb2a245c7e89b6d4332b88f26277386d84f095ffb833cf61311f View full cell content":
+          - text: 35475d527b52cb2a245c7e89b6d4332b88f26277386d84f095ffb833cf61311f
+          - button "View full cell content":
+        - gridcell "0":
+          - generic: "0"
+        - gridcell "0":
+          - generic: "0"
+- alert: SQL Editor | activitee-app-production | Fabrice | Supabase
+- alert
+- alert

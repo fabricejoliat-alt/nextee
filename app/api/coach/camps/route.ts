@@ -1,3 +1,5 @@
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
+import { resolveCoachAssignments, authorizedCoachPlayers } from "@/lib/coachAccess";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient, getCaller, resolveCoachClubIds, uniq } from "@/app/api/camps/_lib";
 
@@ -28,6 +30,8 @@ export async function GET(req: NextRequest) {
 
     const access = await resolveCoachClubIds(supabaseAdmin, caller.userId);
     if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
+    const scope=await resolveCoachAssignments(supabaseAdmin,caller.userId,requestedOrganizationId(req.url));
+    access.clubIds=access.clubIds.filter(id=>scope.clubIds.includes(id));
     if (access.clubIds.length === 0) return NextResponse.json({ camps: [], coachClubCount: 0 });
 
     const campsRes = await supabaseAdmin
@@ -37,7 +41,14 @@ export async function GET(req: NextRequest) {
       .order("created_at", { ascending: false });
     if (campsRes.error) return NextResponse.json({ error: campsRes.error.message }, { status: 400 });
 
-    const camps = campsRes.data ?? [];
+    const candidateCamps=campsRes.data??[];
+    const linkedDays=candidateCamps.length?await supabaseAdmin.from("club_camp_days").select("camp_id,event_id,club_events:event_id(group_id)").in("camp_id",candidateCamps.map(row=>row.id)):{data:[],error:null};
+    if(linkedDays.error)throw linkedDays.error;
+    const groupIds=new Set(scope.groups.map(row=>row.id)),assignedEventIds=new Set(scope.eventIds),managerIds=new Set(scope.memberships.filter(row=>row.role==='manager').map(row=>row.club_id));
+    const camps=candidateCamps.filter(camp=>managerIds.has(camp.club_id)||camp.head_coach_user_id===caller.userId||(linkedDays.data??[]).some(day=>{
+      const event=day.club_events as unknown as {group_id:string}|null;
+      return day.camp_id===camp.id&&(assignedEventIds.has(day.event_id)||Boolean(event&&groupIds.has(event.group_id)));
+    }));
     const campIds = uniq(camps.map((camp: any) => camp.id));
     const clubIds = uniq(camps.map((camp: any) => camp.club_id));
     const headCoachIds = uniq(camps.map((camp: any) => camp.head_coach_user_id));
@@ -56,7 +67,7 @@ export async function GET(req: NextRequest) {
             .select("camp_id,player_id,registration_status")
             .in("camp_id", campIds)
         : ({ data: [], error: null } as const),
-      clubIds.length ? supabaseAdmin.from("clubs").select("id,name").in("id", clubIds) : ({ data: [], error: null } as const),
+      clubIds.length ? supabaseAdmin.from("organizations").select("id,name").in("id", clubIds) : ({ data: [], error: null } as const),
       headCoachIds.length
         ? supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", headCoachIds)
         : ({ data: [], error: null } as const),
@@ -126,8 +137,13 @@ export async function GET(req: NextRequest) {
       });
     });
 
-    const campPlayerIds = uniq((campPlayersRes.data ?? []).map((row: any) => String(row.player_id ?? "").trim()));
-    const clubPlayerIds = uniq((clubPlayerMembershipsRes.data ?? []).map((row: any) => String(row.user_id ?? "").trim()));
+    const allowedPlayers=new Map<string,Set<string>>();
+    for(const clubId of clubIds){const candidates=uniq([...(campPlayersRes.data??[]).map(row=>row.player_id),...(clubPlayerMembershipsRes.data??[]).filter(row=>row.club_id===clubId).map(row=>row.user_id)]);
+      allowedPlayers.set(clubId,await authorizedCoachPlayers(supabaseAdmin,caller.userId,clubId,candidates));}
+    const scopedCampPlayers=(campPlayersRes.data??[]).filter(row=>allowedPlayers.get(camps.find(camp=>camp.id===row.camp_id)?.club_id??'')?.has(row.player_id));
+    const scopedClubPlayers=(clubPlayerMembershipsRes.data??[]).filter(row=>allowedPlayers.get(row.club_id)?.has(row.user_id));
+    const campPlayerIds = uniq(scopedCampPlayers.map((row: any) => String(row.player_id ?? "").trim()));
+    const clubPlayerIds = uniq(scopedClubPlayers.map((row: any) => String(row.user_id ?? "").trim()));
     const profileIdsToLoad = uniq([...campPlayerIds, ...clubPlayerIds]);
     const campPlayerProfilesRes = profileIdsToLoad.length
       ? await supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", profileIdsToLoad)
@@ -138,7 +154,7 @@ export async function GET(req: NextRequest) {
     (campPlayerProfilesRes.data ?? []).forEach((profile: any) => {
       campPlayerProfileById.set(String(profile.id ?? "").trim(), profile);
     });
-    (campPlayersRes.data ?? []).forEach((row: any) => {
+    scopedCampPlayers.forEach((row: any) => {
       const campId = String(row.camp_id ?? "").trim();
       const playerId = String(row.player_id ?? "").trim();
       if (!campId || !playerId) return;
@@ -164,7 +180,7 @@ export async function GET(req: NextRequest) {
     });
 
     const availablePlayersByClubId: Record<string, Array<{ id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }>> = {};
-    (clubPlayerMembershipsRes.data ?? []).forEach((row: any) => {
+    scopedClubPlayers.forEach((row: any) => {
       const clubId = String(row.club_id ?? "").trim();
       const playerId = String(row.user_id ?? "").trim();
       if (!clubId || !playerId) return;
@@ -231,7 +247,7 @@ export async function GET(req: NextRequest) {
       (attendeesRes.data ?? []).forEach((attendee: any) => {
         const eventId = String(attendee.event_id ?? "").trim();
         const day = dayByEventId.get(eventId);
-        if (!day) return;
+        if (!day || !allowedPlayers.get(camps.find(camp=>(daysByCampId[camp.id]??[]).some(d=>d.event_id===eventId))?.club_id??"")?.has(attendee.player_id)) return;
         const status = String(attendee.status ?? "not_registered");
         if (status === "present") day.counts.present += 1;
         else if (status === "absent") day.counts.absent += 1;

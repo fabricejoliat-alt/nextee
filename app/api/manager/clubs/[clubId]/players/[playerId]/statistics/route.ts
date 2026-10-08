@@ -1,3 +1,5 @@
+import { canReadPlayerHistory, readablePlayerHistoryIds } from "@/lib/server/personalHistoryAccess";
+import { personalOrOrganizationFilter } from "@/lib/personalHistoryScope";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import {
@@ -79,12 +81,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     const { supabaseAdmin: db, callerId } = await requireCaller(token);
     const access = await authorize(db, callerId, clubId, playerId);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
+    if (!(await canReadPlayerHistory(db, callerId, playerId, clubId))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
     const [profile, attendeeRows, trainingRows, rounds, handicapRows, settings, targets, coachFeedback, playerFeedback, customLinks, customResponses] = await Promise.all([
       db.from("profiles").select("first_name,last_name,handicap").eq("id", playerId).maybeSingle(),
       db.from("club_event_attendees").select("event_id,status").eq("player_id", playerId).limit(5000),
-      db.from("training_sessions").select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,club_id").eq("user_id", playerId).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(5000),
-      db.from("golf_rounds").select("id,start_at,round_type,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus,om_competition_level,om_points_net,om_points_brut").eq("user_id", playerId).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(2000),
+      db.from("training_sessions").select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,club_id").or(personalOrOrganizationFilter("club_id", [clubId])).eq("user_id", playerId).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(5000),
+      db.from("golf_rounds").select("id,start_at,round_type,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus,om_competition_level,om_points_net,om_points_brut").or(personalOrOrganizationFilter("club_id", [clubId])).eq("user_id", playerId).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(2000),
       db.from("player_handicap_history").select("effective_date,value").eq("user_id", playerId).lte("effective_date", range.to).order("effective_date"),
       db.from("training_volume_settings").select("season_months,offseason_months").eq("organization_id", clubId).maybeSingle(),
       db.from("training_volume_targets").select("ftem_code,level_label,handicap_min,handicap_max,minutes_offseason,minutes_inseason,sort_order").eq("organization_id", clubId).order("sort_order"),
@@ -224,6 +227,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         const peerIds = new Set((peers.data ?? []).map((row: any) => String(row.player_user_id)));
         cohortIds = cohortIds.filter((id: string) => peerIds.has(id));
       }
+      cohortIds = await readablePlayerHistoryIds(db, callerId, cohortIds, clubId);
       const cohortProfiles = cohortIds.length ? await db.from("profiles").select("id,handicap").in("id", cohortIds) : { data: [], error: null };
       if (cohortProfiles.error) throw new Error(cohortProfiles.error.message);
       if (benchmarkMode === "ftem") {
@@ -237,7 +241,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       else {
         const [cohortAttendanceRows, cohortTrainingRows] = await Promise.all([
           db.from("club_event_attendees").select("player_id,event_id,status").in("player_id", cohortIds).limit(20000),
-          db.from("training_sessions").select("id,user_id,start_at,total_minutes,session_type,club_event_id,club_id").in("user_id", cohortIds).gte("start_at", startIso(range.from)).lte("start_at", endIso(range.to)).limit(20000),
+          db.from("training_sessions").select("id,user_id,start_at,total_minutes,session_type,club_event_id,club_id").or(personalOrOrganizationFilter("club_id", [clubId])).in("user_id", cohortIds).gte("start_at", startIso(range.from)).lte("start_at", endIso(range.to)).limit(20000),
         ]);
         if (cohortAttendanceRows.error || cohortTrainingRows.error) throw new Error(cohortAttendanceRows.error?.message ?? cohortTrainingRows.error?.message);
         const cohortEventIds = Array.from(new Set((cohortAttendanceRows.data ?? []).map((row: any) => row.event_id)));

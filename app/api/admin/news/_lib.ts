@@ -63,7 +63,7 @@ export function normalizePlatformTargets(value: unknown) {
 export async function fetchPlatformNews(database: ReturnType<typeof createAdminClient>) {
   const [news, clubs, targets, translations] = await Promise.all([
     database.from("platform_news").select("id,status,scheduled_for,published_at,visible_on_home,image_url,created_at,updated_at").order("updated_at", { ascending: false }),
-    database.from("clubs").select("id,name").order("name", { ascending: true }),
+    database.from("organizations").select("id,name").order("name", { ascending: true }),
     database.from("platform_news_clubs").select("news_id,club_id,target_roles"),
     database.from("platform_news_translations").select("news_id,locale,title,summary,body"),
   ]);

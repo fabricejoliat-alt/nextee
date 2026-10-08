@@ -1,5 +1,7 @@
 "use client";
 
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ExternalLink, Newspaper } from "lucide-react";

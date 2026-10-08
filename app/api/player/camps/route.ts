@@ -48,11 +48,12 @@ export async function GET(req: NextRequest) {
     const campsRes = await supabaseAdmin
       .from("club_camps")
       .select("*")
-      .in("id", campIds)
+      .in("id", campIds).in("club_id", access.clubIds)
       .order("created_at", { ascending: false });
     if (campsRes.error) return NextResponse.json({ error: campsRes.error.message }, { status: 400 });
 
     const camps = campsRes.data ?? [];
+    const permittedCampIds = camps.map(camp => camp.id);
     const clubIds = uniq(camps.map((camp: any) => camp.club_id));
     const headCoachIds = uniq(camps.map((camp: any) => camp.head_coach_user_id));
 
@@ -61,7 +62,7 @@ export async function GET(req: NextRequest) {
         ? supabaseAdmin
             .from("club_camp_days")
             .select("id,camp_id,event_id,day_index,practical_info,starts_at,ends_at,location_text,club_events:event_id(id,status)")
-            .in("camp_id", campIds)
+            .in("camp_id", permittedCampIds)
             .order("day_index", { ascending: true })
         : ({ data: [], error: null } as const),
       campIds.length
@@ -70,7 +71,7 @@ export async function GET(req: NextRequest) {
             .select("event_id,status")
             .eq("player_id", access.effectiveUserId)
         : ({ data: [], error: null } as const),
-      clubIds.length ? supabaseAdmin.from("clubs").select("id,name").in("id", clubIds) : ({ data: [], error: null } as const),
+      clubIds.length ? supabaseAdmin.from("organizations").select("id,name").in("id", clubIds) : ({ data: [], error: null } as const),
       headCoachIds.length
         ? supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", headCoachIds)
         : ({ data: [], error: null } as const),
@@ -78,7 +79,7 @@ export async function GET(req: NextRequest) {
         ? supabaseAdmin
             .from("club_camp_options")
             .select("id,camp_id,name,description,applies_to_all_days,capacity,allows_quantity,input_type,choices,sort_order")
-            .in("camp_id", campIds)
+            .in("camp_id", permittedCampIds)
             .eq("is_active", true)
             .order("sort_order", { ascending: true })
         : ({ data: [], error: null } as const),

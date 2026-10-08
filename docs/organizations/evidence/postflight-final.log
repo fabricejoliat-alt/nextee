@@ -1,0 +1,56 @@
+BEGIN
+DO
+               check_name                | violations
+-----------------------------------------+------------
+ nonclub_clubs                           |          0
+ legacy_club_foreign_keys                |          0
+ projection_mismatches                   |          0
+ active_rosters_without_authorization    |          0
+ guardian_scopes_without_family_identity |          0
+(5 rows)
+
+   evidence    | rows |                           fingerprint
+---------------+------+------------------------------------------------------------------
+ versions      |    2 | f33119f79ee985779d8ed25246c161422750910320451dd9a8f74eb6e57c530b
+ presentations |    2 | 1b64b2f85de422d3b76091ec6cf7f059db3d91c69bac319fa893f1c9e7de6ee0
+ decisions     |    2 | 4f877370a2eb42bdc0e4a5b9317c59dbf388c79c7f633606b6b6239cdb4aee83
+(3 rows)
+
+       check_name       | violations
+------------------------+------------
+ unowned_trainings      |          0
+ unowned_rounds         |          0
+ unowned_activities     |          0
+ unowned_personal_camps |          0
+ unowned_validations    |          0
+(5 rows)
+
+ organization_templates
+------------------------
+                      3
+(1 row)
+
+ ftem_defaults
+---------------
+            10
+(1 row)
+
+ organizations
+---------------
+             3
+(1 row)
+
+  role   | count
+---------+-------
+ coach   |     1
+ manager |     2
+ parent  |     5
+ player  |     6
+(4 rows)
+
+ nonadmin_profiles
+-------------------
+                11
+(1 row)
+
+ROLLBACK
