@@ -53,6 +53,24 @@
   "vercel": {
     "project": "activitee-app",
     "production_supabase_url": "https://soivxpdcilgltbjbpimt.supabase.co",
-    "status": "deployment_pending"
-  }
+    "status": "ready",
+    "source_commit": "d497ae894efb96a3a55ecadb33cc2b1c93972c47",
+    "deployment_id": "HHChvcPP7oik8Ds8Jp5ZrdzV5NJu",
+    "deployment_url": "https://activitee-n19rnmc5d-fabrice-joliats-projects.vercel.app",
+    "production_domain": "https://activitee.app",
+    "duration_seconds": 106
+  },
+  "production_checks": {
+    "public_home_http": 200,
+    "anonymous_home_summary_http": 401,
+    "anonymous_golf_data_http": 401,
+    "authenticated_admin": "loaded; 0 organizations, 0 managers",
+    "organization_list": "loaded; empty; club and academy creation options available",
+    "legal_admin": "loaded; enforcement active; 3 active platform documents; 3 organization models available"
+  },
+  "evidence": [
+    "zurich-database-postflight-20261008.jpg",
+    "zurich-production-ready-20261008.jpg",
+    "zurich-empty-organizations-20261008.jpg"
+  ]
 }
