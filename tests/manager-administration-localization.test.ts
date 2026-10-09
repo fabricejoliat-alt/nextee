@@ -103,6 +103,29 @@ for(const [path,role] of [[paths[5],"coach"],[paths[7],"manager"]])test(`${role}
   h.cleanup();
 });
 
+test("coach profile changes its login password only after confirmation and clears the modal",async()=>{
+  const lang=localized(),writes:any[]=[];
+  const member={id:"member",user_id:"user",role:"coach",is_active:true,auth_email:"qa@example.test",profiles:{first_name:"Zoé",last_name:"Exemple",username:"zoe",staff_function:"Coach",phone:"",address:"",postal_code:"",city:""}};
+  const h=coachComponentHarness(paths[5],{props:{memberId:"member"},modules:{"@/components/i18n/AppI18nProvider":lang.module,"next/navigation":navigation},fetch:async(url,init)=>{
+    if(init?.method){writes.push({url:String(url),body:JSON.parse(String(init.body))});return Response.json({ok:true});}
+    return Response.json(String(url).endsWith("members")?{members:[member],playerFields:[]}:String(url).endsWith("seasons")?{seasons:[season]}:{records:[]});
+  }});
+  let tree=await settle(h);
+  button(tree,label("fr","coaches.changePassword")).props.onClick();tree=h.render();
+  assert.equal(writes.length,0);assert.ok(ui(tree).includes(label("fr","coaches.passwordHelp")));
+  change(tree,label("fr","coaches.newPassword"),"Fictional-password-1!");tree=h.render();
+  change(tree,label("fr","coaches.confirmPassword"),"different");tree=h.render();
+  await elements(tree).find(n=>n.type==="form"&&elements(n).some(x=>x.props.name==="new-password"))!.props.onSubmit(event);
+  assert.equal(writes.length,0);assert.ok(ui(h.render()).includes(label("fr","coaches.passwordMismatch")));
+  change(h.render(),label("fr","coaches.confirmPassword"),"Fictional-password-1!");tree=h.render();
+  await elements(tree).find(n=>n.type==="form"&&elements(n).some(x=>x.props.name==="new-password"))!.props.onSubmit(event);await flush();tree=h.render();
+  assert.deepEqual(writes,[{url:"/api/manager/clubs/club/coaches/password",body:{member_id:"member",password:"Fictional-password-1!"}}]);
+  assert.ok(ui(tree).includes(label("fr","coaches.passwordSaved")));
+  assert.ok(!ui(tree).includes("Fictional-password-1!"));
+  for(const locale of locales){lang.set(locale);tree=h.render();assert.ok(ui(tree).includes(label(locale,"coaches.changePassword")));}
+  h.cleanup();
+});
+
 test("coach statistics localize numbers, months, roles and overdue reasons while preserving group and activity names",async()=>{
   const lang=localized();let reads=0;
   const coach={groups:[{id:"group",name:"Groupe maison",role:"Responsable",juniors:3}],coachHours:12.5,previousCoachHours:10,activities:2,uniquePlayers:3,medianGroupSize:1.5,activeWeeks:2,camps:0,evaluationsExpected:2,evaluationsCompleted:1,evaluationsInProgress:0,evaluationsOverdue:1,visibleFeedbackRate:50.5,lastActivity:"2026-09-01T10:00:00Z",evaluationTodo:[{eventId:"event",playerId:"player",groupId:"group",eventTitle:"Activité maison",overdueAfterDays:7,reason:"Évaluation en retard de plus de 7 jours"}]};
