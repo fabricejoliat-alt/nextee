@@ -4,9 +4,9 @@ import { loadManagerModule, managerDatabase } from "./helpers/managerRouteHarnes
 
 type RedirectRoute = { POST: (request: Request) => Promise<Response> };
 
-function routeFor(consentStatus: string, role: "player" | "parent" = "player", secondClubStatus?: string) {
+function routeFor(consentStatus: string, role: "player" | "parent" | "manager" = "player", secondClubStatus?: string, env: Record<string, string> = {}) {
   const { db } = managerDatabase({
-    club_members: role === "player" ? [{ user_id: "junior", club_id: "club-a", role: "player", is_active: true,
+    club_members: role === "manager" ? [{ user_id: "junior", club_id: "club-a", role: "manager", is_active: true }] : role === "player" ? [{ user_id: "junior", club_id: "club-a", role: "player", is_active: true,
       player_consent_status: consentStatus },
       ...(secondClubStatus ? [{ user_id: "junior", club_id: "club-b", role: "player", is_active: true,
         player_consent_status: secondClubStatus }] : [])] : [
@@ -27,8 +27,17 @@ function routeFor(consentStatus: string, role: "player" | "parent" = "player", s
     "@/lib/playerAccessPolicy": { selectPrimaryApplicationRole: () => role,
       guardianCanEdit: (link: { canView: boolean; canEdit: boolean }) => link.canView && link.canEdit },
     "@/lib/playerConsent": { playerConsentAllowsAccess: (values: string[]) => values.length > 0 && values.every((value) => value === "granted" || value === "adult") },
-  });
+  }, env);
 }
+
+test("a manager reaches Manager when the legacy SUPABASE_URL variable is absent", async () => {
+  const route = routeFor("", "manager", undefined, { SUPABASE_URL: "" });
+  const response = await route.POST(new Request("https://test.invalid/api/auth/redirect", {
+    method: "POST", headers: { Authorization: "Bearer fixture-token" },
+  }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { redirectTo: "/manager" });
+});
 
 test("a junior waiting for a parent enters /legal/my with a distinct blocker", async () => {
   const route = routeFor("pending");
