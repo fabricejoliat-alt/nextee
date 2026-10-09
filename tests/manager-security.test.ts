@@ -394,3 +394,20 @@ test("legacy attachment and preview endpoints cannot bypass the account boundary
     assert.deepEqual(h.authWrites, []);
   }
 });
+
+test("admin member routes use the deployed public Supabase URL when SUPABASE_URL is absent", async () => {
+  for (const endpoint of ["add-existing-member", "add-existing-member-preview"]) {
+    const h = managerDatabase(managerFixture());
+    const response = await loadManagerModule(`app/api/admin/clubs/[clubId]/${endpoint}/route.ts`, h.mocks, { SUPABASE_URL: "" }).POST(
+      managerRequest("POST", { user_id: "outside", role: "manager" }), clubContext,
+    );
+    assert.equal(response.status, 409);
+    assert.deepEqual(h.writes, []);
+  }
+
+  const h = managerDatabase(managerFixture());
+  const response = await loadManagerModule(createPath, h.mocks, { SUPABASE_URL: "" }).POST(managerRequest("POST", {
+    role: "coach", email: "target@example.invalid", first_name: "Test", last_name: "Coach",
+  }), clubContext);
+  assert.equal(response.status, 200);
+});

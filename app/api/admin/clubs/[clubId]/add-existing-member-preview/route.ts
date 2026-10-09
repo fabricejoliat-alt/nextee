@@ -42,7 +42,7 @@ export const POST = withAdminMutationAudit(async function POST(
 ) {
   try {
     const supabaseAdmin = createClient(
-      mustEnv("SUPABASE_URL"),
+      mustEnv("NEXT_PUBLIC_SUPABASE_URL"),
       mustEnv("SUPABASE_SERVICE_ROLE_KEY"),
       { auth: { persistSession: false } }
     );

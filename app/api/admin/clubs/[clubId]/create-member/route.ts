@@ -230,7 +230,7 @@ async function syncLinkedParentsToClub(supabaseAdmin: any, clubId: string, playe
 
 export const POST = withAdminMutationAudit(async function POST(req: NextRequest, ctx: any) {
   try {
-    const supabaseUrl = mustEnv("SUPABASE_URL");
+    const supabaseUrl = mustEnv("NEXT_PUBLIC_SUPABASE_URL");
     const serviceRoleKey = mustEnv("SUPABASE_SERVICE_ROLE_KEY");
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false },
