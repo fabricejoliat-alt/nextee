@@ -66,6 +66,32 @@ for(const [path,role] of [[paths[1],"player"],[paths[2],"coach"],[paths[3],"mana
   h.cleanup();
 });
 
+test("coach directory shows club status without a season and includes inactive coaches",async()=>{
+  const members=[
+    {id:"active",role:"coach",is_active:true,auth_email:"active@example.test",profiles:{first_name:"Alice",last_name:"Coach",staff_function:"Coach"}},
+    {id:"inactive",role:"coach",is_active:false,auth_email:"inactive@example.test",profiles:{first_name:"Bob",last_name:"Coach",staff_function:"Coach"}},
+  ];
+  const h=coachComponentHarness(paths[2],{searchParams:"club=club&season=season",fetch:async(url)=>Response.json(String(url).includes("my-clubs")?{clubs:[club]}:String(url).endsWith("members")?{members}:{seasons:[]})});
+  const tree=await settle(h);
+  const statuses=elements(tree).filter(n=>n.type==="td"&&n.props["data-label"]===tr("fr")("manager.performance.status"));
+  assert.equal(statuses.length,2);
+  assert.ok(textContent(statuses[0]).includes(label("fr","active")));
+  assert.ok(textContent(statuses[0]).includes(label("fr","inClub")));
+  assert.ok(textContent(statuses[1]).includes(label("fr","inactive")));
+  assert.ok(textContent(statuses[1]).includes(label("fr","inClub")));
+  assert.ok(ui(tree).includes("Alice"));assert.ok(ui(tree).includes("Bob"));
+  h.cleanup();
+});
+
+test("coach directory uses season status when a season record exists",async()=>{
+  const member={id:"member",role:"coach",is_active:true,auth_email:"qa@example.test",profiles:{first_name:"Zoé",last_name:"Exemple",staff_function:"Coach"}};
+  const h=coachComponentHarness(paths[2],{searchParams:"club=club&season=season",fetch:async(url)=>Response.json(String(url).includes("my-clubs")?{clubs:[club]}:String(url).endsWith("members")?{members:[member]}:String(url).endsWith("seasons")?{seasons:[season]}:{records:[{club_member_id:"member",registration_status:"inactive"}]})});
+  const tree=await settle(h);
+  const status=elements(tree).find(n=>n.type==="td"&&n.props["data-label"]===tr("fr")("manager.performance.status"));
+  assert.ok(status);assert.ok(textContent(status).includes(label("fr","inactive")));assert.ok(textContent(status).includes(label("fr","inSeason")));
+  h.cleanup();
+});
+
 for(const [path,role] of [[paths[4],"coach"],[paths[6],"manager"]])test(`new ${role} validates without writes and preserves a draft before sending the correct account role`,async()=>{
   const lang=localized(),writes:any[]=[],navigated:string[]=[];let reads=0;
   const h=coachComponentHarness(path,{modules:{"@/components/i18n/AppI18nProvider":lang.module},navigate:p=>navigated.push(p),fetch:async(url,init)=>{if(init?.method){writes.push({url:String(url),body:JSON.parse(String(init.body))});return Response.json({ok:true,user:{email:"qa@example.test"},username:"zoe.exemple",tempPassword:"demo-one-time-password"});}reads++;return Response.json({clubs:[club]});}});

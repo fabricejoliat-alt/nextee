@@ -1,5 +1,6 @@
 .panel{min-width:0}
 .heading{gap:12px}
+.statusContext{display:block;margin-top:3px;color:#6d786e;font-size:10px;line-height:1.35}
 @media(max-width:640px){
   .heading{flex-direction:column;align-items:stretch}
   .panel .table{display:block;min-width:0}
