@@ -1,4 +1,7 @@
 export const organizationEntries = {
+  demoMode: ["Organisation de démonstration", "Demonstration organization", "Demo-Organisation", "Organizzazione dimostrativa"],
+  demoHint: ["Accès aux règles, aux quiz et au classement interne. Exclue du classement interclubs pour toutes les saisons.", "Access to rules, quizzes and internal rankings. Excluded from interclub rankings for all seasons.", "Zugang zu Regeln, Quiz und interner Rangliste. In allen Saisons von der Interclub-Rangliste ausgeschlossen.", "Accesso a regole, quiz e classifiche interne. Esclusa dalle classifiche tra club per tutte le stagioni."],
+  demoBadge: ["Démo", "Demo", "Demo", "Demo"],
   groupSearch:["Groupe, organisation ou catégorie…","Group, organization or category…","Gruppe, Organisation oder Kategorie…","Gruppo, organizzazione o categoria…"],
   newsTitle:["Actualités de mes organisations","News from my organizations","Neuigkeiten meiner Organisationen","Notizie delle mie organizzazioni"],
   newsLead:["Les dernières nouvelles de mes clubs et académies.","The latest news from my clubs and academies.","Die neuesten Meldungen meiner Clubs und Akademien.","Le ultime notizie dei miei club e delle mie accademie."],

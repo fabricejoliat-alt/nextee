@@ -94,7 +94,10 @@
 .sectionHeader h2,.listHeader h2{ margin:0; color:var(--primary); font-family:var(--font-inter-tight), var(--font-inter), sans-serif; font-size:20px; font-weight:700; letter-spacing:-.025em; }
 .sectionHeader p,.listHeader p{ margin:4px 0 0; color:#778178; font-size:12px; line-height:1.45; }
 
-.formGrid{ display:grid; grid-template-columns:minmax(220px,1.55fr) minmax(170px,.75fr) minmax(180px,1fr) auto; gap:13px; align-items:end; padding-top:18px; }
+.formGrid{ display:grid; grid-template-columns:minmax(220px,1.55fr) minmax(170px,.75fr) minmax(180px,1fr); gap:13px; align-items:end; padding-top:18px; }
+.demoRow{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center}
+.demoBadge{display:inline-flex;margin:5px 0 0;padding:3px 7px;border:1px solid #dce5da;border-radius:6px;background:#f0f5ed;color:#587052;font-size:10px;font-weight:700}
+@media(max-width:680px){.demoRow{grid-template-columns:1fr}}
 .field{ display:grid; gap:7px; min-width:0; }
 .field span{ color:#59655b; font-size:10px; font-weight:850; letter-spacing:.025em; }
 .field input,.field select,.rowInput,.searchField input,.filterSelect{

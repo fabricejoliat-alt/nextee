@@ -22,7 +22,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ organiza
   if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
   const { organizationId } = await params;
   const [organizationRes, settingsRes, profilesRes] = await Promise.all([
-    access.client.from("organizations").select("id,name,slug,org_type,is_active,country_code,region_code").eq("id", organizationId).maybeSingle(),
+    access.client.from("organizations").select("id,name,slug,org_type,is_active,is_demo,country_code,region_code").eq("id", organizationId).maybeSingle(),
     access.client.from("organization_settings").select("settings").eq("organization_id", organizationId).maybeSingle(),
     access.client.from("profiles").select("id,first_name,last_name,username").order("last_name"),
   ]);
@@ -44,9 +44,10 @@ export const PUT = withAdminMutationAudit(async function PUT(req: Request, { par
   if (!name || !slug) return NextResponse.json({ error: "Le nom et l’identifiant sont obligatoires." }, { status: 400 });
   const orgType = String(body.organization.org_type ?? "club");
   if (!['club', 'academy', 'federation'].includes(orgType)) return NextResponse.json({ error: "Type d’organisation invalide." }, { status: 400 });
+  if (body.organization.is_demo !== undefined && typeof body.organization.is_demo !== "boolean") return NextResponse.json({ error: "Mode de démonstration invalide." }, { status: 400 });
   const orgPayload = { name, slug, org_type: orgType, is_active: Boolean(body.organization.is_active), country_code: String(body.organization.country_code ?? "").trim() || null, region_code: String(body.organization.region_code ?? "").trim() || null };
   const saved = await access.client.rpc("save_organization_settings_checked", {
-    p_actor: access.userId, p_org: organizationId, p_values: orgPayload, p_settings: body.settings,
+    p_actor: access.userId, p_org: organizationId, p_values: { ...orgPayload, ...(body.organization.is_demo !== undefined ? { is_demo: body.organization.is_demo } : {}) }, p_settings: body.settings,
   });
   if (saved.error) return NextResponse.json({ error: saved.error.message }, { status: 409 });
   return NextResponse.json({ ok: true });

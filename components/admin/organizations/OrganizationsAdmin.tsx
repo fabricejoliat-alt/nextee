@@ -8,6 +8,7 @@ import Link from "next/link";
 import { Building2, ChevronRight, Filter, Plus, Search } from "lucide-react";
 import styles from "./OrganizationsAdmin.module.css";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import DemoModeToggle from "./DemoModeToggle";
 
 type OrgType = "club" | "academy" | "federation";
 
@@ -16,6 +17,7 @@ type Organization = {
   name: string;
   slug: string | null;
   org_type: OrgType;
+  is_demo: boolean;
   created_at: string | null;
 };
 
@@ -41,6 +43,7 @@ export default function OrganizationsAdmin() {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [orgType, setOrgType] = useState<OrgType>("club");
+  const [isDemo, setIsDemo] = useState(false);
   const [slugTouched, setSlugTouched] = useState(false);
 
   const [search, setSearch] = useState("");
@@ -67,7 +70,7 @@ export default function OrganizationsAdmin() {
     try {
       const { data, error } = await supabase
         .from("organizations")
-        .select("id,name,slug,org_type,created_at")
+        .select("id,name,slug,org_type,is_demo,created_at")
         .order("created_at", { ascending: false });
 
       if (error) {
@@ -101,13 +104,14 @@ export default function OrganizationsAdmin() {
     const { data } = await supabase.auth.getSession();
     const response = await adminFetch("/api/admin/organizations", {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
-      body: JSON.stringify({ name: finalName, slug: finalSlug, org_type: orgType }),
+      body: JSON.stringify({ name: finalName, slug: finalSlug, org_type: orgType, is_demo: isDemo }),
     });
     if (!response.ok) { setError(t("organization.operationFailed")); return; }
 
     setName("");
     setSlug("");
     setOrgType("club");
+    setIsDemo(false);
     setSlugTouched(false);
     await loadOrganizations();
     if (orgType !== "federation") setCreatedClubName(finalName);
@@ -179,10 +183,13 @@ export default function OrganizationsAdmin() {
             />
           </label>
 
-          <div className={styles.submitField}>
+          <div className={styles.demoRow}>
+            <DemoModeToggle checked={isDemo} onChange={setIsDemo} disabled={saving} />
+            <div className={styles.submitField}>
             <button className={styles.primaryButton} disabled={!canCreate || saving}>
               <Plus size={16} strokeWidth={2.5} /> Créer l’organisation
             </button>
+            </div>
           </div>
         </form>
       </section>
@@ -233,6 +240,7 @@ export default function OrganizationsAdmin() {
                     <>
                       <td data-label="Organisation">
                         <strong className={styles.organizationName}>{org.name}</strong>
+                        {org.is_demo ? <span className={styles.demoBadge}>{t("organization.demoBadge")}</span> : null}
                       </td>
                       <td data-label="Type"><span className={`${styles.typeTag} ${styles[`type${org.org_type}`]}`}>{orgTypeLabel(org.org_type)}</span></td>
                       <td data-label="Identifiant URL"><code>{org.slug ?? "—"}</code></td>

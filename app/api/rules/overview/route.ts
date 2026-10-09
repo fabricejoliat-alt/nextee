@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { rulesSeasonClubLeaderboard, rulesSeasonPlayerLeaderboard, type RulesSeasonAttemptScore } from "@/lib/rulesLearning";
+import { rulesSeasonClubLeaderboard, rulesSeasonPlayerLeaderboard } from "@/lib/rulesLearning";
+import { officialRulesInterclubAttempts, type SourcedRulesAttemptScore } from "@/lib/rulesInterclubEligibility";
 
 function db() { return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } }); }
 
@@ -31,12 +32,12 @@ async function loadPlayerLeaderboard(admin: Database, seriesIds: string[], seaso
     if (!clubIdsByAttempt.has(attempt.id)) clubIdsByAttempt.set(attempt.id, [attempt.club_id]);
   }
 
-  const clubIds = [...new Set([...clubIdsByAttempt.values()].flat().concat(playerClubIds))];
+  const clubIds = [...new Set([...clubIdsByAttempt.values()].flat().concat(playerClubIds, attempts.map(item => item.club_id)))];
   const playerIdsInMyClubs = [...new Set(attempts
     .filter(item => (clubIdsByAttempt.get(item.id) ?? []).some(id => playerClubIds.includes(id)))
     .map(item => item.player_user_id))];
   const [{ data: clubs, error: clubsError }, { data: participations, error: participationsError }, { data: profiles, error: profilesError }] = await Promise.all([
-    clubIds.length ? admin.from("organizations").select("id,name").in("id", clubIds) : Promise.resolve({ data: [], error: null }),
+    clubIds.length ? admin.from("organizations").select("id,name,is_demo,org_type").in("id", clubIds) : Promise.resolve({ data: [], error: null }),
     admin.from("rules_club_participations").select("club_id,enabled,visibility,retained_scores_override,minimum_participants_override").eq("season_id", String(season.id)),
     playerIdsInMyClubs.length
       ? admin.from("profiles").select("id,first_name,last_name").in("id", playerIdsInMyClubs)
@@ -51,7 +52,7 @@ async function loadPlayerLeaderboard(admin: Database, seriesIds: string[], seaso
   const perfectBonus = Number(season.perfect_bonus ?? 50);
   const minimumSeries = Number(season.minimum_player_series ?? 4);
   const validAttempts = attempts.filter(item => Number.isFinite(item.total_score));
-  const seasonAttempts: RulesSeasonAttemptScore[] = validAttempts.flatMap(item => {
+  const seasonAttempts: SourcedRulesAttemptScore[] = validAttempts.flatMap(item => {
     const questionCount = Math.max(1, item.question_order?.length ?? 6);
     return (clubIdsByAttempt.get(item.id) ?? [item.club_id])
       .filter(clubId => participationByClub.get(clubId)?.enabled !== false)
@@ -59,6 +60,7 @@ async function loadPlayerLeaderboard(admin: Database, seriesIds: string[], seaso
       seriesId: item.series_id,
       playerId: item.player_user_id,
       clubId,
+      sourceClubId: item.club_id,
       score: Number(item.total_score),
       possible: questionCount * (pointsPerCorrect + maxSpeedBonus) + perfectBonus,
       submittedAt: String(item.submitted_at ?? ""),
@@ -82,7 +84,8 @@ async function loadPlayerLeaderboard(admin: Database, seriesIds: string[], seaso
     return { clubId, name: clubNames.get(clubId) ?? "Mon club", participants: playerRows.length, rows: visiblePlayers };
   });
 
-  const rankedClubs = rulesSeasonClubLeaderboard(seasonPlayers, id => Number(participationByClub.get(id)?.minimum_participants_override ?? season.minimum_club_participants ?? 5))
+  const officialSeasonPlayers = rulesSeasonPlayerLeaderboard(officialRulesInterclubAttempts(seasonAttempts, clubs ?? []), minimumSeries);
+  const rankedClubs = rulesSeasonClubLeaderboard(officialSeasonPlayers, id => Number(participationByClub.get(id)?.minimum_participants_override ?? season.minimum_club_participants ?? 5))
     .map(item => ({ ...item, name: clubNames.get(item.clubId) ?? "Club", score: Math.round(item.score * 10) / 10, isMyClub: playerClubIds.includes(item.clubId) }));
   const visibleClubs = rankedClubs.filter(item => item.eligible).slice(0, 5);
   for (const myClubRow of rankedClubs.filter(item => item.isMyClub)) {
