@@ -27,7 +27,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
     const [admin, clubManagers, organizationManagers] = await Promise.all([
       db.from("app_admins").select("user_id").eq("user_id", userId).maybeSingle(),
       db.from("club_members").select("id").eq("user_id", userId).eq("role", "manager").limit(1),
-      db.from("organization_members").select("id").eq("user_id", userId).in("role", ["owner", "admin", "manager"]).limit(1),
+      db.from("organization_members").select("organization_id").eq("user_id", userId).in("role", ["owner", "admin", "manager"]).limit(1),
     ]);
     if (admin.error || clubManagers.error || organizationManagers.error) throw new Error("Credential scope check failed");
     if (admin.data || clubManagers.data?.length || organizationManagers.data?.length) {

@@ -18,6 +18,15 @@ test("Manager can change only an active coach password derived from the selected
   assert.deepEqual(h.writes, []);
 });
 
+test("credential protection uses a column present in organization_members", async () => {
+  const h = managerDatabase(managerFixture(), {
+    schemaColumns: { organization_members: ["organization_id", "user_id", "role", "is_active"] },
+  });
+  const response = await loadManagerModule(route, h.mocks).POST(managerRequest("POST", payload), context);
+  assert.equal(response.status, 200);
+  assert.deepEqual(h.authWrites, [{ id: "target", patch: { password: payload.password } }]);
+});
+
 test("missing authentication, foreign Managers and non-coach targets cannot reset a password", async () => {
   for (const mode of ["no-token", "invalid-token", "foreign-manager", "inactive-manager", "foreign-coach", "parent-target", "inactive-coach"]) {
     const tables = managerFixture();

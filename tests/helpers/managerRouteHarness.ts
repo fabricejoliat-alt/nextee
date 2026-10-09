@@ -24,6 +24,7 @@ export function loadManagerModule<T = any>(path: string, mocks: Record<string, u
 
 export function managerDatabase(tables: Record<string, Row[]> = {}, options: {
   caller?: string | null; users?: Row[]; failureTable?: string; rpcError?: Row; rpcResult?: Row; maxRows?: number; applyOrder?: boolean;
+  schemaColumns?: Record<string, string[]>;
 } = {}) {
   const writes: Array<{ table: string; method: string; values: any; rows: Row[] }> = [];
   const rpcs: Array<{ name: string; args: Row }> = [];
@@ -47,9 +48,16 @@ export function managerDatabase(tables: Record<string, Row[]> = {}, options: {
       let rows = [...(tables[table] ?? [])];
       const ordering: Array<{ key: string; ascending: boolean }> = [];
       let singular = false, head = false;
+      let invalidSelection = false;
       let mutation: { method: string; values: any } | null = null;
       const query = {
-        select(_columns?: string, opts?: Row) { head = opts?.head ?? false; return query; },
+        select(columns?: string, opts?: Row) {
+          head = opts?.head ?? false;
+          if (options.schemaColumns?.[table] && columns) {
+            invalidSelection = columns.split(",").some((column) => !options.schemaColumns![table].includes(column.trim()));
+          }
+          return query;
+        },
         eq(key: string, value: unknown) { rows = rows.filter((row) => row[key] === value); return query; },
         neq(key: string, value: unknown) { rows = rows.filter((row) => row[key] !== value); return query; },
         in(key: string, values: unknown[]) { rows = rows.filter((row) => values.includes(row[key])); return query; },
@@ -81,7 +89,7 @@ export function managerDatabase(tables: Record<string, Row[]> = {}, options: {
         delete() { mutation = { method: "delete", values: null }; return query; },
         then(yes: (value: unknown) => unknown, no?: (error: unknown) => unknown) {
           if (mutation) writes.push({ table, ...mutation, rows });
-          const error = table === options.failureTable ? { message: "Database failure" } : singular && !mutation && rows.length > 1 ? { message: "Multiple rows" } : null;
+          const error = invalidSelection ? { message: "Undefined column" } : table === options.failureTable ? { message: "Database failure" } : singular && !mutation && rows.length > 1 ? { message: "Multiple rows" } : null;
           const data = mutation && ["insert", "upsert"].includes(mutation.method)
             ? (Array.isArray(mutation.values) ? mutation.values : [{ id: "created", ...mutation.values }]) : rows;
           return Promise.resolve({ error, data: error || head ? null : singular ? data[0] ?? null : data.slice(0, options.maxRows), count: rows.length }).then(yes, no);
