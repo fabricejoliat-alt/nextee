@@ -63,14 +63,14 @@ export async function proxy(req: NextRequest) {
   if (data.user && initialPasswordRequired(data.user)) {
     if (path.startsWith("/api/")) return NextResponse.json({ error: "Choose your own password first", code: "INITIAL_PASSWORD_REQUIRED" },
       { status: 403, headers: adminNoStore });
-    return NextResponse.redirect(new URL("/change-initial-password", req.url));
+    return NextResponse.redirect(new URL("/change-initial-password", req.url), { headers: adminNoStore });
   }
 
   if (adminPage || adminApi) {
     if (!database) return NextResponse.json({ error: "Admin access unavailable" }, { status: 503, headers: adminNoStore });
     if (!data.user || (adminApi && !bearerToken)) {
       if (adminApi) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: adminNoStore });
-      return NextResponse.redirect(new URL("/login?next=%2Fadmin", req.url));
+      return NextResponse.redirect(new URL("/login?next=%2Fadmin", req.url), { headers: adminNoStore });
     }
     try {
       const admin = await database.from("app_admins").select("user_id").eq("user_id", data.user.id).maybeSingle();
@@ -79,7 +79,7 @@ export async function proxy(req: NextRequest) {
       if (!admin.data && adminApi && isLegacyManagerAdminRoute(path)) return res;
       if (!admin.data) return adminApi
         ? NextResponse.json({ error: "Forbidden" }, { status: 403, headers: adminNoStore })
-        : NextResponse.redirect(new URL("/no-access", req.url));
+        : NextResponse.redirect(new URL("/no-access", req.url), { headers: adminNoStore });
       // The page renders only the MFA gate at aal1; no Admin children mount yet.
       if (adminPage || (path === "/api/admin/security" && req.method === "GET")) return res;
       const assurance = await verifiedAdminAssurance(database, bearerToken, data.user.id);
