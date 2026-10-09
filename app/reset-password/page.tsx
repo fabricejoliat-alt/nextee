@@ -190,10 +190,21 @@ export default function ResetPasswordPage() {
         return;
       }
 
+      const current = (await supabase.auth.getSession()).data.session;
+      if (current?.user.app_metadata?.initial_password_required === true) {
+        const changed = await fetch("/api/auth/initial-password", { method: "POST",
+          headers: { Authorization: `Bearer ${current.access_token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ password, confirmPassword }), cache: "no-store" });
+        if (!changed.ok) { setError("Choisissez un nouveau mot de passe d’au moins 12 caractères."); return; }
+        const refreshed = await supabase.auth.refreshSession();
+        if (refreshed.error) { setError(translateAuthMessage(refreshed.error.message)); return; }
+      } else {
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) {
         setError(translateAuthMessage(updateError.message));
         return;
+      }
+
       }
 
       const sessionRes = await supabase.auth.getSession();

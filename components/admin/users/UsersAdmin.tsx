@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ChevronRight, Filter, Plus, Search } from "lucide-react";
@@ -21,6 +23,12 @@ export default function UsersAdmin() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ firstName: "", lastName: "", username: "", password: "" });
 
+  useEffect(() => {
+    if (!createdCreds) return;
+    const timer = window.setTimeout(() => setCreatedCreds(null), 120000);
+    return () => window.clearTimeout(timer);
+  }, [createdCreds]);
+
   const canCreate = createForm.firstName.trim().length > 0 && createForm.lastName.trim().length > 0;
 
   async function getToken() {
@@ -31,7 +39,7 @@ export default function UsersAdmin() {
   async function request(input: RequestInfo | URL, init: RequestInit = {}) {
     const controller = new AbortController();
     const timer = window.setTimeout(() => controller.abort(), 15000);
-    try { return await fetch(input, { ...init, signal: controller.signal }); }
+    try { return await adminFetch(input, { ...init, signal: controller.signal }); }
     finally { window.clearTimeout(timer); }
   }
 
@@ -109,7 +117,7 @@ export default function UsersAdmin() {
         <label className={styles.field}><span>Adresse e-mail</span><input type="email" value={createForm.email} onChange={(event) => setCreateForm((current) => ({ ...current, email: event.target.value }))} placeholder="nom@organisation.ch" disabled={busy} /></label>
         <div className={styles.submitField}><button className={styles.primaryButton} disabled={!canCreate || busy} type="submit"><Plus size={16} /> {busy ? "Création…" : "Créer le manager"}</button></div>
       </form>
-      {createdCreds ? <div className={styles.successAlert}><strong>Manager créé.</strong><span> Identifiant : {createdCreds.username}</span>{createdCreds.password ? <span> · Mot de passe temporaire : {createdCreds.password}</span> : null}</div> : null}
+      {createdCreds ? <div className={styles.successAlert}><strong>Manager créé.</strong><span> Identifiant : {createdCreds.username}</span>{createdCreds.password ? <span> · Mot de passe initial : {createdCreds.password}</span> : null}<span> · À remplacer à la première connexion.</span><button className={styles.primaryButton} type="button" onClick={() => setCreatedCreds(null)}>Masquer les identifiants</button></div> : null}
     </section>
 
     <section className={styles.tablePanel}>

@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { organizationActor, organizationReply, organizationFailure } from "@/lib/server/organizationAccess";
 type Context = { params: Promise<{ organizationId: string }> };
 export async function GET(req: Request, ctx: Context) {
@@ -27,7 +28,7 @@ export async function GET(req: Request, ctx: Context) {
     return organizationReply({ readiness:{required:3,prepared:new Set(required.map(doc=>doc.purpose_key)).size,published,active}, partners: partners.data, clubs: clubs.data, history: history.data, documents: documents.data });
   } catch (error) { return organizationFailure(error); }
 }
-export async function POST(req: Request, ctx: Context) {
+export const POST = withAdminMutationAudit(async function POST(req: Request, ctx: Context) {
   try {
     const access = await organizationActor(req, undefined, true);
     if (!access) return organizationReply({ error: "Forbidden" }, 403);
@@ -39,4 +40,4 @@ export async function POST(req: Request, ctx: Context) {
     if (result.error) throw result.error;
     return organizationReply({ id: result.data });
   } catch (error) { return organizationFailure(error); }
-}
+});

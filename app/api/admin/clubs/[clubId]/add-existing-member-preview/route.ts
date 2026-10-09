@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { canReuseClubAccount, requireManagerClub } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -35,7 +36,7 @@ async function countLinkedParents(supabaseAdmin: any, userId: string) {
   return count ?? 0;
 }
 
-export async function POST(
+export const POST = withAdminMutationAudit(async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ clubId: string }> }
 ) {
@@ -80,4 +81,4 @@ export async function POST(
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
-}
+});

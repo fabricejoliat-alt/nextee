@@ -1,7 +1,15 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { NextResponse } from "next/server";
 import { legalAdmin, legalDb, legalNoStore } from "@/lib/server/legalAccess";
 
 const reply = (body: object, status = 200) => NextResponse.json(body, { status, headers: legalNoStore });
+function unavailable(cause: unknown, fallback: string) {
+  const code = cause && typeof cause === "object" && "code" in cause ? cause.code : null;
+  if (code === "PGRST205" || code === "42P01") {
+    return reply({ error: "Le paramètre de contact n’est pas encore installé dans cette base. Une migration est nécessaire.", code: "CONTACT_SETTINGS_NOT_INSTALLED" }, 503);
+  }
+  return reply({ error: fallback }, 503);
+}
 
 export async function GET(req: Request) {
   try {
@@ -10,10 +18,10 @@ export async function GET(req: Request) {
     const result = await db.from("platform_contact_settings").select("contact_email,updated_at").eq("singleton", true).single();
     if (result.error) throw result.error;
     return reply(result.data);
-  } catch { return reply({ error: "Paramètre indisponible. Appliquez la migration 20261106." }, 503); }
+  } catch (cause) { return unavailable(cause, "Paramètre de contact indisponible."); }
 }
 
-export async function PUT(req: Request) {
+export const PUT = withAdminMutationAudit(async function PUT(req: Request) {
   try {
     const db = legalDb(); const admin = await legalAdmin(req, db);
     if (!admin) return reply({ error: "Forbidden" }, 403);
@@ -24,5 +32,5 @@ export async function PUT(req: Request) {
       .eq("singleton", true).select("contact_email,updated_at").single();
     if (result.error) throw result.error;
     return reply(result.data);
-  } catch { return reply({ error: "Enregistrement impossible." }, 503); }
-}
+  } catch (cause) { return unavailable(cause, "Enregistrement impossible."); }
+});

@@ -1,7 +1,8 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-export async function POST(req: NextRequest) {
+export const POST = withAdminMutationAudit(async function POST(req: NextRequest) {
   try {
     const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
     if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
@@ -30,6 +31,10 @@ export async function POST(req: NextRequest) {
     const userId = String(body.userId || "").trim();
     if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 });
 
+    const nextPassword = typeof body.auth_password === "string" ? body.auth_password : "";
+    if (nextPassword && (nextPassword.length < 12 || nextPassword.length > 128)) return NextResponse.json(
+      { error: "Le mot de passe doit contenir de 12 à 128 caractères." }, { status: 400 });
+
     const nextRole = typeof body.role === "string" ? body.role.trim().toLowerCase() : "";
     const allowedRoles = new Set(["manager", "coach", "player", "parent", "captain", "staff"]);
     if (nextRole && !allowedRoles.has(nextRole)) {
@@ -57,12 +62,16 @@ export async function POST(req: NextRequest) {
     if (profErr) return NextResponse.json({ error: profErr.message }, { status: 400 });
 
     // Update auth email/password/metadata (optional)
-    const nextPassword = typeof body.auth_password === "string" ? body.auth_password : "";
     const hasRoleOrUsername = Boolean(nextRole || nextUsername);
 
     if (nextPassword || hasRoleOrUsername) {
       const patch: any = {};
-      if (nextPassword) patch.password = nextPassword;
+      if (nextPassword) {
+        const target = await supabaseAdmin.auth.admin.getUserById(userId);
+        if (target.error || !target.data.user) return NextResponse.json({ error: "Compte introuvable" }, { status: 404 });
+        patch.password = nextPassword;
+        patch.app_metadata = { ...target.data.user.app_metadata, initial_password_required: true };
+      }
       if (hasRoleOrUsername) {
         patch.user_metadata = {
           ...(nextUsername ? { username: nextUsername } : {}),
@@ -102,4 +111,4 @@ export async function POST(req: NextRequest) {
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
-}
+});

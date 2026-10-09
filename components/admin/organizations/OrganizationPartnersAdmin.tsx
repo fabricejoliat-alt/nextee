@@ -1,4 +1,6 @@
 "use client";
+
+import { adminFetch } from "@/lib/adminFetch";
 import Link from "next/link";
 import { useRef, useState } from "react";
 import { ArrowUpRight, Check, ChevronDown, History, LoaderCircle, Minus, Save, ShieldCheck } from "lucide-react";
@@ -16,7 +18,7 @@ export default function OrganizationPartnersAdmin({organizationId,isAcademy}:{or
   const selected=resource.data?.partners.find(row=>row.target_organization_id===club),text=(key:string)=>t(`organization.${key}`);
   function select(id:string){setClub(id);const row=resource.data?.partners.find(item=>item.target_organization_id===id);setDiscovery(row?.player_discovery_enabled??false);setRequests(row?.player_request_enabled??false);setStatus(row?.status??"pending");}
   async function save(event:React.FormEvent){event.preventDefault();if(mutation.current)return;mutation.current=true;setBusy(true);setFeedback("");
-    try{const response=await fetch(`/api/admin/organizations/${organizationId}/partners`,{method:"POST",headers:{...await managerHeaders(),"Content-Type":"application/json"},body:JSON.stringify({club_id:club,status,discovery,requests,expected_revision:selected?.revision??0})});if(!response.ok)throw new Error();resource.reload();setFeedback("organization.saved");}
+    try{const response=await adminFetch(`/api/admin/organizations/${organizationId}/partners`,{method:"POST",headers:{...await managerHeaders(),"Content-Type":"application/json"},body:JSON.stringify({club_id:club,status,discovery,requests,expected_revision:selected?.revision??0})});if(!response.ok)throw new Error();resource.reload();setFeedback("organization.saved");}
     catch{setFeedback("organization.operationFailed");}finally{setBusy(false);mutation.current=false;}}
   const readiness=resource.data?.readiness;
   const required=readiness?.required??3;

@@ -1,13 +1,9 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
+import { randomPassword } from "@/lib/server/initialPassword";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-function randomPassword(len = 14) {
-  const chars =
-    "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@$%*?";
-  let out = "";
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-}
+
 
 function normalizeToken(input: string) {
   return input
@@ -44,7 +40,7 @@ async function generateUniqueUsername(supabaseAdmin: any, firstName: string, las
   throw new Error("Impossible de générer un username unique.");
 }
 
-export async function POST(req: NextRequest) {
+export const POST = withAdminMutationAudit(async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
@@ -99,6 +95,7 @@ export async function POST(req: NextRequest) {
         email,
         password: tempPassword,
         email_confirm: true,
+        app_metadata: { initial_password_required: true },
         user_metadata: {
           username,
           role,
@@ -144,4 +141,4 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
-}
+});

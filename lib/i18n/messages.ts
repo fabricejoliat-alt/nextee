@@ -1,3 +1,4 @@
+import { securityMessages } from "./securityMessages.ts";
 import { managerLegacyPlayerMessages } from "./managerLegacyPlayerMessages.ts";
 import { organizationMessages } from "./organizationMessages.ts";
 import { managerOmMessages } from "./managerOmMessages.ts";
@@ -1781,3 +1782,5 @@ for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[l
 
 for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], managerLegacyPlayerMessages[locale]);
 for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], organizationMessages[locale]);
+
+for (const locale of ["fr", "en", "de", "it"] as const) Object.assign(messages[locale], securityMessages[locale]);

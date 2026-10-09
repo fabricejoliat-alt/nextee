@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { NextResponse } from "next/server";
 import { legalAdmin, legalDb, legalNoStore } from "@/lib/server/legalAccess";
 import { legalTranslationsMatch } from "@/lib/legalTemplate";
@@ -6,7 +7,7 @@ function outputText(payload: unknown) {
   const output = (payload as { output?: Array<{ content?: Array<{ type?: string; text?: string }> }> })?.output ?? [];
   return output.flatMap((v) => v.content ?? []).filter((v) => v.type === "output_text").map((v) => v.text ?? "").join("");
 }
-export async function POST(req: Request) {
+export const POST = withAdminMutationAudit(async function POST(req: Request) {
   try {
     const db = legalDb(); const admin = await legalAdmin(req, db); if (!admin) return reply({ error: "Forbidden" }, 403);
     const input = await req.json(); const id = String(input.document_id ?? ""); const locale = String(input.locale ?? "");
@@ -38,4 +39,4 @@ export async function POST(req: Request) {
     if (!saved.data?.length) return reply({ error: "Concurrent edit" }, 409);
     return reply({ proposed: true });
   } catch { return reply({ error: "Translation unavailable" }, 503); }
-}
+});

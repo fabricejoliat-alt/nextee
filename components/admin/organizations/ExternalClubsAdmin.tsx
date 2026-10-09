@@ -1,4 +1,6 @@
 "use client";
+
+import { adminFetch } from "@/lib/adminFetch";
 import { useRef,useState } from "react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
@@ -15,7 +17,7 @@ export default function ExternalClubsAdmin(){
   const [dialog,setDialog]=useState<{action:"review"|"claim"|"affiliate";id:string;player_id?:string}|null>(null),[club,setClub]=useState(""),[evidence,setEvidence]=useState(""),[busy,setBusy]=useState(false),[feedback,setFeedback]=useState("");const mutation=useRef(false);const text=(key:string)=>t(`organization.${key}`);
   function open(action:"review"|"claim"|"affiliate",id:string,player_id?:string){setDialog({action,id,player_id});setClub(resource.data?.references.find(row=>row.id===id)?.claimed_organization_id??"");setEvidence("");setFeedback("");}
   async function submit(event:React.FormEvent,approve=true){event.preventDefault();if(!dialog||mutation.current)return;mutation.current=true;setBusy(true);setFeedback("");
-    try{const response=await fetch("/api/admin/organizations/external",{method:"POST",headers:{...await managerHeaders(),"Content-Type":"application/json"},body:JSON.stringify({action:dialog.action,match_id:dialog.id,reference_id:dialog.id,player_id:dialog.player_id,club_id:club,evidence,approve})});if(!response.ok)throw new Error();setDialog(null);setFeedback("organization.saved");resource.reload();}
+    try{const response=await adminFetch("/api/admin/organizations/external",{method:"POST",headers:{...await managerHeaders(),"Content-Type":"application/json"},body:JSON.stringify({action:dialog.action,match_id:dialog.id,reference_id:dialog.id,player_id:dialog.player_id,club_id:club,evidence,approve})});if(!response.ok)throw new Error();setDialog(null);setFeedback("organization.saved");resource.reload();}
     catch{setFeedback("organization.operationFailed");}finally{setBusy(false);mutation.current=false;}}
   return <div className={styles.page}><div className={styles.topline}><h1>{text("externalReferences")}</h1></div>{feedback?<p className={feedback==='organization.saved'?styles.successAlert:styles.errorAlert} role="status">{t(feedback)}</p>:null}
     {resource.loading?<ListLoadingBlock label={t("common.loading")}/>:resource.error?<div className={styles.errorAlert} role="alert">{text("operationFailed")}<button onClick={resource.reload}>{t("manager.refresh")}</button></div>:<>

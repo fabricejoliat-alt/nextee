@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { etiquetteAccess, etiquetteFields } from "@/lib/server/etiquetteApi";
@@ -24,7 +25,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function PATCH(req: NextRequest) {
+export const PATCH = withAdminMutationAudit(async function PATCH(req: NextRequest) {
   try {
     const access = await etiquetteAccess(req);
     if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -52,4 +53,4 @@ export async function PATCH(req: NextRequest) {
   } catch (cause) {
     return NextResponse.json({ error: cause instanceof Error ? cause.message : "Unable to update etiquette" }, { status: 500 });
   }
-}
+});

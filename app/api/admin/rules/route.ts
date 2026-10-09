@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function PATCH(req: NextRequest) {
+export const PATCH = withAdminMutationAudit(async function PATCH(req: NextRequest) {
   try {
     const access = await authorize(req);
     if ("error" in access) return access.error;
@@ -180,4 +181,4 @@ export async function PATCH(req: NextRequest) {
   } catch (cause) {
     return NextResponse.json({ error: cause instanceof Error ? cause.message : "Unable to update rules administration" }, { status: 500 });
   }
-}
+});

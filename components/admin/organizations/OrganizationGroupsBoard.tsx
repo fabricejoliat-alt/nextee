@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
+
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ChevronRight, PlusCircle } from "lucide-react";
@@ -63,7 +65,7 @@ export default function OrganizationGroupsBoard({ organizationId }: { organizati
     setLoading(true); setError(null);
     try {
       const { data } = await supabase.auth.getSession();
-      const response = await fetch(`/api/admin/organizations/${organizationId}/group-assignments`, { headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` }, cache: "no-store" });
+      const response = await adminFetch(`/api/admin/organizations/${organizationId}/group-assignments`, { headers: { Authorization: `Bearer ${data.session?.access_token ?? ""}` }, cache: "no-store" });
       const json = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(json?.error ?? "Impossible de charger les groupes.");
       const loadedSeasons = (json.seasons ?? []) as Season[];
@@ -86,7 +88,7 @@ export default function OrganizationGroupsBoard({ organizationId }: { organizati
     setMoving(true); setError(null);
     try {
       const { data } = await supabase.auth.getSession();
-      const response = await fetch(`/api/admin/organizations/${organizationId}/group-assignments`, {
+      const response = await adminFetch(`/api/admin/organizations/${organizationId}/group-assignments`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
         body: JSON.stringify({ actorType: "player", userId: draggedPlayer.userId, fromGroupId: draggedPlayer.fromGroupId, toGroupId, removeFromSource: true, seasonId: seasonId || undefined }),
@@ -103,7 +105,7 @@ export default function OrganizationGroupsBoard({ organizationId }: { organizati
     setMoving(true); setError(null);
     try {
       const { data } = await supabase.auth.getSession();
-      const response = await fetch(`/api/admin/organizations/${organizationId}/group-assignments`, { method: "DELETE", headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` }, body: JSON.stringify({ actorType: "player", groupId, userId, seasonId: seasonId || undefined }) });
+      const response = await adminFetch(`/api/admin/organizations/${organizationId}/group-assignments`, { method: "DELETE", headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` }, body: JSON.stringify({ actorType: "player", groupId, userId, seasonId: seasonId || undefined }) });
       const json = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(json?.error ?? "Le junior n’a pas pu être retiré du groupe.");
       await load();

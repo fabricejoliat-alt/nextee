@@ -66,7 +66,7 @@ export function coachComponentHarness(path: string, options: {
     "@/lib/notifications": { createAppNotification: options.notify ?? (async () => ({})), getEventAttendeeUserIds: async () => [] },
     "@/lib/notificationMessages": { getNotificationMessage: async () => ({ title: "Test notification", body: "Test notification" }) },
     "lucide-react": new Proxy({}, { get: (_, key) => String(key) }),
-    "@/components/i18n/AppI18nProvider": { useI18n: () => ({ locale, t: (key: string) => messages[locale][key] ?? key }) },
+    "@/components/i18n/AppI18nProvider": { useI18n: () => ({ locale, setLocale: (next: AppLocale) => { locale = next; }, t: (key: string) => messages[locale][key] ?? key }) },
     "@/components/ui/AccessibleDialog": { __esModule: true, default: "dialog" },
     "@/components/ui/LoadingBlocks": { ListLoadingBlock: "skeleton", CompactLoadingBlock: "skeleton" },
     "@/components/coach/CoachListSkeleton": { __esModule: true, default: "skeleton" },

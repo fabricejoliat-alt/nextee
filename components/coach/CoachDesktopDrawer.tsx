@@ -1,13 +1,12 @@
 "use client";
 
-import { organizationFetch as fetch } from "@/lib/organizationFetch";
-
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Bell, BookOpen, CalendarCheck, CalendarDays, ChevronRight, ClipboardCheck, Home, LogOut, Medal, Newspaper, Tent, User, UserRound, Users, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
+import OrganizationContextSelect from "@/components/organizations/OrganizationContextSelect";
 import styles from "./CoachDesktopDrawer.module.css";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { etiquetteText } from "@/lib/etiquetteLabels";
@@ -90,6 +89,7 @@ export default function CoachDesktopDrawer({ open, onClose, pendingEvaluationCou
       </nav>
       <div className="drawer-account">
         <div className="drawer-account-name">{fullName}</div>
+        <div className={styles.context}><OrganizationContextSelect variant="drawer" onNavigate={onClose} /></div>
         <Link href={ROUTES.profile} className={`drawer-subitem drawer-subitem--account ${isActive(pathname, ROUTES.profile) ? "active" : ""}`} onClick={onClose}><span className="drawer-item-left"><User size={16} /><span>{t("common.profile")}</span></span></Link>
         <button type="button" className="drawer-subitem drawer-subitem--danger" onClick={logout}><span className="drawer-item-left"><LogOut size={16} /><span>{t("common.logout")}</span></span></button>
       </div>

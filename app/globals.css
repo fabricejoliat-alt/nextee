@@ -187,7 +187,8 @@ a { color: inherit; text-decoration: none; }
   align-items: center;
 }
 
-.player-page-root .app-header-grid{
+.player-page-root .app-header-grid,
+.coach-page-root .app-header-grid{
   grid-template-columns: 56px minmax(0, 1fr) 56px;
 }
 
@@ -398,7 +399,8 @@ a { color: inherit; text-decoration: none; }
     grid-template-columns: 48px minmax(0,1fr) 120px;
   }
 
-  .player-page-root .app-header-grid{
+  .player-page-root .app-header-grid,
+  .coach-page-root .app-header-grid{
     grid-template-columns: 48px minmax(0, 1fr) 48px;
   }
 
@@ -2636,6 +2638,11 @@ nav[aria-label="Fil d’Ariane"]:not([style]){
 
 .admin-page{
   min-height: 100vh;
+  background: #f5f6f8;
+}
+
+/* RoleGuard's fixed loading layer must keep the Admin backdrop during MFA transitions. */
+.admin-page-root .role-guard-photo-loading{
   background: #f5f6f8;
 }
 

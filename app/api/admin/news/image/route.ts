@@ -1,10 +1,11 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { randomUUID } from "node:crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient, requirePlatformAdmin } from "../_lib";
 
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp"]);
 
-export async function POST(req: NextRequest) {
+export const POST = withAdminMutationAudit(async function POST(req: NextRequest) {
   try {
     const database = createAdminClient(); const auth = await requirePlatformAdmin(req, database);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -17,4 +18,4 @@ export async function POST(req: NextRequest) {
     if (upload.error) return NextResponse.json({ error: upload.error.message }, { status: 400 });
     return NextResponse.json({ image_url: database.storage.from("club-news-images").getPublicUrl(path).data.publicUrl });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Upload impossible." }, { status: 500 }); }
-}
+});

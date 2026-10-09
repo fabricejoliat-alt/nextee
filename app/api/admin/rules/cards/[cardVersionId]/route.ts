@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -8,7 +9,7 @@ export async function GET(req:NextRequest,{params}:{params:Promise<{cardVersionI
   try{const access=await authorize(req);if("error" in access)return access.error;const {cardVersionId}=await params;const version=await access.database.from("rules_card_versions").select("*,rules_cards(*)").eq("id",cardVersionId).single();if(version.error)throw version.error;const questions=await access.database.from("rules_questions").select("*,rules_question_options(*)").eq("card_version_id",cardVersionId).order("kind").order("variant");if(questions.error)throw questions.error;return NextResponse.json({version:version.data,questions:questions.data??[]});}catch(cause){return NextResponse.json({error:cause instanceof Error?cause.message:"Unable to load card"},{status:500});}
 }
 
-export async function PATCH(req:NextRequest,{params}:{params:Promise<{cardVersionId:string}>}){
+export const PATCH = withAdminMutationAudit(async function PATCH(req:NextRequest,{params}:{params:Promise<{cardVersionId:string}>}){
   try{const access=await authorize(req);if("error" in access)return access.error;const {cardVersionId}=await params;const body=await req.json().catch(()=>({}));
     if(body?.action==="save_question"){
       const question=body.question??{};
@@ -51,4 +52,4 @@ export async function PATCH(req:NextRequest,{params}:{params:Promise<{cardVersio
     const card=await access.database.from("rules_cards").update({difficulty:["beginner","intermediate","advanced"].includes(body.difficulty)?body.difficulty:"beginner",recommended_age_min:ageMin,recommended_age_max:ageMax,editorial_status:"needs_review"}).eq("id",current.data.card_id).select("*").single();if(card.error)throw card.error;
     await access.database.from("rules_admin_events").insert({actor_user_id:access.userId,entity_type:"card_version",entity_id:cardVersionId,action:"updated",details:{card_id:current.data.card_id}});return NextResponse.json({version:version.data,card:card.data});
   }catch(cause){return NextResponse.json({error:cause instanceof Error?cause.message:"Unable to update card"},{status:500});}
-}
+});

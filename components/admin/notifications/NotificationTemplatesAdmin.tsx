@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Bell, Check, ChevronRight, RotateCcw, Save, Search } from "lucide-react";
@@ -27,7 +29,7 @@ export default function NotificationTemplatesAdmin() {
     setLoading(true); setError(null);
     try {
       const accessToken = await token(); if (!accessToken) throw new Error("Pas de session.");
-      const responses = await Promise.all(locales.map(async ({ id }) => { const response = await fetch(`/api/admin/translations?locale=${id}`, { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error ?? "Erreur de chargement."); return (data.rows ?? []) as Row[]; }));
+      const responses = await Promise.all(locales.map(async ({ id }) => { const response = await adminFetch(`/api/admin/translations?locale=${id}`, { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error ?? "Erreur de chargement."); return (data.rows ?? []) as Row[]; }));
       const allRows = responses.flat(); setRows(allRows); setDraft(Object.fromEntries(allRows.map((row) => [`${row.locale}:${row.key}`, row.value])));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erreur de chargement."); }
     finally { setLoading(false); }
@@ -40,7 +42,7 @@ export default function NotificationTemplatesAdmin() {
   const activeLocale = locales.find((item) => item.id === locale)!;
   function defaultText(template: typeof templates[number], field: "title" | "body") { return (template[locale] ?? template.en)[field]; }
   function draftKey(templateKey: string, field: "title" | "body") { return `${locale}:${templateKey}.${field}`; }
-  async function saveOne(key: string, value: string, accessToken: string) { const response = await fetch("/api/admin/translations", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ locale, key, value }) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error ?? "Erreur de sauvegarde."); }
+  async function saveOne(key: string, value: string, accessToken: string) { const response = await adminFetch("/api/admin/translations", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ locale, key, value }) }); const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error ?? "Erreur de sauvegarde."); }
   async function saveTemplate(templateKey: string, reset = false) {
     setSavingKey(templateKey); setError(null); setNotice(null);
     try {

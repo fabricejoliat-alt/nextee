@@ -1,3 +1,5 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
+import { randomPassword } from "@/lib/server/initialPassword";
 import { encodeMemberFieldValue } from "@/lib/memberFieldValues";
 import { activeClubMember, canReuseClubAccount, requireManagerClub } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
@@ -11,12 +13,7 @@ function mustEnv(name: string) {
   return v;
 }
 
-function randomPassword(len = 10) {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%";
-  let out = "";
-  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
-  return out;
-}
+
 
 function normalizeToken(input: string) {
   return input
@@ -230,7 +227,7 @@ async function syncLinkedParentsToClub(supabaseAdmin: any, clubId: string, playe
   if (parentMembershipError) throw new Error(parentMembershipError.message);
 }
 
-export async function POST(req: NextRequest, ctx: any) {
+export const POST = withAdminMutationAudit(async function POST(req: NextRequest, ctx: any) {
   try {
     const supabaseUrl = mustEnv("SUPABASE_URL");
     const serviceRoleKey = mustEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -296,7 +293,7 @@ const clubId: string | undefined = params?.clubId;
     }
 
     // 1) Créer l’utilisateur Auth (admin)
-    const tempPassword = randomPassword(12);
+    const tempPassword = randomPassword();
     const existingUserId = await resolveExistingUserId(
       supabaseAdmin,
       clubId,
@@ -348,6 +345,7 @@ const clubId: string | undefined = params?.clubId;
         email,
         password: tempPassword,
         email_confirm: true,
+        app_metadata: { initial_password_required: true },
         user_metadata: {
           username,
           role,
@@ -486,4 +484,4 @@ const clubId: string | undefined = params?.clubId;
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
-}
+});

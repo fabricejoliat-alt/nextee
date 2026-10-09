@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronRight, ClipboardCheck, ImageIcon, ImagePlus, LoaderCircle, Pencil, Search, ShieldCheck, X } from "lucide-react";
@@ -30,7 +32,7 @@ export default function ValidationsAdmin() {
     setLoading(true); setError(null);
     try {
       const token = await getToken(); if (!token) throw new Error("Pas de session.");
-      const response = await fetch("/api/admin/validations", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+      const response = await adminFetch("/api/admin/validations", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error ?? "Erreur de chargement.");
       setSections((data.sections ?? []) as SectionRow[]); setExercises((data.exercises ?? []) as ExerciseRow[]);
     } catch (cause) { setSections([]); setExercises([]); setError(cause instanceof Error ? cause.message : "Erreur de chargement."); }
@@ -50,7 +52,7 @@ export default function ValidationsAdmin() {
     setSavingStatusId(exercise.id); setError(null); setNotice(null);
     try {
       const token = await getToken(); if (!token) throw new Error("Pas de session.");
-      const response = await fetch(`/api/admin/validations/exercises/${exercise.id}`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: exercise.name, level: exercise.level, objective: exercise.objective, short_description: exercise.short_description, detailed_description: exercise.detailed_description, equipment: exercise.equipment, validation_rule_text: exercise.validation_rule_text, illustration_url: exercise.illustration_url, is_active: nextStatus }) });
+      const response = await adminFetch(`/api/admin/validations/exercises/${exercise.id}`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: exercise.name, level: exercise.level, objective: exercise.objective, short_description: exercise.short_description, detailed_description: exercise.detailed_description, equipment: exercise.equipment, validation_rule_text: exercise.validation_rule_text, illustration_url: exercise.illustration_url, is_active: nextStatus }) });
       const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error ?? "Erreur de sauvegarde.");
       setExercises((current) => current.map((item) => item.id === exercise.id ? { ...item, is_active: nextStatus } : item));
       setNotice(`« ${exercise.name} » est désormais ${nextStatus ? "actif" : "inactif"}.`);
@@ -65,7 +67,7 @@ export default function ValidationsAdmin() {
     try {
       const token = await getToken(); if (!token) throw new Error("Pas de session.");
       const formData = new FormData(); formData.set("image", file);
-      const response = await fetch(`/api/admin/validations/exercises/${draft.id}/image`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: formData });
+      const response = await adminFetch(`/api/admin/validations/exercises/${draft.id}/image`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: formData });
       const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error ?? "Erreur lors de l’import de l’image.");
       updateDraft({ illustration_url: String(data.illustration_url ?? "") || null });
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erreur lors de l’import de l’image."); }
@@ -75,7 +77,7 @@ export default function ValidationsAdmin() {
     if (!draft) return; setSaving(true); setError(null); setNotice(null);
     try {
       const token = await getToken(); if (!token) throw new Error("Pas de session.");
-      const response = await fetch(`/api/admin/validations/exercises/${draft.id}`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: draft.name, level: draft.level, objective: draft.objective, short_description: draft.short_description, detailed_description: draft.detailed_description, equipment: draft.equipment, validation_rule_text: draft.validation_rule_text, illustration_url: draft.illustration_url, is_active: draft.is_active }) });
+      const response = await adminFetch(`/api/admin/validations/exercises/${draft.id}`, { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ name: draft.name, level: draft.level, objective: draft.objective, short_description: draft.short_description, detailed_description: draft.detailed_description, equipment: draft.equipment, validation_rule_text: draft.validation_rule_text, illustration_url: draft.illustration_url, is_active: draft.is_active }) });
       const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error ?? "Erreur de sauvegarde.");
       setNotice(`« ${draft.name} » a été enregistré.`); setDraft(null); await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erreur de sauvegarde."); }

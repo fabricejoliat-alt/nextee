@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { NextRequest, NextResponse } from "next/server";
 import { completeEtiquetteCard, etiquetteAccess, etiquetteFields } from "@/lib/server/etiquetteApi";
 
@@ -16,7 +17,7 @@ export async function GET(req: NextRequest, context: Context) {
   }
 }
 
-export async function PATCH(req: NextRequest, context: Context) {
+export const PATCH = withAdminMutationAudit(async function PATCH(req: NextRequest, context: Context) {
   try {
     const access = await etiquetteAccess(req);
     if (!access) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -60,4 +61,4 @@ export async function PATCH(req: NextRequest, context: Context) {
   } catch (cause) {
     return NextResponse.json({ error: cause instanceof Error ? cause.message : "Unable to update card" }, { status: 500 });
   }
-}
+});

@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { legalTranslationReviewMatches } from "@/lib/legalTranslationReview";
 import { sharedClubPurposeLabels } from "@/lib/legalAdminGroups";
 import { NextResponse } from "next/server";
@@ -28,7 +29,7 @@ export async function GET(req: Request) {
   } catch (error) { return reply({ error: error instanceof Error ? error.message : "Unavailable" }, 503); }
 }
 
-export async function POST(req: Request) {
+export const POST = withAdminMutationAudit(async function POST(req: Request) {
   try {
     const db = legalDb(); const actor = await legalAdmin(req, db);
     if (!actor) return reply({ error: "Forbidden" }, 403);
@@ -168,4 +169,4 @@ export async function POST(req: Request) {
     }
     return reply({ error: "Invalid operation" }, 400);
   } catch (error) { return reply({ error: error instanceof Error ? error.message : "Unavailable" }, 503); }
-}
+});

@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Check, ChevronRight, Languages, RotateCcw, Save, Search } from "lucide-react";
@@ -28,7 +30,7 @@ export default function TranslationsAdmin() {
     setLoading(true); setError(null);
     try {
       const accessToken = await token(); if (!accessToken) throw new Error("Pas de session.");
-      const response = await fetch(`/api/admin/translations?locale=${locale}`, { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" });
+      const response = await adminFetch(`/api/admin/translations?locale=${locale}`, { headers: { Authorization: `Bearer ${accessToken}` }, cache: "no-store" });
       const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error ?? "Erreur de chargement.");
       const list = (data.rows ?? []) as Row[]; setRows(list); setDraft(Object.fromEntries(list.map((row) => [row.key, row.value])));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erreur de chargement."); setRows([]); setDraft({}); }
@@ -50,7 +52,7 @@ export default function TranslationsAdmin() {
     setSavingKey(key); setError(null); setNotice(null);
     try {
       const accessToken = await token(); if (!accessToken) throw new Error("Pas de session.");
-      const response = await fetch("/api/admin/translations", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ locale, key, value: nextValue }) });
+      const response = await adminFetch("/api/admin/translations", { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ locale, key, value: nextValue }) });
       const data = await response.json().catch(() => ({})); if (!response.ok) throw new Error(data.error ?? "Erreur de sauvegarde.");
       setNotice(nextValue.trim() ? "Traduction enregistrée." : "Traduction réinitialisée."); await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erreur de sauvegarde."); }

@@ -1,3 +1,4 @@
+import { initialPasswordRequired } from "@/lib/adminSecurity";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
@@ -61,6 +62,7 @@ export async function POST(req: NextRequest) {
 
     const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "").trim() || "";
     let userId = "";
+    let needsInitialPassword = false;
 
     if (bearerToken) {
       const adminAuthClient = createClient(supabaseUrl, serviceRoleKey, {
@@ -68,16 +70,21 @@ export async function POST(req: NextRequest) {
       });
       const { data: bearerUserData } = await adminAuthClient.auth.getUser(bearerToken);
       userId = bearerUserData.user?.id ?? "";
+      needsInitialPassword = Boolean(bearerUserData.user && initialPasswordRequired(bearerUserData.user));
     }
 
     if (!userId) {
       const { data: userData } = await supabase.auth.getUser();
       userId = userData.user?.id ?? "";
+      needsInitialPassword = Boolean(userData.user && initialPasswordRequired(userData.user));
     }
 
     if (!userId) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
+
+    if (needsInitialPassword) return NextResponse.json(
+      { redirectTo: "/change-initial-password" }, { headers: { "Cache-Control": "private, no-store" } });
 
     // 2) ✅ Garder ton admin client pour vérifier les rôles (bypass RLS)
     const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {

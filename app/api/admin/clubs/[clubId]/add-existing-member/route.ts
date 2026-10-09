@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { canReuseClubAccount, requireManagerClub } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -10,7 +11,7 @@ function mustEnv(name: string) {
   return v;
 }
 
-export async function POST(
+export const POST = withAdminMutationAudit(async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ clubId: string }> }
 ) {
@@ -57,4 +58,4 @@ export async function POST(
   } catch (cause: unknown) {
     return NextResponse.json({ error: cause instanceof Error ? cause.message : "Server error" }, { status: 500 });
   }
-}
+});

@@ -1,6 +1,7 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { organizationActor, organizationReply, organizationFailure } from "@/lib/server/organizationAccess";
 type Context = { params: Promise<{ organizationId: string }> };
-export async function POST(req: Request, context: Context) {
+export const POST = withAdminMutationAudit(async function POST(req: Request, context: Context) {
   try {
     const { organizationId } = await context.params;
     const access = await organizationActor(req, organizationId, true);
@@ -14,4 +15,4 @@ export async function POST(req: Request, context: Context) {
     if (result.error) throw result.error;
     return organizationReply({ ok: true });
   } catch (error) { return organizationFailure(error); }
-}
+});

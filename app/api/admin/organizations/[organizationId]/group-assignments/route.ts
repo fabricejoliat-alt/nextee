@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { requireManagerClub, activeClubMember } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -157,7 +158,7 @@ export async function GET(
   }
 }
 
-export async function POST(
+export const POST = withAdminMutationAudit(async function POST(
   req: NextRequest,
   ctx: { params: Promise<{ organizationId: string }> }
 ) {
@@ -359,9 +360,9 @@ export async function POST(
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
-}
+});
 
-export async function DELETE(
+export const DELETE = withAdminMutationAudit(async function DELETE(
   req: NextRequest,
   ctx: { params: Promise<{ organizationId: string }> }
 ) {
@@ -453,4 +454,4 @@ export async function DELETE(
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
   }
-}
+});

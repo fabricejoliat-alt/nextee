@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
+
 import { useEffect, useMemo, useState, useRef } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Link from "next/link";
@@ -97,7 +99,7 @@ export default function OrganizationsAdmin() {
     const finalSlug = (slug || slugify(name)).trim() || null;
     const finalName = name.trim();
     const { data } = await supabase.auth.getSession();
-    const response = await fetch("/api/admin/organizations", {
+    const response = await adminFetch("/api/admin/organizations", {
       method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
       body: JSON.stringify({ name: finalName, slug: finalSlug, org_type: orgType }),
     });

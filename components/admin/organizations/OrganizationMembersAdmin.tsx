@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -104,7 +106,7 @@ export default function OrganizationMembersAdmin() {
     try {
       const token = await getToken();
       if (!token) throw new Error("Pas de session. Reconnecte-toi.");
-      const response = await fetch(`/api/admin/clubs/${organizationId}/add-existing-member`, {
+      const response = await adminFetch(`/api/admin/clubs/${organizationId}/add-existing-member`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         body: JSON.stringify({ user_id: selectedUserId, role: "manager" }),
@@ -123,7 +125,7 @@ export default function OrganizationMembersAdmin() {
   async function mutateManager(manager:ManagerMembership,action:string) {
     const token=await getToken();
     if(!token)throw new Error("Pas de session. Reconnecte-toi.");
-    const response=await fetch(`/api/admin/organizations/${organizationId}/members`,{method:"POST",
+    const response=await adminFetch(`/api/admin/organizations/${organizationId}/members`,{method:"POST",
       headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json"},
       body:JSON.stringify({member_id:manager.id,action,expected_active:manager.is_active!==false})});
     if(!response.ok)throw new Error("La modification n’a pas pu être confirmée. Actualisez les états avant de réessayer.");

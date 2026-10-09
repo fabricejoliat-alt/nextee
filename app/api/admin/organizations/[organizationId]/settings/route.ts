@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
@@ -32,7 +33,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ organiza
   return NextResponse.json({ organization: organizationRes.data, settings: settingsRes.data?.settings ?? {}, profiles: profilesRes.data ?? [] });
 }
 
-export async function PUT(req: Request, { params }: { params: Promise<{ organizationId: string }> }) {
+export const PUT = withAdminMutationAudit(async function PUT(req: Request, { params }: { params: Promise<{ organizationId: string }> }) {
   const access = await ensureAdmin(req);
   if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
   const { organizationId } = await params;
@@ -49,13 +50,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ organiza
   });
   if (saved.error) return NextResponse.json({ error: saved.error.message }, { status: 409 });
   return NextResponse.json({ ok: true });
-}
+});
 
-export async function DELETE(req: Request, { params }: { params: Promise<{ organizationId: string }> }) {
+export const DELETE = withAdminMutationAudit(async function DELETE(req: Request, { params }: { params: Promise<{ organizationId: string }> }) {
   const access = await ensureAdmin(req);
   if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
   const { organizationId } = await params;
   const removed = await access.client.rpc("delete_empty_organization_checked", { p_actor: access.userId, p_org: organizationId });
   if (removed.error) return NextResponse.json({ error: removed.error.message }, { status: 409 });
   return NextResponse.json({ ok: true });
-}
+});

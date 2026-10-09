@@ -1,5 +1,7 @@
 "use client";
 
+import { adminFetch } from "@/lib/adminFetch";
+
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -37,7 +39,7 @@ export default function OrganizationSettingsAdmin() {
     try {
       const accessToken = await token();
       if (!accessToken) throw new Error("Pas de session. Reconnecte-toi.");
-      const response = await fetch(`/api/admin/organizations/${organizationId}/settings`, { headers: { Authorization: `Bearer ${accessToken}` } });
+      const response = await adminFetch(`/api/admin/organizations/${organizationId}/settings`, { headers: { Authorization: `Bearer ${accessToken}` } });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Erreur de chargement");
       setOrganization(data.organization); setSettings({ ...initialSettings, ...(data.settings ?? {}) });
@@ -58,7 +60,7 @@ export default function OrganizationSettingsAdmin() {
     try {
       const accessToken = await token();
       if (!accessToken) throw new Error("Pas de session. Reconnecte-toi.");
-      const response = await fetch(`/api/admin/organizations/${organizationId}/settings`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ organization, settings }) });
+      const response = await adminFetch(`/api/admin/organizations/${organizationId}/settings`, { method: "PUT", headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` }, body: JSON.stringify({ organization, settings }) });
       const data = await response.json(); if (!response.ok) throw new Error(data.error ?? "Erreur de sauvegarde");
       setNotice("Paramètres enregistrés.");
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Erreur de sauvegarde"); }
@@ -80,7 +82,7 @@ export default function OrganizationSettingsAdmin() {
     try {
       const accessToken = await token();
       if (!accessToken) throw new Error("Pas de session. Reconnecte-toi.");
-      const response = await fetch(`/api/admin/organizations/${organizationId}/settings`, { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } });
+      const response = await adminFetch(`/api/admin/organizations/${organizationId}/settings`, { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error ?? "Erreur lors de la suppression");
       router.push("/admin/organizations"); router.refresh();

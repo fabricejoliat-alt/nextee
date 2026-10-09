@@ -9,6 +9,8 @@ import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import type { AppLocale } from "@/lib/i18n/messages";
+import { Languages } from "lucide-react";
 import CoachListSkeleton from "@/components/coach/CoachListSkeleton";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import styles from "./CoachProfile.module.css";
@@ -89,7 +91,7 @@ function normalizeDisplayEmail(raw: string | null | undefined) {
 
 
 export default function CoachProfilePage() {
-  const { t } = useI18n();
+  const { t, locale, setLocale } = useI18n();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -752,6 +754,24 @@ export default function CoachProfilePage() {
                       />
                     </Field>
                   </div>
+                </div>
+
+                <div className="hr-soft" />
+
+                <div className={styles.interfaceSettings}>
+                  <div className={`card-title ${styles.interfaceTitle}`}>
+                    <Languages size={17} aria-hidden="true" />
+                    {t("playerProfile.interfaceSettings")}
+                  </div>
+                  <Field label={t("common.language")}>
+                    <select value={locale} onChange={(event) => setLocale(event.target.value as AppLocale)}>
+                      <option value="fr">Français</option>
+                      <option value="en">English</option>
+                      <option value="de">Deutsch</option>
+                      <option value="it">Italiano</option>
+                    </select>
+                  </Field>
+                  <p className={styles.helperText}>{t("playerProfile.interfaceLanguageHelp")}</p>
                 </div>
 
                 <div className="hr-soft" />

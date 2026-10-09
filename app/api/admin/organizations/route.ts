@@ -1,6 +1,7 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { organizationActor, organizationReply, organizationFailure } from "@/lib/server/organizationAccess";
 
-export async function POST(req: Request) {
+export const POST = withAdminMutationAudit(async function POST(req: Request) {
   try {
     const access = await organizationActor(req, undefined, true);
     if (!access) return organizationReply({ error: "Forbidden" }, 403);
@@ -12,4 +13,4 @@ export async function POST(req: Request) {
     if (result.error) throw result.error;
     return organizationReply({ id: result.data }, 201);
   } catch (error) { return organizationFailure(error); }
-}
+});

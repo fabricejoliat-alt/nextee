@@ -1,0 +1,15 @@
+.gate { min-height: 75vh; display: grid; place-items: center; padding: 24px 16px; }
+.card { width: min(100%, 460px); display: grid; gap: 18px; padding: 28px; background: var(--bg); border: 1px solid var(--border); border-radius: 20px; box-shadow: 0 8px 30px rgba(0,0,0,.06); }
+.heading { display: flex; align-items: center; gap: 12px; }
+.heading h1 { margin: 0; font-size: 22px; }
+.card p { margin: 0; color: var(--muted); line-height: 1.6; }
+.form, .field { display: grid; gap: 10px; }
+.field span { font-size: 13px; font-weight: 600; }
+.field input { min-height: 46px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); font: inherit; }
+.field input:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
+.qr { width: 200px; height: 200px; margin: 0 auto; background: white; }
+.secret { overflow-wrap: anywhere; user-select: all; font-size: 12px; }
+.error { color: #b42318; font-size: 13px; }
+.overlay { position: fixed; inset: 0; z-index: 10000; overflow-y: auto; background: rgba(0,0,0,.45); display: grid; place-items: center; padding: 24px 16px; }
+.actions { display: flex; gap: 12px; flex-wrap: wrap; }
+@media(max-width: 480px) { .card { padding: 22px; } .heading h1 { font-size: 20px; } }

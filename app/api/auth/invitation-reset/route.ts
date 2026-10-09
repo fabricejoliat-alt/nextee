@@ -75,7 +75,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Ce lien est invalide ou expiré." }, { status: 400 });
     }
 
-    const updateRes = await supabaseAdmin.auth.admin.updateUserById(invite.row.user_id, { password });
+    const target = await supabaseAdmin.auth.admin.getUserById(invite.row.user_id);
+    if (target.error || !target.data.user) return NextResponse.json({ error: "Compte indisponible." }, { status: 400 });
+    const updateRes = await supabaseAdmin.auth.admin.updateUserById(invite.row.user_id, {
+      password, app_metadata: { ...target.data.user.app_metadata, initial_password_required: false },
+    });
     if (updateRes.error) {
       return NextResponse.json({ error: `${translateAuthMessage(updateRes.error.message)} Demandez un nouveau lien d’invitation pour réessayer.` }, { status: 400 });
     }

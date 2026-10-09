@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { organizationActor, organizationReply, organizationFailure } from "@/lib/server/organizationAccess";
 export async function GET(req: Request) {
   try {
@@ -13,7 +14,7 @@ export async function GET(req: Request) {
     return organizationReply({ references: references.data, matches: matches.data, clubs: clubs.data, proposals: roster.data });
   } catch (error) { return organizationFailure(error); }
 }
-export async function POST(req: Request) {
+export const POST = withAdminMutationAudit(async function POST(req: Request) {
   try {
     const access = await organizationActor(req, undefined, true);
     if (!access) return organizationReply({ error: "Forbidden" }, 403);
@@ -32,4 +33,4 @@ export async function POST(req: Request) {
     if (result.error) throw result.error;
     return organizationReply({ ok: true });
   } catch (error) { return organizationFailure(error); }
-}
+});

@@ -1,0 +1,10 @@
+{
+  "target": "wizbeuuvjibmmuxyynly",
+  "checked_at": "2026-10-09T13:27:47.751Z",
+  "admin_migration_sha256": "28e13d33a15cfb528fa4c8f3153da9593d88d3af4efd6136b092d2125ab13853",
+  "contact_migration_sha256": "684bcb25dbee90d52e68c0a7ac5db6b19d460245caeb7345d354e67fde9073d6",
+  "contact_update": "User confirmed success; Data API verified started/succeeded HTTP 200",
+  "ordinary_role_access": "User confirmed normal access",
+  "zurich_applied": true,
+  "production_deployed": false
+}

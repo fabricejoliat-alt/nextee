@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireSuperAdmin } from "@/app/api/validations/_lib";
 
@@ -12,7 +13,7 @@ function normalizeOptionalNumber(value: unknown) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-export async function PATCH(
+export const PATCH = withAdminMutationAudit(async function PATCH(
   req: NextRequest,
   ctx: { params: Promise<{ exerciseId: string }> }
 ) {
@@ -56,4 +57,4 @@ export async function PATCH(
     const status = typeof error === "object" && error && "status" in error ? Number((error as { status?: number }).status ?? 500) : 500;
     return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status });
   }
-}
+});

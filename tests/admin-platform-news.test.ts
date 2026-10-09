@@ -32,7 +32,7 @@ test("player and coach feeds request localized platform news", () => {
   assert.match(read("components/player/PlayerNewsFeed.tsx"), /params\.set\("locale", locale\)/);
   assert.match(read("components/coach/CoachNewsFeed.tsx"), /api\/coach\/news\?locale=/);
   assert.match(read("app/api/manager/news/route.ts"), /"manager"/);
-  assert.match(read("components/manager/ManagerNewsWorkspace.tsx"), /Actualités ActiviTee/);
+  assert.match(read("components/manager/ManagerNewsWorkspace.tsx"), /t\("manager.content.platformNews"\)/);
 });
 
 test("OpenAI translation remains admin-only and returns three editable languages", () => {

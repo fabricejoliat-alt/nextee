@@ -1,7 +1,8 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient, normalizePlatformTargets, normalizeStatus, normalizeTranslations, requirePlatformAdmin } from "../_lib";
 
-export async function PATCH(req: NextRequest, context: { params: Promise<{ newsId: string }> }) {
+export const PATCH = withAdminMutationAudit(async function PATCH(req: NextRequest, context: { params: Promise<{ newsId: string }> }) {
   try {
     const { newsId } = await context.params;
     const database = createAdminClient(); const auth = await requirePlatformAdmin(req, database);
@@ -29,9 +30,9 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ newsI
     if (saved.error) return NextResponse.json({ error: saved.error.message }, { status: 400 });
     return NextResponse.json({ ok: true });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Erreur serveur." }, { status: 500 }); }
-}
+});
 
-export async function DELETE(req: NextRequest, context: { params: Promise<{ newsId: string }> }) {
+export const DELETE = withAdminMutationAudit(async function DELETE(req: NextRequest, context: { params: Promise<{ newsId: string }> }) {
   try {
     const { newsId } = await context.params; const database = createAdminClient(); const auth = await requirePlatformAdmin(req, database);
     if (!auth.ok) return NextResponse.json({ error: auth.error }, { status: auth.status });
@@ -39,4 +40,4 @@ export async function DELETE(req: NextRequest, context: { params: Promise<{ news
     if (result.error) return NextResponse.json({ error: result.error.message }, { status: 400 });
     return NextResponse.json({ ok: true });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Erreur serveur." }, { status: 500 }); }
-}
+});

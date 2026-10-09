@@ -6,11 +6,26 @@ import { organizationGateBlocks, requestedOrganizationId } from "@/lib/organizat
 import { loadLegalGateStatus } from "@/lib/server/legalRequirements";
 import { legalRouteKind } from "@/lib/legalRouteCoverage";
 import { readOnceFetch } from "@/lib/readOnceFetch";
+import { initialPasswordRequired, isLegacyManagerAdminRoute } from "@/lib/adminSecurity";
+import { verifiedAdminAssurance, adminNoStore } from "@/lib/server/adminSecurity";
+import { adminContentSecurityPolicy } from "@/lib/securityHeaders";
 
 export async function proxy(req: NextRequest) {
+  const path = req.nextUrl.pathname;
+  const adminPage = path === "/admin" || path.startsWith("/admin/");
+  const adminApi = path.startsWith("/api/admin/");
+  const requestHeaders = new Headers(req.headers);
+  const nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(18))).toString("base64");
+  const adminCsp = adminContentSecurityPolicy(nonce, process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NODE_ENV === "development");
+  if (adminPage) {
+    requestHeaders.set("x-nonce", nonce);
+    requestHeaders.set("Content-Security-Policy", adminCsp);
+  }
   const res = NextResponse.next({
-    request: { headers: req.headers },
+    request: { headers: requestHeaders },
   });
+  if (adminPage || adminApi) res.headers.set("Cache-Control", adminNoStore["Cache-Control"]);
+  if (adminPage) res.headers.set("Content-Security-Policy", adminCsp);
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -44,12 +59,59 @@ export async function proxy(req: NextRequest) {
     ? await database.auth.getUser(bearerToken)
     : await supabase.auth.getUser();
 
-  const path = req.nextUrl.pathname;
+  // Enforce the initial-password flag from trusted app_metadata, before business reads.
+  if (data.user && initialPasswordRequired(data.user)) {
+    if (path.startsWith("/api/")) return NextResponse.json({ error: "Choose your own password first", code: "INITIAL_PASSWORD_REQUIRED" },
+      { status: 403, headers: adminNoStore });
+    return NextResponse.redirect(new URL("/change-initial-password", req.url));
+  }
+
+  if (adminPage || adminApi) {
+    if (!database) return NextResponse.json({ error: "Admin access unavailable" }, { status: 503, headers: adminNoStore });
+    if (!data.user || (adminApi && !bearerToken)) {
+      if (adminApi) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: adminNoStore });
+      return NextResponse.redirect(new URL("/login?next=%2Fadmin", req.url));
+    }
+    try {
+      const admin = await database.from("app_admins").select("user_id").eq("user_id", data.user.id).maybeSingle();
+      if (admin.error) throw admin.error;
+      // These historical APIs retain their own active-club manager checks.
+      if (!admin.data && adminApi && isLegacyManagerAdminRoute(path)) return res;
+      if (!admin.data) return adminApi
+        ? NextResponse.json({ error: "Forbidden" }, { status: 403, headers: adminNoStore })
+        : NextResponse.redirect(new URL("/no-access", req.url));
+      // The page renders only the MFA gate at aal1; no Admin children mount yet.
+      if (adminPage || (path === "/api/admin/security" && req.method === "GET")) return res;
+      const assurance = await verifiedAdminAssurance(database, bearerToken, data.user.id);
+      const mutation = !["GET", "HEAD", "OPTIONS"].includes(req.method);
+      if (!assurance.mfa || (mutation && !assurance.recent)) return NextResponse.json({
+        error: "Confirmez votre identité avec un code de votre application d’authentification, puis réessayez.",
+        code: assurance.mfa ? "ADMIN_REAUTH_REQUIRED" : "ADMIN_MFA_REQUIRED",
+      }, { status: 403, headers: adminNoStore });
+      return res;
+    } catch {
+      return NextResponse.json({ error: "Admin verification unavailable" }, { status: 503, headers: adminNoStore });
+    }
+  }
   const legalRoute = legalRouteKind(path);
   // Independent reads overlap; neither gate can release business data alone.
   const legalCheck = legalRoute && database && data.user
     ? loadLegalGateStatus(database, data.user.id, requestedOrganizationId(req.url))
       .then(value => ({ value, error: null }), error => ({ value: null, error })) : null;
+  // A platform admin must not bypass MFA through legacy Manager/Coach APIs.
+  // This role lookup overlaps the existing legal checks for ordinary users.
+  if (path.startsWith("/api/") && database && data.user) {
+    try {
+      const admin = await database.from("app_admins").select("user_id").eq("user_id", data.user.id).maybeSingle();
+      if (admin.error) throw admin.error;
+      if (admin.data) {
+        const assurance = await verifiedAdminAssurance(database, bearerToken, data.user.id);
+        if (!assurance.mfa || (!["GET", "HEAD", "OPTIONS"].includes(req.method) && !assurance.recent))
+          return NextResponse.json({ error: "Admin identity verification required", code: assurance.mfa ? "ADMIN_REAUTH_REQUIRED" : "ADMIN_MFA_REQUIRED" },
+            { status: 403, headers: adminNoStore });
+      }
+    } catch { return NextResponse.json({ error: "Admin verification unavailable" }, { status: 503, headers: adminNoStore }); }
+  }
   const isPlayerPage = path === "/player" || path.startsWith("/player/");
   const isConsentPage = path === "/player/consent-required";
   const isConsentEndpoint = path === "/api/player/consent";
@@ -189,6 +251,7 @@ export const config = {
     "/coach/:path*",
     "/manager/:path*",
     "/admin/:path*",
+    "/api/admin/:path*",
     "/api/player/:path*",
     "/api/coach/:path*",
     "/api/manager/:path*",

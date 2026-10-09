@@ -1,3 +1,4 @@
+import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { NextResponse } from "next/server";
 import { legalAdmin, legalDb, legalNoStore } from "@/lib/server/legalAccess";
 const reply = (body: object, status = 200) => NextResponse.json(body, { status, headers: legalNoStore });
@@ -13,7 +14,7 @@ export async function GET(req: Request) {
   } catch { return reply({ error: "Unavailable" }, 503); }
 }
 
-export async function POST(req: Request) {
+export const POST = withAdminMutationAudit(async function POST(req: Request) {
   try {
     const db = legalDb(); const admin = await legalAdmin(req, db);
     if (!admin) return reply({ error: "Forbidden" }, 403);
@@ -27,4 +28,4 @@ export async function POST(req: Request) {
     if (result.error) return reply({ error: result.error.message }, 409);
     return reply({ resolution_id: result.data });
   } catch { return reply({ error: "Unavailable" }, 503); }
-}
+});

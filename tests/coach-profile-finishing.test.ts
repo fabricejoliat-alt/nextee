@@ -6,7 +6,10 @@ import { messages } from "../lib/i18n/messages.ts";
 const row = { first_name: "Coach", last_name: "Test", handedness: "right" };
 const init = (options: { fetch?: typeof fetch; save?: () => Promise<unknown> } = {}) => coachComponentHarness("app/coach/profile/page.tsx", {
   fetch: options.fetch ?? (async () => Response.json({ memberships: [] })),
-  modules: { "react-easy-crop": { __esModule: true, default: "cropper" } },
+  modules: {
+    "react-easy-crop": { __esModule: true, default: "cropper" },
+    "@/lib/organizationFetch": { organizationFetch: options.fetch ?? (async () => Response.json({ memberships: [] })) },
+  },
   database: { from: (table: string) => ({
     select: () => ({ eq: () => ({
       maybeSingle: async () => ({ data: row, error: null }),
@@ -32,7 +35,11 @@ test("Coach profile uses card loading then four-language copy without losing an 
     assert.ok(elements(harness.render()).some((node) => node.type === "skeleton")); await flush();
     field(harness.render(), messages.fr["coach.profile.firstName"]).props.onChange({ target: { value: "Draft" } });
     for (const locale of ["fr", "en", "de", "it"] as const) {
-      harness.setLocale(locale);
+      const languageField = elements(harness.render()).find((node) => node.props.label === messages.fr["common.language"] || node.props.label === messages.en["common.language"] || node.props.label === messages.de["common.language"] || node.props.label === messages.it["common.language"]);
+      assert.ok(languageField);
+      const selector = elements(languageField).find((node) => node.type === "select");
+      assert.ok(selector);
+      selector.props.onChange({ target: { value: locale } });
       const tree = harness.render();
       assert.ok(textContent(tree).includes(messages[locale]["coach.profile.title"]));
       assert.equal(field(tree, messages[locale]["coach.profile.firstName"]).props.value, "Draft");

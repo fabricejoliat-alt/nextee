@@ -15,6 +15,7 @@ function route() {
    return Response.json(result);
  }}});
  const handler=loadManagerModule<{POST:(r:Request)=>Promise<Response>}>('app/api/admin/legal/route.ts',{
+  '@/lib/server/adminAudit':{withAdminMutationAudit:(handler:unknown)=>handler},
   'next/server':{NextResponse:{json:Response.json}},'@/lib/server/legalAccess':{legalDb:()=>db,legalAdmin:async()=>({id:'admin'}),legalNoStore:{'Cache-Control':'private, no-store'}}
  });
  return {requests,post:(body:object)=>handler.POST(new Request('http://test.invalid/api/admin/legal',{method:'POST',body:JSON.stringify({document_id:'fixture',locale:'fr',...body})}))};
