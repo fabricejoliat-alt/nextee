@@ -1,0 +1,6 @@
+.details{display:grid;gap:10px;margin:0}
+.details>div{display:grid;gap:5px;padding:13px 15px;border:1px solid #e0e7df;border-radius:11px;background:#f8faf7}
+.details dt{color:#6c786e;font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+.details dd{margin:0;color:#35483b;font-size:14px;font-weight:700;overflow-wrap:anywhere}
+.password{display:inline-block;padding:5px 8px;border-radius:6px;background:#e9f0e7;color:#1e2d23;font:700 14px var(--font-inter),sans-serif;user-select:all}
+.help{margin:0;color:#526053;font-size:12px;line-height:1.55}

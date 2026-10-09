@@ -68,11 +68,27 @@ for(const [path,role] of [[paths[1],"player"],[paths[2],"coach"],[paths[3],"mana
 
 for(const [path,role] of [[paths[4],"coach"],[paths[6],"manager"]])test(`new ${role} validates without writes and preserves a draft before sending the correct account role`,async()=>{
   const lang=localized(),writes:any[]=[],navigated:string[]=[];let reads=0;
-  const h=coachComponentHarness(path,{modules:{"@/components/i18n/AppI18nProvider":lang.module},navigate:p=>navigated.push(p),fetch:async(url,init)=>{if(init?.method){writes.push({url:String(url),body:JSON.parse(String(init.body))});return Response.json({ok:true});}reads++;return Response.json({clubs:[club]});}});
+  const h=coachComponentHarness(path,{modules:{"@/components/i18n/AppI18nProvider":lang.module},navigate:p=>navigated.push(p),fetch:async(url,init)=>{if(init?.method){writes.push({url:String(url),body:JSON.parse(String(init.body))});return Response.json({ok:true,user:{email:"qa@example.test"},username:"zoe.exemple",tempPassword:"demo-one-time-password"});}reads++;return Response.json({clubs:[club]});}});
   let tree=await settle(h);await elements(tree).find(n=>n.type==="form")!.props.onSubmit(event);tree=h.render();assert.equal(writes.length,0);assert.ok(ui(tree).includes(label("fr","firstNameRequired")));
   for(const[key,value]of [["manager.profile.firstName","Zoé"],["manager.content.name","Exemple"],["manager.profile.function","Fonction maison"],["manager.administration.email"," QA@Example.Test "]]){change(tree,tr("fr")(key),value);tree=h.render();}const before=reads;
   for(const locale of locales){lang.set(locale);tree=await settle(h);assert.equal(reads,before);assert.equal(field(tree,tr(locale)("manager.profile.function")).props.value,"Fonction maison");assert.ok(ui(tree).includes(label(locale,"firstNameRequired")));assert.doesNotMatch(ui(tree),/manager\.administration\./);}
-  await elements(tree).find(n=>n.type==="form")!.props.onSubmit(event);await flush();assert.equal(writes.length,1);assert.equal(writes[0].url,"/api/admin/clubs/club/create-member");assert.equal(writes[0].body.role,role);assert.equal(writes[0].body.email,"qa@example.test");assert.equal(writes[0].body.staff_function,"Fonction maison");assert.equal(writes[0].body.password,undefined);assert.deepEqual(navigated,[`/manager/user-management/${role === "coach" ? "coaches" : "managers"}?club=club`]);h.cleanup();
+  await elements(tree).find(n=>n.type==="form")!.props.onSubmit(event);await flush();assert.equal(writes.length,1);assert.equal(writes[0].url,"/api/admin/clubs/club/create-member");assert.equal(writes[0].body.role,role);assert.equal(writes[0].body.email,"qa@example.test");assert.equal(writes[0].body.staff_function,"Fonction maison");assert.equal(writes[0].body.password,undefined);
+  if(role==="coach"){
+    tree=h.render();assert.deepEqual(navigated,[]);assert.equal(elements(tree).filter(n=>n.type==="form").length,0);assert.ok(ui(tree).includes("demo-one-time-password"));assert.ok(ui(tree).includes("zoe.exemple"));
+    for(const locale of locales){lang.set(locale);tree=await settle(h);assert.ok(ui(tree).includes("demo-one-time-password"));assert.ok(ui(tree).includes(label(locale,"coaches.credentialsOnce")));}
+    button(tree,label("it","coaches.hideAndReturn")).props.onClick();assert.deepEqual(navigated,["/manager/user-management/coaches?club=club"]);
+  } else assert.deepEqual(navigated,["/manager/user-management/managers?club=club"]);
+  h.cleanup();
+});
+
+test("reusing an existing coach account leaves its password unchanged and shows no temporary credential",async()=>{
+  const navigated:string[]=[];
+  const h=coachComponentHarness(paths[4],{navigate:p=>navigated.push(p),fetch:async(_url,init)=>init?.method?Response.json({ok:true,user:{email:"qa@example.test"},username:"zoe.exemple",tempPassword:null}):Response.json({clubs:[club]})});
+  let tree=await settle(h);
+  for(const[key,value]of [["manager.profile.firstName","Zoé"],["manager.content.name","Exemple"],["manager.profile.function","Coach"],["manager.administration.email","qa@example.test"]]){change(tree,tr("fr")(key),value);tree=h.render();}
+  await elements(tree).find(n=>n.type==="form")!.props.onSubmit(event);await flush();tree=h.render();
+  assert.deepEqual(navigated,[]);assert.ok(ui(tree).includes(label("fr","coaches.existingAccount")));assert.ok(!ui(tree).includes(label("fr","coaches.initialPassword")));
+  button(tree,label("fr","coaches.hideAndReturn")).props.onClick();assert.deepEqual(navigated,["/manager/user-management/coaches?club=club"]);h.cleanup();
 });
 
 for(const [path,role] of [[paths[5],"coach"],[paths[7],"manager"]])test(`${role} profile retains permissions and custom values and never changes login email when language changes`,async()=>{

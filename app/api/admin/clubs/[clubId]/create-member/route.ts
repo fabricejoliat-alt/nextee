@@ -483,7 +483,7 @@ const clubId: string | undefined = params?.clubId;
         tempPassword: existingUserId ? null : tempPassword,
         username,
       },
-      { status: 200 }
+      { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (e: any) {
     return NextResponse.json({ error: e?.message ?? "Server error" }, { status: 500 });
