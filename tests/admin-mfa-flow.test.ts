@@ -56,6 +56,27 @@ function form(tree: Element) {
   assert.ok(result); return result;
 }
 
+test("reload waits for the MFA decision without flashing the security panel", async () => {
+  const pending = deferred<Status>();
+  const f = fixture({ mfa: true, recent: true });
+  f.setStatus(() => pending.promise);
+  try {
+    let tree = f.harness.render();
+    assert.equal(tree.type, "main");
+    assert.equal(tree.props["aria-busy"], "true");
+    assert.ok(!textContent(tree).includes("Vérification de sécurité"));
+    assert.ok(!textContent(tree).includes("ADMIN CONTENT"));
+    await flush();
+    tree = f.harness.render();
+    assert.ok(!textContent(tree).includes("Vérification de sécurité"));
+    pending.resolve({ mfa: true, recent: true });
+    await flush();
+    tree = f.harness.render();
+    assert.ok(textContent(tree).includes("ADMIN CONTENT"));
+    assert.ok(!textContent(tree).includes("Vérification de sécurité"));
+  } finally { f.cleanup(); }
+});
+
 test("the same panel stays mounted until server confirmation, then opens Admin directly", async () => {
   const pending = deferred<Verification>();
   const confirmed = deferred<Status>();

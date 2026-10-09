@@ -160,6 +160,7 @@ export default function AdminMfaGuard({ children }: { children: React.ReactNode 
     <p>{t("security.recovery")}</p>
   </section>;
   // Keep pending edits mounted during step-up, but make them inaccessible behind the modal.
+  if (checking) return <main className={styles.gate} aria-busy="true"><p role="status">{t("common.loading")}</p></main>;
   if (allowed) return <><div inert={challenge} aria-hidden={challenge || undefined}>{children}</div>{challenge ? <div className={styles.overlay} role="dialog" aria-modal="true" aria-labelledby="admin-mfa-title">{panel}</div> : null}</>;
   return <main className={styles.gate}>{panel}</main>;
 }
