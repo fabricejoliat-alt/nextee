@@ -9,3 +9,12 @@
   .table tbody td { display: block; width: auto; padding: 6px 0; border: 0; text-align: left; }
   .table tbody td::before { content: attr(data-label); display: block; margin-bottom: 3px; color: #738076; font-size: 11px; font-weight: 600; }
 }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0 12px; }
+.actions button { max-width: 100%; min-width: 0; }
+.actions svg { flex-shrink: 0; }
+.actions button:disabled { opacity: .5; cursor: not-allowed; }
+.fileName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.invalid { display: block; padding: 8px 10px; border: 1px solid #efc9c5; border-radius: 10px; background: #fff5f4; color: #ad3d35; font-size: 12px; line-height: 1.5; }
+.help { color: var(--text-secondary, #647269); font-size: 13px; line-height: 1.6; margin: 8px 0; }
+.parent + .parent { margin-top: 12px; }
+@media (max-width: 640px) { .actions > button { width: 100%; justify-content: center; } }

@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, CheckCircle2, FileSpreadsheet, RefreshCw, Upload } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileSpreadsheet, Download, RefreshCw, Upload } from "lucide-react";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { managerCount, managerLocaleTag } from "@/lib/managerLocale";
 import { managerJuniorFeedback, managerJuniorFormat } from "@/lib/managerJuniorPresentation";
-import { createJuniorImportProgress, parseJuniorImportRows, runJuniorImport, type ExistingJuniorImportMember, type JuniorImportRow, type JuniorImportSummary } from "@/lib/managerJuniorImport";
+import { createJuniorImportProgress, newJuniorImportConflicts, parseJuniorImportRows, runJuniorImport, type ExistingJuniorImportMember, type JuniorImportRow, type JuniorImportSummary } from "@/lib/managerJuniorImport";
+import { readJuniorImportWorkbook, juniorImportFieldSignature } from "@/lib/managerJuniorImportWorkbook";
+import { juniorImportFields, type JuniorImportField } from "@/lib/managerImportFields";
 import styles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
 import importStyles from "./PlayersExcelImportPage.module.css";
@@ -26,13 +28,16 @@ export default function PlayersExcelImportPage() {
   const [clubs, setClubs] = useState<Club[]>([]);
   const [clubId, setClubId] = useState("");
   const [existing, setExisting] = useState<ExistingJuniorImportMember[]>([]);
+  const [fields, setFields] = useState<JuniorImportField[]>([]);
   const [rows, setRows] = useState<JuniorImportRow[]>([]);
   const [fileName, setFileName] = useState("");
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [preparing, setPreparing] = useState(false);
   const [reading, setReading] = useState(false);
   const [error, setError] = useState("");
   const [summary, setSummary] = useState<JuniorImportSummary | null>(null);
+  const fileInput = useRef<HTMLInputElement | null>(null);
   const progress = useRef(createJuniorImportProgress());
   const working = useRef(false);
   const requestVersion = useRef(0);
@@ -44,6 +49,7 @@ export default function PlayersExcelImportPage() {
     const version = ++requestVersion.current;
     setMembersReady(false);
     setExisting([]);
+    setFields([]);
     if (!id) { setLoading(false); return; }
     setLoading(true);
     try {
@@ -52,6 +58,7 @@ export default function PlayersExcelImportPage() {
       if (!response.ok) throw new Error(json.error ?? "Chargement impossible.");
       if (version !== requestVersion.current) return;
       setExisting(json.members ?? []);
+      setFields(json.playerFields ?? []);
       setMembersReady(true);
     } catch (cause) {
       if (version === requestVersion.current) setError(cause instanceof Error ? cause.message : "Chargement impossible.");
@@ -81,17 +88,26 @@ export default function PlayersExcelImportPage() {
     setReading(true); setError(""); setSummary(null); setFileName(file.name); setRows([]);
     progress.current = createJuniorImportProgress();
     try {
-      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      if (!sheet) throw new Error("manager.junior.import.emptyWorkbook");
-      const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false, dateNF: "yyyy-mm-dd" });
-      if (!raw.length) throw new Error("manager.junior.import.emptySheet");
-      setRows(parseJuniorImportRows(raw, existing));
+      if (file.size > 5 * 1024 * 1024) throw new Error("manager.junior.import.fileLimit");
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true, raw: true, sheetRows: 2002 });
+      const raw = readJuniorImportWorkbook(workbook, clubId, fields);
+      setRows(parseJuniorImportRows(raw, existing, fields));
     } catch (cause) { setError(cause instanceof Error ? cause.message : "manager.junior.import.readError"); }
     finally { working.current = false; setReading(false); }
   }
 
-  const stats = useMemo(() => ({ valid: rows.filter(row => !row.errors.length).length, errors: rows.filter(row => row.errors.length).length, duplicates: rows.filter(row => row.possible_duplicate).length, existingParents: rows.filter(row => row.parent_exists).length, withoutParents: rows.filter(row => !row.parent_email).length, links: rows.filter(row => row.parent_email && !row.errors.length).length }), [rows]);
+  async function downloadTemplate() {
+    if (working.current || !membersReady) return;
+    working.current = true; setPreparing(true); setError("");
+    try {
+      const { downloadJuniorImportExcel } = await import("@/lib/managerJuniorImportExcel");
+      const name = (clubs.find(club => club.id === clubId)?.name ?? "organisation").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 60);
+      await downloadJuniorImportExcel(clubId, fields, t, `activitee-juniors-${name}.xlsx`);
+    } catch { setError("manager.junior.import.templateError"); }
+    finally { working.current = false; setPreparing(false); }
+  }
+
+  const stats = useMemo(() => ({ valid: rows.filter(row => !row.errors.length).length, errors: rows.filter(row => row.errors.length).length, duplicates: rows.filter(row => row.possible_duplicate).length, existingParents: new Set(rows.flatMap(row => row.parents.filter(parent => parent.exists).map(parent => parent.email))).size, withoutParents: rows.filter(row => !row.parents.length).length, links: rows.filter(row => !row.errors.length).reduce((sum, row) => sum + row.parents.length, 0) }), [rows]);
   const remaining = rows.filter(row => !row.errors.length && !progress.current.completed.has(row.row)).length;
 
   async function importRows() {
@@ -100,6 +116,15 @@ export default function PlayersExcelImportPage() {
     working.current = true;
     setBusy(true); setError("");
     try {
+      const check = await fetch(`/api/manager/clubs/${clubId}/members`, { headers: await authHeaders(), cache: "no-store" });
+      const latest = await check.json();
+      if (!check.ok) throw new Error(latest.error ?? "Chargement impossible.");
+      if (juniorImportFieldSignature(latest.playerFields ?? []) !== juniorImportFieldSignature(fields)) throw new Error("manager.junior.import.templateStale");
+      const conflicts = newJuniorImportConflicts(rows, latest.members ?? [], progress.current);
+      if (conflicts.size) {
+        setRows(rows.map(row => conflicts.has(row.row) ? { ...row, errors: [...row.errors, "manager.junior.import.duplicateJunior"], possible_duplicate: true } : row));
+        throw new Error("manager.junior.import.duplicateJunior");
+      }
       const result = await runJuniorImport(rows, clubId, progress.current, async (path, body, fallback) => {
         const response = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json", ...(await authHeaders()) }, body: JSON.stringify(body) });
         const json = await response.json();
@@ -108,29 +133,37 @@ export default function PlayersExcelImportPage() {
       });
       setSummary(result);
       await loadMembers(clubId);
-    } finally { working.current = false; setBusy(false); }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "manager.junior.import.error"); }
+    finally { working.current = false; setBusy(false); }
   }
 
   return <div className={styles.page}>
     <nav aria-label={t("manager.content.breadcrumb")} style={{ minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}><Link href={backUrl}>{t("manager.fields.player")}</Link> / {t("manager.administration.players.import")}</nav>
     <div className={styles.topline}><div><h1>{t("manager.administration.players.import")}</h1><p className={styles.lead}>{j("lead")}</p></div><div className={actionStyles.topActions}>
-      <label className="groups-season-nav-select"><select aria-label={t("manager.settings.club")} value={clubId} disabled={busy || reading || loading} onChange={event => { const id = event.target.value; setClubId(id); setRows([]); setSummary(null); setFileName(""); setError(""); progress.current = createJuniorImportProgress(); void loadMembers(id); }}>{clubs.map(club => <option key={club.id} value={club.id}>{club.name}</option>)}</select></label>
+      <label className="groups-season-nav-select"><select aria-label={t("manager.settings.club")} value={clubId} disabled={busy || preparing || reading || loading} onChange={event => { const id = event.target.value; setClubId(id); setRows([]); setSummary(null); setFileName(""); setError(""); progress.current = createJuniorImportProgress(); void loadMembers(id); }}>{clubs.map(club => <option key={club.id} value={club.id}>{club.name}</option>)}</select></label>
       <Link className={actionStyles.backButton} href={backUrl}><ArrowLeft size={16} />{j("back")}</Link>
     </div></div>
     {error ? <div className={styles.errorAlert} role="alert">{managerJuniorFeedback(t, error)}{clubId && !membersReady && !loading ? <button type="button" className={actionStyles.secondaryButton} onClick={() => { setError(""); void loadMembers(clubId); }}>{t("manager.refresh")}</button> : null}</div> : null}
     <section className={styles.overview}><div className={styles.sectionHeading}><div><h2>{j("source")}</h2><p>{j("formats")}</p></div></div>
-      <label className="btn" aria-disabled={busy || reading || loading || !membersReady}><FileSpreadsheet size={16} />{reading ? j("reading") : fileName || j("choose")}<input key={clubId} hidden type="file" accept=".xlsx,.xls,.csv" disabled={busy || reading || loading || !membersReady} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void readFile(file); }} /></label>
+      <p className={importStyles.help}>{j("templateHelp")}</p>
+      <p className={importStyles.help}>{j("templateScope")}</p>
+      <div className={importStyles.actions}>
+        <button type="button" className={actionStyles.secondaryButton} disabled={busy || preparing || reading || loading || !membersReady} onClick={() => void downloadTemplate()}><Download size={16} />{j(preparing ? "preparing" : "template")}</button>
+        <button type="button" className={actionStyles.primaryButton} disabled={busy || preparing || reading || loading || !membersReady} onClick={() => fileInput.current?.click()}><FileSpreadsheet size={16} /><span className={importStyles.fileName}>{reading ? j("reading") : fileName || j("choose")}</span></button>
+        <input ref={fileInput} key={clubId} hidden type="file" accept=".xlsx,.xls,.csv" disabled={busy || preparing || reading || loading || !membersReady} onChange={event => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void readFile(file); }} />
+      </div>
+      {membersReady ? <p className={importStyles.help}>{managerJuniorFormat(t, "import.fieldCounts", { juniors: juniorImportFields(fields, "player").length, parents: juniorImportFields(fields, "parent").length })}</p> : null}
     </section>
     {rows.length ? <>
       <section className={styles.overview}><div className={styles.statsGrid}>{(["valid", "errors", "duplicates", "existingParents", "withoutParents", "links"] as const).map(key => <article key={key} className={styles.statCard}><span>{j(key === "valid" ? "validRows" : key)}</span><b>{number(stats[key])}</b></article>)}</div></section>
       <section className={styles.quickPanel}>
-        <div className={styles.sectionHeading}><div><h2>{j("validation")}</h2><p>{j("ignored")}</p></div><button type="button" className={actionStyles.primaryButton} disabled={busy || loading || !membersReady || !remaining} onClick={() => void importRows()}>{busy ? <RefreshCw size={16} className={styles.spin} /> : <Upload size={16} />}{busy ? j("busy") : managerCount(t, locale, "manager.junior.import.action", remaining)}</button></div>
+        <div className={styles.sectionHeading}><div><h2>{j("validation")}</h2><p>{j("ignored")}</p></div><button type="button" className={actionStyles.primaryButton} disabled={busy || preparing || loading || !membersReady || !remaining} onClick={() => void importRows()}>{busy ? <RefreshCw size={16} className={styles.spin} /> : <Upload size={16} />}{busy ? j("busy") : managerCount(t, locale, "manager.junior.import.action", remaining)}</button></div>
         <div className="user-mgmt-table-wrap"><table className={`user-mgmt-table user-mgmt-table--compact ${importStyles.table}`}><thead><tr><th>{j("row")}</th><th>{t("manager.performance.junior")}</th><th>{t("manager.content.parent")}</th><th>{j("link")}</th><th>{j("check")}</th></tr></thead><tbody>{rows.map(row => <tr key={row.row}>
           <td data-label={j("row")}>{number(row.row)}</td>
-          <td data-label={t("manager.performance.junior")}><b>{row.junior_first_name} {row.junior_last_name}</b><small>{row.junior_birth_date ? new Date(`${row.junior_birth_date}T12:00:00Z`).toLocaleDateString(managerLocaleTag(locale), { timeZone: "UTC" }) : j("noBirth")} · {row.junior_email || j("noEmail")}</small></td>
-          <td data-label={t("manager.content.parent")}>{row.parent_email ? <><b>{row.parent_first_name} {row.parent_last_name}</b><small>{row.parent_email}{row.parent_exists ? j("existingSuffix") : ""}</small></> : j("noParent")}</td>
-          <td data-label={j("link")}>{row.parent_email ? <>{row.is_primary ? j("primaryPrefix") : ""}{t(`manager.junior.relation.${row.relation}`)}</> : "—"}</td>
-          <td data-label={j("check")}><span className="pill-soft">{progress.current.completed.has(row.row) ? j("done") : row.errors.length ? row.errors.map(key => t(key)).join(" · ") : row.possible_duplicate ? j("validDuplicate") : j("valid")}</span></td>
+          <td data-label={t("manager.performance.junior")}><b>{row.junior_first_name} {row.junior_last_name}</b><small>{row.junior_birth_date ? new Date(`${row.junior_birth_date}T12:00:00Z`).toLocaleDateString(managerLocaleTag(locale), { timeZone: "UTC" }) : j("noBirth")} · {row.junior_email || j("noEmail")}</small>{Object.entries(row.field_values).map(([id, value]) => <small key={id}>{fields.find(field => field.id === id)?.label} : {Array.isArray(value) ? value.join(" · ") : typeof value === "boolean" ? j(value ? "yes" : "no") : String(value)}</small>)}</td>
+          <td data-label={t("manager.content.parent")}>{row.parents.length ? row.parents.map((parent, index) => <div key={index} className={importStyles.parent}><b>{parent.first_name} {parent.last_name}</b><small>{parent.email}{parent.exists ? j("existingSuffix") : ""}</small>{Object.entries(parent.field_values).map(([id, value]) => <small key={id}>{fields.find(field => field.id === id)?.label} : {Array.isArray(value) ? value.join(" · ") : typeof value === "boolean" ? j(value ? "yes" : "no") : String(value)}</small>)}</div>) : j("noParent")}</td>
+          <td data-label={j("link")}>{row.parents.length ? row.parents.map((parent, index) => <div key={index} className={importStyles.parent}>{parent.is_primary ? j("primaryPrefix") : ""}{t(`manager.junior.relation.${parent.relation}`)}</div>) : "—"}</td>
+          <td data-label={j("check")}><span className={row.errors.length ? importStyles.invalid : "pill-soft"}>{progress.current.completed.has(row.row) ? j("done") : row.errors.length ? [...row.errors.filter(key => key !== "manager.junior.import.customInvalid").map(key => t(key)), ...row.field_errors.map(issue => `${issue.label.replace(/^(junior|parent1|parent2)/, prefix => j(prefix))} : ${t(issue.key)}`)].join(" · ") : row.possible_duplicate ? j("validDuplicate") : j("valid")}</span></td>
         </tr>)}</tbody></table></div>
       </section>
     </> : null}

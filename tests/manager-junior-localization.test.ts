@@ -3,6 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
+import * as XLSX from "xlsx";
 import { messages, type AppLocale } from "../lib/i18n/messages.ts";
 import { managerJuniorEntries } from "../lib/i18n/managerJuniorMessages.ts";
 import { managerJuniorFeedback } from "../lib/managerJuniorPresentation.ts";
@@ -171,7 +172,7 @@ test("all junior statistics tabs localize loaded data and dates, preserve author
 test("Excel preview and progress survive language changes and a failed refresh cannot restart completed rows",async()=>{
   const lang=localized(),writes:any[]=[];let memberReads=0,failRefresh=false;
   const previousWindow=Object.getOwnPropertyDescriptor(globalThis,"window");const confirmations:string[]=[];Object.defineProperty(globalThis,"window",{configurable:true,value:{confirm:(message:string)=>{confirmations.push(message);return true;}}});
-  const h=coachComponentHarness("components/manager/PlayersExcelImportPage.tsx",{modules:{"@/components/i18n/AppI18nProvider":lang.module,xlsx:{read:()=>({Sheets:{first:{}},SheetNames:["first"]}),utils:{sheet_to_json:()=>[source,{...source,junior_birth_date:"31.02.2014"}]}}},fetch:async(url,init)=>{if(init?.method){const body=JSON.parse(String(init.body));writes.push({url:String(url),body});return Response.json({user:{id:body.role??"link"}});}if(String(url).endsWith("my-clubs"))return Response.json({clubs:[{id:"club",name:"Club maison"}]});memberReads++;return Response.json(failRefresh?{error:"Chargement impossible."}:{members:[]},{status:failRefresh?500:200});}});
+  const h=coachComponentHarness("components/manager/PlayersExcelImportPage.tsx",{modules:{"@/components/i18n/AppI18nProvider":lang.module,xlsx:{...XLSX,read:()=>({Sheets:{first:XLSX.utils.json_to_sheet([source,{...source,junior_birth_date:"31.02.2014"}])},SheetNames:["first"]})}},fetch:async(url,init)=>{if(init?.method){const body=JSON.parse(String(init.body));writes.push({url:String(url),body});return Response.json({user:{id:body.role??"link"}});}if(String(url).endsWith("my-clubs"))return Response.json({clubs:[{id:"club",name:"Club maison"}]});memberReads++;return Response.json(failRefresh && writes.length?{error:"Chargement impossible."}:{members:[]},{status:failRefresh && writes.length?500:200});}});
   try{
     let tree=await settle(h);elements(tree).find(n=>n.type==="input"&&n.props.type==="file")!.props.onChange({target:{files:[{name:"fixture.xlsx",arrayBuffer:async()=>new ArrayBuffer(0)}],value:"fixture.xlsx"}});tree=await settle(h);const before=memberReads;
     for(const locale of locales){lang.set(locale);tree=await settle(h);assert.equal(memberReads,before);assert.ok(ui(tree).includes("fixture.xlsx"));assert.ok(ui(tree).includes(tr(locale)("manager.junior.import.birthInvalid")));assert.ok(ui(tree).includes(tr(locale)("manager.junior.relation.mother")));assert.doesNotMatch(ui(tree),/manager\.junior\./);}

@@ -1,5 +1,6 @@
 import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { randomPassword } from "@/lib/server/initialPassword";
+import { importFieldApplies, type JuniorImportField } from "@/lib/managerImportFields";
 import { encodeMemberFieldValue } from "@/lib/memberFieldValues";
 import { activeClubMember, canReuseClubAccount, requireManagerClub } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
@@ -277,16 +278,19 @@ const clubId: string | undefined = params?.clubId;
       return NextResponse.json({ error: "Junior introuvable dans ce club." }, { status: 404 });
     }
 
-    const fieldIds = role === "player" ? Object.keys(playerFieldValues) : [];
+    const fieldIds = Object.keys(playerFieldValues);
     const { data: fields, error: fieldsError } = fieldIds.length
-      ? await supabaseAdmin.from("club_player_fields").select("id,label,field_type,options_json,legacy_binding").eq("club_id", clubId).in("id", fieldIds)
+      ? await supabaseAdmin.from("club_player_fields").select("id,label,field_type,options_json,legacy_binding,applies_to_roles,is_active,scope,is_sensitive,editable_by").eq("club_id", clubId).in("id", fieldIds)
       : { data: [], error: null };
     if (fieldsError) return NextResponse.json({ error: fieldsError.message }, { status: 400 });
-    const fieldById = new Map((fields ?? []).map((field: any) => [String(field.id), field]));
+    const fieldById = new Map<string, JuniorImportField>((fields ?? []).map((field: JuniorImportField) => [String(field.id), field]));
     try {
       for (const [id, raw] of Object.entries(playerFieldValues)) {
         const field = fieldById.get(id);
-        if (field) encodeMemberFieldValue(field, raw);
+        if (!field || (field.legacy_binding ? role !== "player" : !(field.applies_to_roles?.length ? field.applies_to_roles : ["player"]).includes(role)) || (!auth.isSuperadmin && !importFieldApplies(field, role))) {
+          return NextResponse.json({ error: "manager.junior.import.templateStale" }, { status: 400 });
+        }
+        encodeMemberFieldValue(field, raw);
       }
     } catch (error) {
       return NextResponse.json({ error: error instanceof Error ? error.message : "Champ invalide" }, { status: 400 });
@@ -414,8 +418,8 @@ const clubId: string | undefined = params?.clubId;
       return NextResponse.json({ error: memErr.message }, { status: 400 });
     }
 
-    if (role === "player" && memberRow?.id) {
-      await syncLinkedParentsToClub(supabaseAdmin, clubId, userId);
+    if (memberRow?.id) {
+      if (role === "player") await syncLinkedParentsToClub(supabaseAdmin, clubId, userId);
 
       if (fieldIds.length > 0) {
         for (const [fieldId, rawValue] of Object.entries(playerFieldValues)) {
