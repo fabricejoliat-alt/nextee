@@ -137,6 +137,14 @@ test("calendar requests only the displayed period and ignores an older response 
 
 const field = { id: "choice", label: "Transport", field_type: "checkbox", scope: "permanent", options_json: ["Train, puis bus", "Voiture"], applies_to_roles: ["player", "parent", "manager"], visible_to_player: true, editable_by_player: true, visible_to_coach: false, editable_by_coach: false };
 
+test("custom field targets offer junior, coach and manager without a parent choice", () => {
+  const harness = coachComponentHarness("components/manager/PlayerCustomFieldsPage.tsx", { exportName: "FieldEditor", props: { clubId: "A", fields: [], reload() {} }, fetch: async () => { throw new Error("No IO expected"); } });
+  const tree = harness.render();
+  const targetLabels = new Set(["Juniors", "Coachs", "Managers", "Parents"]);
+  assert.deepEqual(elements(tree).map((node) => node.props.label).filter((label) => targetLabels.has(label)), ["Juniors", "Coachs", "Managers"]);
+  harness.cleanup();
+});
+
 test("field editing retains comma-containing options and all recipient roles, and prevents duplicate saves", async () => {
   const writes: Array<{ url: string; body: any }> = []; const save = deferred<Response>(); let reloads = 0;
   const harness = coachComponentHarness("components/manager/PlayerCustomFieldsPage.tsx", { exportName: "FieldEditor", props: { clubId: "B", fields: [field], reload: () => { reloads++; } }, fetch: async (url, init) => { writes.push({ url: String(url), body: JSON.parse(String(init!.body)) }); return save.promise; } });
