@@ -3,7 +3,7 @@
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Bell } from "lucide-react";
 import CoachDesktopDrawer from "@/components/coach/CoachDesktopDrawer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -26,6 +26,7 @@ function BurgerIcon() {
 
 export default function CoachHeader() {
   const [open, setOpen] = useState(false);
+  const closeDrawer = useCallback(() => setOpen(false), []);
   const [unreadCount, setUnreadCount] = useState(0);
   const [pendingActivityEvaluationCount, setPendingActivityEvaluationCount] = useState(0);
   const { t } = useI18n();
@@ -175,7 +176,7 @@ export default function CoachHeader() {
         <div className="app-header-inner">
           <div className="app-header-grid app-header-grid--centered">
             <div className="header-left header-left--icon">
-              <button className="icon-btn" type="button" aria-label={t("common.openMenu")} onClick={() => setOpen(true)}>
+              <button className="icon-btn" type="button" aria-label={open ? t("common.close") : t("common.openMenu")} aria-expanded={open} aria-controls="coach-navigation-drawer" onClick={() => setOpen((current) => !current)}>
                 <BurgerIcon />
               </button>
             </div>
@@ -199,7 +200,7 @@ export default function CoachHeader() {
 
       <PushActivationBanner settingsHref="/coach/notifications/settings" />
 
-      <CoachDesktopDrawer open={open} onClose={() => setOpen(false)} pendingEvaluationCount={pendingActivityEvaluationCount} />
+      <CoachDesktopDrawer open={open} onClose={closeDrawer} pendingEvaluationCount={pendingActivityEvaluationCount} />
     </>
   );
 }

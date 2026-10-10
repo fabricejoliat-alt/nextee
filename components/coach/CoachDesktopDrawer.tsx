@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Bell, BookOpen, CalendarCheck, CalendarDays, ChevronRight, ClipboardCheck, Home, LogOut, Medal, Newspaper, Tent, User, UserRound, Users, X } from "lucide-react";
+import { Bell, BookOpen, CalendarCheck, CalendarDays, ChevronRight, ClipboardCheck, Home, LogOut, Medal, Newspaper, Tent, User, UserRound, Users } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import OrganizationContextSelect from "@/components/organizations/OrganizationContextSelect";
 import styles from "./CoachDesktopDrawer.module.css";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -31,6 +30,32 @@ export default function CoachDesktopDrawer({ open, onClose, pendingEvaluationCou
   const router = useRouter();
   const { t, locale } = useI18n();
   const [fullName, setFullName] = useState(t("common.defaultName"));
+  const panelRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const panel = panelRef.current;
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    panel?.focus({ preventScroll: true });
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
+      if (event.key !== "Tab" || !panel) return;
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>('a[href], button, input, select, [tabindex]'))
+        .filter((element) => element.tabIndex >= 0 && !element.matches(":disabled") && element.getClientRects().length > 0);
+      const first = focusable[0]; const last = focusable[focusable.length - 1];
+      if (!first || !last) { event.preventDefault(); return; }
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
+    };
+  }, [open, onClose]);
 
   useEffect(() => {
     if (!open) return;
@@ -76,11 +101,9 @@ export default function CoachDesktopDrawer({ open, onClose, pendingEvaluationCou
   }
 
   if (!open) return null;
-  return <AccessibleDialog onClose={onClose} className={`drawer-panel drawer-panel--left drawer-panel--coach drawer-panel--compact ${styles.dialog}`} label={t("common.navigation")}>
-      <div className="drawer-top">
-        <Link href={ROUTES.home} className="drawer-brand" onClick={onClose} aria-label="ActiviTee"><span className="drawer-brand-nex">Activi</span><span className="drawer-brand-tee">Tee</span></Link>
-        <button className="icon-btn drawer-close" type="button" autoFocus onClick={onClose} aria-label={t("common.close")}><X size={20} /></button>
-      </div>
+  return <>
+    <button type="button" className="drawer-overlay" aria-label={t("common.close")} onClick={onClose} />
+    <aside ref={panelRef} id="coach-navigation-drawer" tabIndex={-1} role="dialog" aria-modal="true" className={`drawer-panel drawer-panel--left drawer-panel--coach drawer-panel--compact ${styles.panel}`} aria-label={t("common.navigation")}>
       <nav className="drawer-nav">
         {sections.map((section) => <section key={section.label} className="drawer-section">
           <div className="drawer-section-label">{section.label}</div>
@@ -89,9 +112,10 @@ export default function CoachDesktopDrawer({ open, onClose, pendingEvaluationCou
       </nav>
       <div className="drawer-account">
         <div className="drawer-account-name">{fullName}</div>
-        <div className={styles.context}><OrganizationContextSelect variant="drawer" onNavigate={onClose} /></div>
+        <div className={styles.context}><OrganizationContextSelect variant="drawer" hideSingleOrganization onNavigate={onClose} /></div>
         <Link href={ROUTES.profile} className={`drawer-subitem drawer-subitem--account ${isActive(pathname, ROUTES.profile) ? "active" : ""}`} onClick={onClose}><span className="drawer-item-left"><User size={16} /><span>{t("common.profile")}</span></span></Link>
         <button type="button" className="drawer-subitem drawer-subitem--danger" onClick={logout}><span className="drawer-item-left"><LogOut size={16} /><span>{t("common.logout")}</span></span></button>
       </div>
-  </AccessibleDialog>;
+    </aside>
+  </>;
 }

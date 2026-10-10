@@ -95,7 +95,7 @@ test("guided errors are localized and never render raw backend or network detail
   assert.doesNotMatch(page, /json\?\.error|AI analysis failed|Save failed|Session invalide/);
 });
 
-test("Coach overlays use native modal focus containment, Escape and return focus", () => {
+test("Coach dialogs retain native modal focus containment; the navigation drawer sits beneath the header", () => {
   const dialog = source("components/ui/AccessibleDialog.tsx");
   assert.match(dialog, /<dialog/);
   assert.match(dialog, /dialog.showModal\(\)/);
@@ -105,12 +105,23 @@ test("Coach overlays use native modal focus containment, Escape and return focus
   assert.match(dialog, /event.shiftKey/);
   assert.match(dialog, /event.preventDefault\(\); last.focus\(\)/);
   assert.match(dialog, /event.preventDefault\(\); first.focus\(\)/);
-  for (const path of ["app/coach/validations/page.tsx", "components/coach/CoachDesktopDrawer.tsx",
+  for (const path of ["app/coach/validations/page.tsx",
     "app/coach/camps/page.tsx", "components/coach/CoachPlayerTransferDialog.tsx", "app/coach/groups/[id]/planning/page.tsx", "app/coach/groups/[id]/planning/[eventId]/edit/page.tsx"]) {
     assert.match(source(path), /<AccessibleDialog/);
     assert.doesNotMatch(source(path), /addEventListener\("keydown"/);
   }
-  assert.match(source("components/coach/CoachDesktopDrawer.tsx"), /aria-current=/);
+  const drawer = source("components/coach/CoachDesktopDrawer.tsx");
+  const drawerStyle = source("components/coach/CoachDesktopDrawer.module.css");
+  assert.match(drawer, /className="drawer-overlay"/);
+  assert.match(drawer, /role="dialog" aria-modal="true"/);
+  assert.match(drawer, /event\.key === "Escape"/);
+  assert.match(drawer, /event\.shiftKey/);
+  assert.match(drawer, /opener\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(drawer, /hideSingleOrganization/);
+  assert.doesNotMatch(drawer, /drawer-top|drawer-brand|drawer-close/);
+  assert.match(drawerStyle, /top: calc\(var\(--safe-top, 0px\) \+ var\(--header-h, 60px\)\)/);
+  assert.match(drawerStyle, /bottom: 0/);
+  assert.match(drawer, /aria-current=/);
   assert.match(source("app/coach/calendar/page.tsx"), /aria-pressed=/);
 });
 
