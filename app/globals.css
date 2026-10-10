@@ -999,54 +999,54 @@ input[type="radio"]{
   border-color: rgba(185,28,28,0.35);
 }
 
-/* Player drawer compact variant */
-.drawer-panel--player-compact .drawer-top{
+/* Shared compact drawer design for Player and Coach */
+.drawer-panel--compact .drawer-top{
   height: 54px;
   padding: 0 12px;
 }
 
-.drawer-panel--player-compact .drawer-brand{
+.drawer-panel--compact .drawer-brand{
   font-size: 18px;
 }
 
-.drawer-panel--player-compact .drawer-nav{
+.drawer-panel--compact .drawer-nav{
   padding: 18px 10px 10px;
   gap: 18px;
 }
 
-.drawer-panel--player-compact .drawer-section{
+.drawer-panel--compact .drawer-section{
   gap: 0;
 }
 
-.drawer-panel--player-compact .drawer-section-label{
+.drawer-panel--compact .drawer-section-label{
   padding-bottom: 3px;
 }
 
-.drawer-panel--player-compact .drawer-item{
+.drawer-panel--compact .drawer-item{
   padding: 9px 10px;
   border-radius: 12px;
   font-size: 13px;
 }
 
-.drawer-panel--player-compact .drawer-item-left{
+.drawer-panel--compact .drawer-item-left{
   gap: 8px;
 }
 
-.drawer-panel--player-compact .drawer-sub{
+.drawer-panel--compact .drawer-sub{
   margin-top: 2px;
   gap: 6px;
   padding-left: 8px;
   margin-left: 8px;
 }
 
-.drawer-panel--player-compact .drawer-subitem{
+.drawer-panel--compact .drawer-subitem{
   min-height: 36px;
   padding: 8px 10px;
   border-radius: 11px;
   font-size: 12px;
 }
 
-.drawer-panel--player-compact .drawer-account{
+.drawer-panel--compact .drawer-account{
   padding: 12px;
   gap: 8px;
 }

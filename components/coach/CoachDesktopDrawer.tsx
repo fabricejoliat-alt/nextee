@@ -76,7 +76,7 @@ export default function CoachDesktopDrawer({ open, onClose, pendingEvaluationCou
   }
 
   if (!open) return null;
-  return <AccessibleDialog onClose={onClose} className={`drawer-panel drawer-panel--left drawer-panel--coach ${styles.dialog}`} label={t("common.navigation")}>
+  return <AccessibleDialog onClose={onClose} className={`drawer-panel drawer-panel--left drawer-panel--coach drawer-panel--compact ${styles.dialog}`} label={t("common.navigation")}>
       <div className="drawer-top">
         <Link href={ROUTES.home} className="drawer-brand" onClick={onClose} aria-label="ActiviTee"><span className="drawer-brand-nex">Activi</span><span className="drawer-brand-tee">Tee</span></Link>
         <button className="icon-btn drawer-close" type="button" autoFocus onClick={onClose} aria-label={t("common.close")}><X size={20} /></button>
