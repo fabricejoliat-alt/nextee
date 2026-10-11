@@ -2786,6 +2786,12 @@ body:has([data-design-system]){
     overflow:visible;
   }
 
+  .player-page.player-page-root{
+    position:relative;
+    z-index:1;
+    background:transparent;
+  }
+
   .player-scroll-area,
   .coach-scroll-area{
     position:relative;
@@ -2802,9 +2808,14 @@ body:has([data-design-system]){
   }
 
   body:has(.player-page-root)::before{
-    background-image:
+    content:"";
+    position:fixed;
+    inset:0;
+    z-index:0;
+    pointer-events:none;
+    background:
       linear-gradient(90deg, rgba(12,30,20,.82) 0%, rgba(16,38,25,.68) 34%, rgba(16,38,25,.30) 61%, rgba(16,38,25,.14) 100%),
-      url("/hero-golf.jpg");
+      url("/hero-golf.jpg") center / cover no-repeat;
   }
 }
 
@@ -3353,6 +3364,12 @@ body:has([data-design-system]){
 
   .app-shell{
     padding-bottom: calc(var(--footer-h) + env(safe-area-inset-bottom) + 8px);
+  }
+}
+
+@media (max-width: 899px){
+  body:has([data-login-page])::before{
+    display:none;
   }
 }
 

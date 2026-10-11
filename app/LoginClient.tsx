@@ -138,7 +138,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className={styles.page}>
+    <main className={styles.page} data-login-page>
       <div className={styles.image} aria-hidden="true" />
       <div className={styles.shell}>
         <div className={styles.contentStack}>
