@@ -3310,6 +3310,58 @@ body:has([data-design-system]){
 
 }
 
+/* In the installed app there is no Safari toolbar to collapse. Keep the page
+   fixed and scroll only its content, so iOS rubber-band scrolling cannot move
+   the Player header. Use the same photo from the first loading frame onward. */
+@media (max-width: 899px) and (display-mode: standalone),
+       (max-width: 899px) and (display-mode: fullscreen) {
+  html:has(.player-page-root),
+  body:has(.player-page-root){
+    height:100%;
+    min-height:100%;
+    overflow:hidden;
+    overscroll-behavior:none;
+    background:#35483b !important;
+  }
+
+  body:has(.player-page-root)::before{
+    display:none;
+  }
+
+  .player-page.player-page-root{
+    position:static;
+    z-index:auto;
+    height:100dvh;
+    min-height:100dvh !important;
+    overflow:hidden;
+    background:
+      linear-gradient(90deg, rgba(12,30,20,.82) 0%, rgba(16,38,25,.68) 34%, rgba(16,38,25,.30) 61%, rgba(16,38,25,.14) 100%),
+      url("/hero-golf.jpg") center / cover no-repeat !important;
+  }
+
+  .player-page-root .app-header{
+    position:fixed;
+    top:0;
+    transform:none;
+  }
+
+  .player-scroll-area,
+  .player-scroll-area--home{
+    position:fixed;
+    top:calc(var(--header-h) + var(--safe-top));
+    right:0;
+    bottom:0;
+    left:0;
+    min-height:0;
+    margin-top:0;
+    overflow-x:hidden;
+    overflow-y:auto;
+    overscroll-behavior-y:contain;
+    -webkit-overflow-scrolling:touch;
+    background:transparent !important;
+  }
+}
+
 /* Mobile web browser only: lift bottom nav a bit and improve readability */
 @media (display-mode: browser) and (max-width: 899px) {
   html{
