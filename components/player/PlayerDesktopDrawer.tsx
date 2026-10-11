@@ -13,6 +13,9 @@ import {
   Home,
   Flag,
   ClipboardList,
+  CalendarDays,
+  Dumbbell,
+  FileText,
   Store,
   User,
   CircleHelp,
@@ -33,6 +36,10 @@ import {
 const ROUTES = {
   home: "/player",
   golfDashboard: "/player/golf",
+  golfTrainings: "/player/golf?section=trainings",
+  golfRounds: "/player/golf?section=rounds",
+  golfEvaluations: "/player/golf?section=evaluations",
+  golfDocuments: "/player/golf?section=documents",
   
   trainingsList: "/player/golf/trainings?type=all",
   news: "/player/news",
@@ -119,6 +126,11 @@ function isActive(pathname: string, href: string) {
 
 function isTrainingChildActive(pathname: string, searchParams: URLSearchParams, href: string) {
   const hrefPath = href.split("?")[0] || href;
+  if (hrefPath === "/player/golf") {
+    const requestedSection = new URLSearchParams(href.split("?")[1] ?? "").get("section") || "overview";
+    const currentSection = searchParams.get("section") || "overview";
+    return pathname === hrefPath && requestedSection === currentSection;
+  }
   if (hrefPath === "/player/om") {
     const hrefQuery = href.includes("?") ? new URLSearchParams(href.split("?")[1] ?? "") : null;
     const requestedView = hrefQuery?.get("view") || "summary";
@@ -454,9 +466,9 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         ],
       },
       {
-        label: t("player.activities"),
+        label: t("nav.calendar"),
         items: [
-          { label: t("player.activities"), icon: ClipboardList, href: ROUTES.trainingsList },
+          { label: t("nav.calendar"), icon: CalendarDays, href: ROUTES.trainingsList },
           ...(performanceEnabled
             ? [
                 {
@@ -467,12 +479,21 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
                 },
               ]
             : []),
-          { label: t("player.myGolf"), icon: Flag, href: ROUTES.golfDashboard },
-          { label: t("player.camps"), icon: Tent, href: ROUTES.camps },
         ],
       },
       {
-        label: t("player.progression"),
+        label: t("player.myGolf"),
+        items: [
+          { label: t("player.golfDashboard"), icon: Home, href: ROUTES.golfDashboard },
+          { label: t("player.golfTrainings"), icon: Dumbbell, href: ROUTES.golfTrainings },
+          { label: t("player.golfRounds"), icon: Flag, href: ROUTES.golfRounds },
+          { label: t("player.camps"), icon: Tent, href: ROUTES.camps },
+          { label: t("player.golfEvaluations"), icon: ClipboardList, href: ROUTES.golfEvaluations },
+          { label: t("player.golfDocuments"), icon: FileText, href: ROUTES.golfDocuments },
+        ],
+      },
+      {
+        label: t("player.myProgression"),
         items: [
           { label: t("player.validations"), icon: ShieldCheck, href: ROUTES.validations },
           {
@@ -493,8 +514,11 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
         ],
       },
       {
-        label: t("player.services"),
-        items: [{ label: t("nav.marketplace"), icon: Store, href: ROUTES.marketplaceAll }],
+        label: t("player.myServices"),
+        items: [
+          { label: t("nav.marketplace"), icon: Store, href: ROUTES.marketplaceAll },
+          { label: t("player.helpContact"), icon: CircleHelp, href: ROUTES.help },
+        ],
       },
     ],
     [t, locale, pendingEvalCount, performanceEnabled]
@@ -624,13 +648,6 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
             <span className="drawer-item-left">
               <User size={16} strokeWidth={2} />
               <span>{t("common.profile")}</span>
-            </span>
-          </Link>
-
-          <Link href={ROUTES.help} className={`drawer-subitem drawer-subitem--account ${isActive(pathname, ROUTES.help) ? "active" : ""}`} onClick={onClose}>
-            <span className="drawer-item-left">
-              <CircleHelp size={16} strokeWidth={2} />
-              <span>{t("nav.help")}</span>
             </span>
           </Link>
 

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { CalendarDays, Dumbbell, Flag, Plus, ShoppingBag, User } from "lucide-react";
+import { CalendarDays, Flag, Plus, ShoppingBag, User } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 function scrollTop() {
@@ -59,7 +59,7 @@ export default function MobileFooter() {
   }, [pathname]);
 
   const items = [
-    { href: "/player/golf/trainings?type=all", label: t("player.activities"), Icon: CalendarDays },
+    { href: "/player/golf/trainings?type=all", label: t("player.navActivities"), Icon: CalendarDays },
     { href: "/player/golf", label: t("player.myGolf"), Icon: Flag },
     { href: "/player/marketplace", label: t("nav.marketplace"), Icon: ShoppingBag },
     { href: "/player/profile", label: t("nav.profile"), Icon: User },
@@ -95,11 +95,17 @@ export default function MobileFooter() {
       ))}
       {quickActionsOpen && (
         <div id="player-quick-actions" className="player-quick-actions" role="menu" aria-label={t("common.add")}>
-          <Link href="/player/golf/trainings/new" role="menuitem" onClick={() => setQuickActionsOpen(false)}>
-            <Dumbbell aria-hidden="true" />{t("player.newTraining")}
+          <Link href="/player/golf/trainings/new?session_type=individual" role="menuitem" onClick={() => setQuickActionsOpen(false)}>
+            <Plus aria-hidden="true" />{t("player.quickAddIndividualTraining")}
           </Link>
           <Link href="/player/golf/rounds/new" role="menuitem" onClick={() => setQuickActionsOpen(false)}>
-            <Flag aria-hidden="true" />{t("player.newRound")}
+            <Plus aria-hidden="true" />{t("player.quickAddTrainingRound")}
+          </Link>
+          <Link href="/player/golf/trainings?plan=competition#personal-planning-title" role="menuitem" onClick={(event) => { setQuickActionsOpen(false); if (pathname === "/player/golf/trainings") { event.preventDefault(); window.dispatchEvent(new CustomEvent("player:open-personal-planner", { detail: { type: "competition" } })); } }}>
+            <Plus aria-hidden="true" />{t("player.quickAddCompetition")}
+          </Link>
+          <Link href="/player/golf/trainings?plan=camp#personal-planning-title" role="menuitem" onClick={(event) => { setQuickActionsOpen(false); if (pathname === "/player/golf/trainings") { event.preventDefault(); window.dispatchEvent(new CustomEvent("player:open-personal-planner", { detail: { type: "camp" } })); } }}>
+            <Plus aria-hidden="true" />{t("player.quickAddCamp")}
           </Link>
         </div>
       )}

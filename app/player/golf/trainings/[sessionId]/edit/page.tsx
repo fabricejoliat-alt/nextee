@@ -559,7 +559,7 @@ export default function PlayerTrainingEditPage() {
         <PlayerBreadcrumb
           items={[
             { label: "Player", href: "/player" },
-            { label: pickLocaleText(locale, "Mes activités", "My activities"), href: "/player/golf/trainings" },
+            { label: pickLocaleText(locale, "Calendrier", "Calendar", "Kalender", "Calendario"), href: "/player/golf/trainings" },
             { label: pickLocaleText(locale, "Modifier l’activité", "Edit activity") },
           ]}
         />

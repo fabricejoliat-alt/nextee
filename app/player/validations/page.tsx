@@ -62,7 +62,7 @@ export default function PlayerValidationsPage() {
   const [expandedExerciseIds, setExpandedExerciseIds] = useState<Record<string, boolean>>({});
 
   const txt = useMemo(() => ({
-    title: labelByLocale(locale, "Validations", "Validations"),
+    title: t("player.validations"),
     subtitle: labelByLocale(locale, "Progresse secteur par secteur, à ton rythme.", "Progress through each section at your own pace."),
     loading: labelByLocale(locale, "Chargement des validations…", "Loading validations…"),
     overall: labelByLocale(locale, "Progression globale", "Overall progress"),
@@ -97,7 +97,7 @@ export default function PlayerValidationsPage() {
     close: labelByLocale(locale, "Réduire", "Collapse"),
     imageMissing: labelByLocale(locale, "Illustration indisponible", "Illustration unavailable"),
     nextUnlock: labelByLocale(locale, "Valide le défi précédent pour débloquer celui-ci.", "Complete the previous challenge to unlock this one."),
-  }), [locale]);
+  }), [locale, t]);
 
   async function getToken() {
     const { data } = await supabase.auth.getSession();

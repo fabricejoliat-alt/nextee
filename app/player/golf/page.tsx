@@ -6,6 +6,7 @@ import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import CountUpNumber from "@/components/ui/CountUpNumber";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
@@ -56,6 +57,7 @@ import {
   Clock3,
   MessageSquareText,
   X,
+  ChevronDown,
 } from "lucide-react";
 
 type SessionType = "club" | "private" | "individual";
@@ -548,20 +550,38 @@ function isGirOnHole(par: number | null, score: number | null, putts: number | n
 
 export default function GolfDashboardPage() {
   const { t, locale } = useI18n();
+  const routeSearchParams = useSearchParams();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
   const [loading, setLoading] = useState(true);
   const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
+  const [mobileGolfMenuOpen, setMobileGolfMenuOpen] = useState(false);
+  const mobileGolfMenuRef = useRef<HTMLDivElement>(null);
   const [sectionReady, setSectionReady] = useState(false);
   const [golfData, setGolfData] = useState<GolfData | null>(null);
   const [playerChartView, setPlayerChartView] = useState<"values" | "trend">("values");
   const [coachChartView, setCoachChartView] = useState<"values" | "trend">("values");
   useEffect(() => {
-    const section = new URLSearchParams(window.location.search).get("section");
+    const section = routeSearchParams.get("section");
     if (["overview", "trainings", "evaluations", "rounds", "stats", "documents"].includes(String(section))) {
       setActiveSection(section === "stats" ? "rounds" : section as DashboardSection);
-    }
+    } else setActiveSection("overview");
     setSectionReady(true);
-  }, []);
+  }, [routeSearchParams]);
+  useEffect(() => {
+    if (!mobileGolfMenuOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!mobileGolfMenuRef.current?.contains(event.target as Node)) setMobileGolfMenuOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileGolfMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [mobileGolfMenuOpen]);
   const [loadingRounds, setLoadingRounds] = useState(false);
   const [loadingHoles, setLoadingHoles] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1940,6 +1960,7 @@ export default function GolfDashboardPage() {
   }, [keyKpisUI.fwPct, keyKpisUI.girPct, keyKpisUI.scramblingPct, locale]);
 
   function selectSection(section: DashboardSection) {
+    setMobileGolfMenuOpen(false);
     setActiveSection(section);
     if (section === "overview" && !["month", "last3", "season", "lastSeason"].includes(preset)) setPreset("season");
     const url = new URL(window.location.href);
@@ -1951,29 +1972,30 @@ export default function GolfDashboardPage() {
   // ===== UI =====
   const kpiGridClass = "golf-kpi-grid";
   const kpiGridStyle: React.CSSProperties = { display: "grid", gap: 12, gridTemplateColumns: "1fr" };
+  const golfSections = [
+    { id: "overview" as DashboardSection, label: t("player.golfDashboard") },
+    { id: "trainings" as DashboardSection, label: t("player.golfTrainings") },
+    { id: "rounds" as DashboardSection, label: t("player.golfRounds") },
+    { id: "camps" as const, label: t("player.camps") },
+    { id: "evaluations" as DashboardSection, label: t("player.golfEvaluations") },
+    { id: "documents" as DashboardSection, label: t("player.golfDocuments") },
+  ];
   const golfSectionNavigation = (
     <section className={overviewStyles.navigationCard}>
-      <div className={overviewStyles.navigationTabs} role="tablist" aria-label={pickLocaleText(locale, "Sections Mon golf", "My golf sections")}>
-        {[
-          { id: "overview" as DashboardSection, label: pickLocaleText(locale, "Vue d’ensemble", "Overview") },
-          { id: "trainings" as DashboardSection, label: pickLocaleText(locale, "Entraînements", "Trainings") },
-          { id: "evaluations" as DashboardSection, label: pickLocaleText(locale, "Évaluations", "Evaluations") },
-          { id: "rounds" as DashboardSection, label: pickLocaleText(locale, "Parcours & statistiques", "Rounds & statistics") },
-          { id: "documents" as DashboardSection, label: pickLocaleText(locale, "Documents", "Documents") },
-        ].map((tab) => {
-          const isActive = activeSection === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              role="tab"
-              aria-selected={isActive}
-              onClick={() => selectSection(tab.id)}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
+      <div className={overviewStyles.navigationTabs} aria-label={pickLocaleText(locale, "Sections Mon golf", "My golf sections")}>
+        {golfSections.map((tab) => tab.id === "camps"
+          ? <Link key={tab.id} href="/player/camps">{tab.label}</Link>
+          : <button key={tab.id} type="button" aria-current={activeSection === tab.id ? "page" : undefined} onClick={() => selectSection(tab.id)}>{tab.label}</button>)}
+      </div>
+      <div ref={mobileGolfMenuRef} className={overviewStyles.mobileNavigation}>
+        <button type="button" className={overviewStyles.mobileNavigationToggle} aria-expanded={mobileGolfMenuOpen} aria-controls="player-golf-mobile-sections" onClick={() => setMobileGolfMenuOpen((open) => !open)}>
+          <span>{golfSections.find((section) => section.id === activeSection)?.label ?? t("player.golfDashboard")}</span><ChevronDown size={20} aria-hidden="true" />
+        </button>
+        {mobileGolfMenuOpen ? <div id="player-golf-mobile-sections" className={overviewStyles.mobileNavigationMenu}>
+          {golfSections.map((tab) => tab.id === "camps"
+            ? <Link key={tab.id} href="/player/camps" onClick={() => setMobileGolfMenuOpen(false)}>{tab.label}</Link>
+            : <button key={tab.id} type="button" aria-current={activeSection === tab.id ? "page" : undefined} onClick={() => selectSection(tab.id)}>{tab.label}</button>)}
+        </div> : null}
       </div>
     </section>
   );

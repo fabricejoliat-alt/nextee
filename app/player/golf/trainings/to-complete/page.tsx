@@ -84,7 +84,7 @@ export default function PlayerTrainingsToCompletePage() {
   return (
     <div className={`player-dashboard-bg ${styles.page}`}>
       <div className={`app-shell ${styles.shell}`}>
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Mes activités", "My activities"), href: "/player/golf/trainings" }, { label: pickLocaleText(locale, "À évaluer", "To evaluate") }]} />
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Calendrier", "Calendar", "Kalender", "Calendario"), href: "/player/golf/trainings" }, { label: pickLocaleText(locale, "À évaluer", "To evaluate") }]} />
 
         <header className={playerUiStyles.topline}>
           <div>

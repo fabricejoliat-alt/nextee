@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { localizedHelpSections } from "../app/player/help/localizedHelp.ts";
+import { guide } from "../app/player/help/currentHelp.ts";
 import { messages, type AppLocale } from "../lib/i18n/messages.ts";
 import { pickLocaleText } from "../lib/i18n/pickLocaleText.ts";
 import { marketplaceConditionLabel } from "../lib/marketplaceLabels.ts";
@@ -31,17 +31,15 @@ test("the Player glossary is complete in every supported locale", () => {
   assert.equal(messages.fr["player.activities"], "Mes activités");
 });
 
-test("localized help covers the same Player journeys in English, German and Italian", () => {
-  const expectedIds = localizedHelpSections.en.map((section) => section.id);
-  assert.equal(expectedIds.length, 17);
+test("current help covers the same Player journeys in every locale", () => {
+  const expectedIds = guide.fr.sections.map((section) => section.id);
+  assert.equal(expectedIds.length, 8);
 
-  for (const locale of ["en", "de", "it"] as const) {
-    const sections = localizedHelpSections[locale];
+  for (const locale of locales) {
+    const sections = guide[locale].sections;
     assert.deepEqual(sections.map((section) => section.id), expectedIds);
-    assert.ok(sections.every((section) => section.title.trim() && section.blocks.length > 0));
-    assert.ok(sections.every((section) => section.blocks.some((block) =>
-      Boolean(block.paragraphs?.length || block.bullets?.length || block.ordered?.length),
-    )));
+    assert.ok(sections.every((section) => section.title.trim() && section.text.trim()));
+    assert.ok(sections.every((section) => section.links.every((link) => link.href.startsWith("/"))));
   }
 });
 

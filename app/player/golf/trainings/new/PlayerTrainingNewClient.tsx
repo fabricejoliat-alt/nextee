@@ -234,7 +234,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
 
   const [place, setPlace] = useState<string>("");
   const [sessionType, setSessionType] = useState<SessionType>("individual");
-  const [hasChosenTrainingType, setHasChosenTrainingType] = useState(false);
+  const [hasChosenTrainingType, setHasChosenTrainingType] = useState(() => sp.get("session_type") === "individual");
   const [nonPerformanceMinutes, setNonPerformanceMinutes] = useState<string>("");
   const [notes, setNotes] = useState<string>("");
   const [motivation, setMotivation] = useState<string>("");
@@ -927,7 +927,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
       <div className={embedded ? undefined : `app-shell marketplace-page ${clubEventId ? styles.evaluationShell : ""}`}>
         {!embedded ? (
           <>
-            <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Mes activités", "My activities"), href: "/player/golf/trainings" }, { label: clubEventId ? viewOnly ? pickLocaleText(locale, "Détail de l’activité", "Activity details") : pickLocaleText(locale, "Évaluer l’activité", "Evaluate activity") : pickLocaleText(locale, "Ajouter un entraînement", "Add training") }]} />
+            <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Calendrier", "Calendar", "Kalender", "Calendario"), href: "/player/golf/trainings" }, { label: clubEventId ? viewOnly ? pickLocaleText(locale, "Détail de l’activité", "Activity details") : pickLocaleText(locale, "Évaluer l’activité", "Evaluate activity") : pickLocaleText(locale, "Ajouter un entraînement", "Add training") }]} />
             <div className={clubEventId ? styles.evaluationHero : "glass-section"}>
           <header className={clubEventId ? playerUiStyles.topline : "marketplace-header"}>
             <div style={{ display: "grid", gap: 10 }}>

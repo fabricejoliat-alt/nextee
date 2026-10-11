@@ -50,7 +50,7 @@ export default function CompetitionDetailPage(){
   const organizer=[data.showClubName?data.clubName:null,data.groupName].filter(Boolean).join(" · ");
 
   return <div className="player-dashboard-bg"><div className="app-shell marketplace-page"><div className={styles.page}>
-    <PlayerBreadcrumb items={[{label:"Player",href:"/player"},{label:pickLocaleText(locale,"Mes activités","My activities"),href:"/player/golf/trainings?type=all"},{label:pickLocaleText(locale,"Compétition","Competition")}]}/>
+    <PlayerBreadcrumb items={[{label:"Player",href:"/player"},{label:pickLocaleText(locale, "Calendrier", "Calendar", "Kalender", "Calendario"),href:"/player/golf/trainings?type=all"},{label:pickLocaleText(locale,"Compétition","Competition")}]}/>
     <header className={playerUiStyles.topline}><div><h1>{pickLocaleText(locale,"Détail de la compétition","Competition details")}</h1><p className={playerUiStyles.lead}>{pickLocaleText(locale,"Retrouve les informations pratiques et les rappels liés à cette compétition.","Review the practical information and reminders for this competition.")}</p></div><div className={playerUiStyles.actions}><Link className={playerUiStyles.secondary} href="/player/golf/trainings?type=all"><ArrowLeft size={15}/>{pickLocaleText(locale,"Retour aux activités","Back to activities")}</Link></div></header>
 
     <article className={`glass-card ${styles.summary}`}>

@@ -3381,18 +3381,18 @@ body:has([data-design-system]){
   .player-mobile-nav .player-nav-add{
     justify-self:center;
     align-self:center;
-    width:48px;
-    height:48px;
-    min-height:48px;
+    width:44px;
+    height:44px;
+    min-height:44px;
     padding:0;
     border:1px solid rgba(255,255,255,.42);
-    border-radius:15px;
+    border-radius:12px;
     background:rgba(255,255,255,.13);
   }
 
   .player-mobile-nav .player-nav-add svg{
-    width:27px;
-    height:27px;
+    width:24px;
+    height:24px;
   }
 
   .player-mobile-nav .player-nav-add:focus-visible,
@@ -3403,16 +3403,17 @@ body:has([data-design-system]){
 
   .player-quick-actions{
     position:absolute;
-    left:50%;
-    bottom:calc(100% + 10px);
+    left:0;
+    right:0;
+    bottom:100%;
     display:grid;
-    width:min(300px,calc(100vw - 32px));
-    padding:6px;
-    border:1px solid #dce5db;
-    border-radius:16px;
-    background:#fff;
+    width:100%;
+    gap:6px;
+    padding:12px 16px 14px;
+    border:1px solid rgba(255,255,255,.16);
+    border-radius:16px 16px 0 0;
+    background:#35483b;
     box-shadow:0 18px 40px rgba(15,30,20,.24);
-    transform:translateX(-50%);
   }
 
   .player-quick-actions a{
@@ -3421,21 +3422,35 @@ body:has([data-design-system]){
     gap:11px;
     min-height:48px;
     padding:10px 12px;
+    border:1px solid rgba(255,255,255,.16);
     border-radius:11px;
-    color:#35483b;
+    background:rgba(255,255,255,.08);
+    color:#fff;
     font-size:13px;
     font-weight:700;
   }
 
   .player-quick-actions a:hover,
   .player-quick-actions a:active{
-    background:#f0f5ee;
+    background:rgba(255,255,255,.17);
+  }
+
+  .player-quick-actions a:active{
+    transform:translateY(1px);
   }
 
   .player-quick-actions svg{
-    width:19px;
-    height:19px;
+    width:25px;
+    height:25px;
     flex:0 0 auto;
+    padding:4px;
+    border-radius:7px;
+    background:rgba(255,255,255,.16);
+    stroke-width:2.5;
+  }
+
+  .player-page-root #personal-planning-title{
+    scroll-margin-top:calc(var(--header-h) + var(--safe-top) + 16px);
   }
 }
 
