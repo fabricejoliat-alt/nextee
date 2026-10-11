@@ -101,9 +101,6 @@ export default function MobileFooter() {
           <Link href="/player/golf/rounds/new" role="menuitem" onClick={() => setQuickActionsOpen(false)}>
             <Plus aria-hidden="true" />{t("player.quickAddTrainingRound")}
           </Link>
-          <Link href="/player/golf/trainings?plan=competition#personal-planning-title" role="menuitem" onClick={(event) => { setQuickActionsOpen(false); if (pathname === "/player/golf/trainings") { event.preventDefault(); window.dispatchEvent(new CustomEvent("player:open-personal-planner", { detail: { type: "competition" } })); } }}>
-            <Plus aria-hidden="true" />{t("player.quickAddCompetition")}
-          </Link>
           <Link href="/player/golf/trainings?plan=camp#personal-planning-title" role="menuitem" onClick={(event) => { setQuickActionsOpen(false); if (pathname === "/player/golf/trainings") { event.preventDefault(); window.dispatchEvent(new CustomEvent("player:open-personal-planner", { detail: { type: "camp" } })); } }}>
             <Plus aria-hidden="true" />{t("player.quickAddCamp")}
           </Link>

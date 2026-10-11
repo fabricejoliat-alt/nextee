@@ -19,7 +19,8 @@ export async function resolveMarketplaceAccess(
   supabaseAdmin: ReturnType<typeof createAdminClient>,
   accessToken: string,
   childIdRaw: string,
-  mode: "view" | "edit" = "view"
+  mode: "view" | "edit" = "view",
+  includePhone = true
 ) {
   try {
     const access = await resolveAuthenticatedPlayerAccess({
@@ -28,11 +29,11 @@ export async function resolveMarketplaceAccess(
       mode,
       supabaseAdmin,
     });
-    const profileRes = await supabaseAdmin
+    const profileRes = includePhone ? await supabaseAdmin
       .from("profiles")
       .select("phone")
       .eq("id", access.subjectPlayerId)
-      .maybeSingle();
+      .maybeSingle() : { data: null, error: null };
     if (profileRes.error) return { error: profileRes.error.message, status: 400 as const };
 
     return {

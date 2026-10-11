@@ -929,7 +929,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
           <>
             <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: pickLocaleText(locale, "Calendrier", "Calendar", "Kalender", "Calendario"), href: "/player/golf/trainings" }, { label: clubEventId ? viewOnly ? pickLocaleText(locale, "Détail de l’activité", "Activity details") : pickLocaleText(locale, "Évaluer l’activité", "Evaluate activity") : pickLocaleText(locale, "Ajouter un entraînement", "Add training") }]} />
             <div className={clubEventId ? styles.evaluationHero : "glass-section"}>
-          <header className={clubEventId ? playerUiStyles.topline : "marketplace-header"}>
+          <header className={clubEventId ? playerUiStyles.topline : `marketplace-header ${styles.individualHero}`}>
             <div style={{ display: "grid", gap: 10 }}>
               <h1 className={clubEventId ? undefined : "section-title"} style={{ marginBottom: 0 }}>
                 {clubEventId
@@ -972,11 +972,11 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
           </>
         )}
 
-        <div className={embedded ? undefined : clubEventId ? styles.evaluationContent : "glass-section"}>
+        <div className={embedded ? undefined : styles.evaluationContent}>
           {loading ? (
             <TrainingFormSkeleton label={pickLocaleText(locale, "Chargement...", "Loading...")} evaluation={Boolean(clubEventId)} />
           ) : (
-            <form onSubmit={save} className={clubEventId ? `${styles.evaluationForm} ${styles.actionsInCard}` : undefined} style={{ display: "grid", gap: 12 }}>
+            <form onSubmit={save} className={clubEventId ? `${styles.evaluationForm} ${styles.actionsInCard}` : styles.individualForm} style={{ display: "grid", gap: 12 }}>
                 {linkedEvent ? (
                   <>
                     <EvaluationActivitySummary

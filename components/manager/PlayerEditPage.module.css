@@ -74,3 +74,10 @@
   .topActions { display: grid; grid-template-columns: minmax(0, 1fr); }
   .topActions > * { min-width: 0; width: 100%; }
 }
+
+.performanceSetting { display: flex; align-items: flex-start; gap: 12px; margin: 18px 0; padding: 15px; border: 1px solid #dfe7dd; border-radius: 12px; background: #f7faf5; cursor: pointer; }
+.performanceSetting input { width: 20px; height: 20px; margin: 1px 0 0; flex: 0 0 20px; accent-color: #35483b; }
+.performanceSetting span { display: grid; gap: 5px; }
+.performanceSetting strong { color: #35483b; font-size: 13px; font-weight: 700; }
+.performanceSetting small { color: #718076; font-size: 12px; line-height: 1.5; }
+.performanceSetting:focus-within { outline: 3px solid rgba(137,157,125,.3); outline-offset: 2px; }

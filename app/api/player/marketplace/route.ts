@@ -7,17 +7,23 @@ type ProfileRow = { id: string | null; first_name: string | null; last_name: str
 type ImageRow = { item_id: string | null; path: string | null; sort_order: number | null };
 
 export async function GET(req: NextRequest) {
+  const started=performance.now();
+  const timings:string[]=[];
+  let phase=started;
+  const mark=(name:string)=>{const now=performance.now();timings.push(`${name};dur=${(now-phase).toFixed(1)}`);phase=now};
+  const respond=(body:unknown,init:{status?:number}={})=>NextResponse.json(body,{...init,headers:{"Cache-Control":"private, no-store","Server-Timing":[...timings,`total;dur=${(performance.now()-started).toFixed(1)}`].join(", ")}});
   try {
     const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-    if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
+    if (!accessToken) return respond({ error: "Missing token" }, { status: 401 });
 
     const childId = String(new URL(req.url).searchParams.get("child_id") ?? "").trim();
     const supabaseAdmin = createAdminClient();
-    const access = await resolveMarketplaceAccess(supabaseAdmin, accessToken, childId, "view");
-    if ("error" in access) return NextResponse.json({ error: access.error }, { status: access.status });
+    const access = await resolveMarketplaceAccess(supabaseAdmin, accessToken, childId, "view", false);
+    mark("access");
+    if ("error" in access) return respond({ error: access.error }, { status: access.status });
 
     if (access.clubIds.length === 0) {
-      return NextResponse.json({
+      return respond({
         viewerUserId: access.viewerUserId,
         effectiveUserId: access.effectiveUserId,
         items: [],
@@ -32,22 +38,24 @@ export async function GET(req: NextRequest) {
       .in("club_id", access.clubIds)
       .eq("is_active", true)
       .order("created_at", { ascending: false });
-    if (itemsRes.error) return NextResponse.json({ error: itemsRes.error.message }, { status: 400 });
+    mark("items");
+    if (itemsRes.error) return respond({ error: itemsRes.error.message }, { status: 400 });
 
     const items = itemsRes.data ?? [];
     const authorIds = uniq((items as Array<{ user_id?: string | null }>).map((row) => row.user_id));
     const itemIds = uniq((items as Array<{ id?: string | null }>).map((row) => row.id));
 
     const [profilesRes, imagesRes] = await Promise.all([
-      authorIds.length
+      authorIds.length && new URL(req.url).searchParams.get("view") !== "list"
         ? supabaseAdmin.from("profiles").select("id,first_name,last_name").in("id", authorIds)
         : ({ data: [], error: null } as const),
       itemIds.length
         ? supabaseAdmin.from("marketplace_images").select("item_id,path,sort_order").in("item_id", itemIds).eq("sort_order", 0)
         : ({ data: [], error: null } as const),
     ]);
-    if (profilesRes.error) return NextResponse.json({ error: profilesRes.error.message }, { status: 400 });
-    if (imagesRes.error) return NextResponse.json({ error: imagesRes.error.message }, { status: 400 });
+    mark("images_profiles");
+    if (profilesRes.error) return respond({ error: profilesRes.error.message }, { status: 400 });
+    if (imagesRes.error) return respond({ error: imagesRes.error.message }, { status: 400 });
 
     const profilesById: Record<string, { id: string; first_name: string | null; last_name: string | null }> = {};
     ((profilesRes.data ?? []) as ProfileRow[]).forEach((row) => {
@@ -68,7 +76,7 @@ export async function GET(req: NextRequest) {
       mainImageByItemId[itemId] = supabaseAdmin.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
     });
 
-    return NextResponse.json({
+    return respond({
       viewerUserId: access.viewerUserId,
       effectiveUserId: access.effectiveUserId,
       items,
@@ -76,7 +84,7 @@ export async function GET(req: NextRequest) {
       mainImageByItemId,
     });
   } catch (error: unknown) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
+    return respond({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
 }
 

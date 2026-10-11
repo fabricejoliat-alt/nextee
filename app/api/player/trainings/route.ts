@@ -7,6 +7,10 @@ import {
   resolveAuthenticatedPlayerAccess,
 } from "@/app/api/player/access";
 
+import { createRequestTiming } from "@/lib/server/requestTiming";
+import { readRelatedRows } from "@/lib/server/paginatedRead";
+import { legalNoStore } from "@/lib/server/legalAccess";
+
 type AttendanceStatus = "expected" | "present" | "absent" | "excused" | "not_registered";
 
 type AttendeeRow = {
@@ -86,26 +90,26 @@ type SessionCampMeta = {
 };
 
 type NamedRow = { id: string | null; name: string | null };
-type MembershipRow = { club_id: string | null };
 
 function uniq(values: Array<string | null | undefined>) {
   return Array.from(new Set(values.map((v) => String(v ?? "").trim()).filter(Boolean)));
 }
 
 export async function GET(req: NextRequest) {
+  const timing = createRequestTiming();
   try {
     const childId = String(new URL(req.url).searchParams.get("child_id") ?? "").trim();
-    const access = await resolveAuthenticatedPlayerAccess({
+    const access = await timing.measure("access", () => resolveAuthenticatedPlayerAccess({
       accessToken: bearerTokenFromRequest(req),
       requestedOrganizationId: requestedOrganizationId(req.url),
       requestedPlayerId: childId,
       mode: "view",
-    });
+    }));
     const { supabaseAdmin } = access;
     const viewerUserId = access.actorUserId;
     const effectiveUserId = access.subjectPlayerId;
 
-    const [perfRes, profileRes, activeMembershipsRes, sessionsRes, attendeeRes, competitionRes] = await Promise.all([
+    const [perfRes, profileRes, clubsRes, sessionsRes, attendeeRes, competitionRes] = await timing.measure("base", () => Promise.all([
       supabaseAdmin
         .from("club_members")
         .select("id")
@@ -119,12 +123,7 @@ export async function GET(req: NextRequest) {
         .select("first_name,last_name")
         .eq("id", effectiveUserId)
         .maybeSingle(),
-      supabaseAdmin
-        .from("club_members")
-        .select("club_id")
-        .eq("user_id", effectiveUserId)
-        .in("club_id", access.organizationIds)
-        .eq("is_active", true),
+      supabaseAdmin.from("organizations").select("id,name").in("id", access.organizationIds),
       supabaseAdmin
         .from("training_sessions")
         .select("id,start_at,location_text,session_type,club_id,total_minutes,motivation,difficulty,satisfaction,created_at,club_event_id")
@@ -140,11 +139,11 @@ export async function GET(req: NextRequest) {
         .select("id,user_id,event_type,title,starts_at,ends_at,location_text,notes,status,created_at")
         .eq("user_id", effectiveUserId).or(personalOrOrganizationFilter("organization_id", access.organizationIds))
         .order("starts_at", { ascending: false }),
-    ]);
+    ]));
 
     if (perfRes.error) return NextResponse.json({ error: perfRes.error.message }, { status: 400 });
     if (profileRes.error) return NextResponse.json({ error: profileRes.error.message }, { status: 400 });
-    if (activeMembershipsRes.error) return NextResponse.json({ error: activeMembershipsRes.error.message }, { status: 400 });
+    if (clubsRes.error) return NextResponse.json({ error: clubsRes.error.message }, { status: 400 });
     if (sessionsRes.error) return NextResponse.json({ error: sessionsRes.error.message }, { status: 400 });
     if (attendeeRes.error) return NextResponse.json({ error: attendeeRes.error.message }, { status: 400 });
     if (competitionRes.error) return NextResponse.json({ error: competitionRes.error.message }, { status: 400 });
@@ -157,13 +156,22 @@ export async function GET(req: NextRequest) {
       attendeeStatusByEventId[String(row.event_id)] = row.status ?? null;
     });
 
-    const eventsRes = eventIds.length
-      ? await supabaseAdmin
+    const sessionIds = uniq(sessions.map(row => row.id));
+    const [eventsRes, campDaysRes, items] = await timing.measure("related", () => Promise.all([      eventIds.length
+      ? supabaseAdmin
           .from("club_events")
           .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,series_id,status,requires_evaluation,competition_level,competition_category,external_registration_url,competition_note")
           .in("id", eventIds).in("club_id", access.organizationIds)
           .order("starts_at", { ascending: false })
-      : { data: [] as ClubEventRow[], error: null };
+      : { data: [] as ClubEventRow[], error: null },      sessionIds.length
+      ? supabaseAdmin
+          .from("player_camp_days")
+          .select("session_id,camp_id,day_index,starts_at,ends_at,location_text")
+          .in("session_id", sessionIds)
+      : { data: [] as CampDayRow[], error: null },
+      readRelatedRows<{ session_id: string; minutes: number }>(sessionIds, (ids, from, to) => supabaseAdmin
+        .from("training_session_items").select("session_id,minutes").in("session_id", ids).order("id").range(from, to)),
+    ]));
     if (eventsRes.error) return NextResponse.json({ error: eventsRes.error.message }, { status: 400 });
     const rawAttendeeEvents = (eventsRes.data ?? []) as ClubEventRow[];
     for (const key of Object.keys(attendeeStatusByEventId)) if (!rawAttendeeEvents.some(event => event.id === key)) delete attendeeStatusByEventId[key];
@@ -172,12 +180,20 @@ export async function GET(req: NextRequest) {
         .filter((event) => event.event_type === "camp")
         .map((event) => event.id),
     );
-    const clubCampDaysRes = campEventIds.length
-      ? await supabaseAdmin
+    const campIds = uniq((campDaysRes.data ?? []).map(row => row.camp_id));
+    const groupIds = uniq(rawAttendeeEvents.map(row => row.group_id));
+    const [clubCampDaysRes, campsRes, groupsRes] = await timing.measure("metadata", () => Promise.all([
+      campEventIds.length
+      ? supabaseAdmin
           .from("club_camp_days")
           .select("event_id,camp_id")
           .in("event_id", campEventIds)
-      : { data: [] as ClubCampDayLinkRow[], error: null };
+      : { data: [] as ClubCampDayLinkRow[], error: null },
+      campIds.length ? supabaseAdmin.from("player_camps").select("id,title,coach_name,notes,status")
+        .in("id", campIds).or(personalOrOrganizationFilter("organization_id", access.organizationIds)) : { data: [] as CampRow[], error: null },
+      groupIds.length ? supabaseAdmin.from("coach_groups").select("id,name").in("id", groupIds).in("club_id", access.organizationIds)
+        : { data: [] as NamedRow[], error: null },
+    ]));
     if (clubCampDaysRes.error) return NextResponse.json({ error: clubCampDaysRes.error.message }, { status: 400 });
 
     const clubCampDayLinks = (clubCampDaysRes.data ?? []) as ClubCampDayLinkRow[];
@@ -203,20 +219,9 @@ export async function GET(req: NextRequest) {
       (event) => event.event_type !== "camp" || !hiddenCampEventIds.has(String(event.id ?? "").trim()),
     );
 
-    const sessionIds = uniq(sessions.map((row) => row.id));
-    const campDaysRes = sessionIds.length
-      ? await supabaseAdmin
-          .from("player_camp_days")
-          .select("session_id,camp_id,day_index,starts_at,ends_at,location_text")
-          .in("session_id", sessionIds)
-      : { data: [] as CampDayRow[], error: null };
     if (campDaysRes.error) return NextResponse.json({ error: campDaysRes.error.message }, { status: 400 });
     const campDays = (campDaysRes.data ?? []) as CampDayRow[];
 
-    const campIds = uniq(campDays.map((row) => row.camp_id));
-    const campsRes = campIds.length
-      ? await supabaseAdmin.from("player_camps").select("id,title,coach_name,notes,status").in("id", campIds).or(personalOrOrganizationFilter("organization_id", access.organizationIds))
-      : { data: [] as CampRow[], error: null };
     if (campsRes.error) return NextResponse.json({ error: campsRes.error.message }, { status: 400 });
     const camps = (campsRes.data ?? []) as CampRow[];
 
@@ -249,20 +254,6 @@ export async function GET(req: NextRequest) {
       ...(sessionCampMetaBySessionId[String(session.id ?? "").trim()] ?? {}),
     }));
 
-    const clubIds = uniq([
-      ...enrichedSessions.map((session) => session.club_id),
-      ...attendeeEvents.map((event) => event.club_id),
-    ]);
-    const groupIds = uniq(attendeeEvents.map((event) => event.group_id));
-
-    const [clubsRes, groupsRes] = await Promise.all([
-      clubIds.length
-        ? supabaseAdmin.from("organizations").select("id,name").in("id", clubIds)
-        : { data: [] as NamedRow[], error: null },
-      groupIds.length
-        ? supabaseAdmin.from("coach_groups").select("id,name").in("id", groupIds)
-        : { data: [] as NamedRow[], error: null },
-    ]);
     if (clubsRes.error) return NextResponse.json({ error: clubsRes.error.message }, { status: 400 });
     if (groupsRes.error) return NextResponse.json({ error: groupsRes.error.message }, { status: 400 });
 
@@ -278,6 +269,7 @@ export async function GET(req: NextRequest) {
 
     const fullName = `${String(profileRes.data?.first_name ?? "").trim()} ${String(profileRes.data?.last_name ?? "").trim()}`.trim();
 
+    const withContent = new Set(items.filter(item => Number(item.minutes) > 0).map(item => item.session_id));
     return NextResponse.json({
       viewerUserId,
       effectiveUserId,
@@ -287,14 +279,16 @@ export async function GET(req: NextRequest) {
       attendeeEvents,
       attendeeStatusByEventId,
       competitionEvents: competitionRes.data ?? [],
-      activeClubCount: uniq(((activeMembershipsRes.data ?? []) as MembershipRow[]).map((row) => row.club_id)).length,
+      activeClubCount: access.organizationIds.length,
+      completedSessionIds: sessions.filter(row => withContent.has(String(row.id))
+        && [row.motivation,row.difficulty,row.satisfaction].every(value => typeof value === "number")).map(row => row.id),
       clubNameById,
       groupNameById,
-    });
+    }, { headers: { ...legalNoStore, ...timing.headers() } });
   } catch (error: unknown) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Server error" },
-      { status: playerAccessErrorStatus(error) }
+      { status: playerAccessErrorStatus(error), headers: { ...legalNoStore, ...timing.headers() } }
     );
   }
 }

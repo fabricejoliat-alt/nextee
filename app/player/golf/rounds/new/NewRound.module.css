@@ -96,3 +96,5 @@
   .formActions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .actionButton { width: 100%; min-width: 0; padding-inline: 10px; text-align: center; }
 }
+
+@media(max-width:640px){:global(.player-page-root) .heroHeader.heroHeader{flex-direction:column!important;align-items:stretch!important}.heroHeader>div:first-child{width:100%;text-align:left!important;align-self:stretch}.heroActions{align-self:flex-end}}

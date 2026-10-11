@@ -12,11 +12,14 @@ export async function readAllRows<T>(query: (from: number, to: number) => Promis
   }
 }
 
-export async function readRelatedRows<T>(ids: string[], query: (ids: string[], from: number, to: number) => PromiseLike<ReadResult>) {
+export async function readRelatedRows<T>(ids: string[], query: (ids: string[], from: number, to: number) => PromiseLike<ReadResult>, maxConcurrentBatches = 1) {
   const unique = [...new Set(ids)];
   const rows: T[] = [];
-  for (let offset = 0; offset < unique.length; offset += 100) {
-    rows.push(...await readAllRows<T>((from, to) => query(unique.slice(offset, offset + 100), from, to)));
+  const concurrency = Math.max(1, Math.min(4, Math.floor(maxConcurrentBatches) || 1));
+  for (let offset = 0; offset < unique.length; offset += 100 * concurrency) {
+    const batches = Array.from({ length: Math.min(concurrency, Math.ceil((unique.length - offset) / 100)) }, (_, index) => unique.slice(offset + index * 100, offset + (index + 1) * 100));
+    const results = await Promise.all(batches.map(batch => readAllRows<T>((from, to) => query(batch, from, to))));
+    for (const result of results) rows.push(...result);
   }
   return rows;
 }

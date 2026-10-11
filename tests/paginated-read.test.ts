@@ -22,3 +22,22 @@ test("a failed later page never returns misleading partial statistics", async ()
     ? { data: Array(500).fill({}), error: null }
     : { data: null, error: { message: "database unavailable" } }), /database unavailable/);
 });
+
+test("parallel ID batches retain deterministic order and bounded concurrency", async () => {
+  const ids = Array.from({ length: 501 }, (_, id) => String(id));
+  let active = 0, peak = 0;
+  const rows = await readRelatedRows(ids, async (batch) => {
+    active++; peak = Math.max(peak, active);
+    await new Promise(resolve => setTimeout(resolve, batch[0] === '0' ? 8 : 1));
+    active--;
+    return { data: batch.map(id => ({id})), error: null };
+  }, 4);
+  assert.equal(peak, 4);
+  assert.deepEqual(rows, ids.map(id => ({id})));
+});
+
+test("parallel batch failures reject the whole read", async () => {
+  await assert.rejects(readRelatedRows(Array.from({length:201},(_,id)=>String(id)), async batch => ({
+    data: batch.map(id=>({id})), error: batch.includes('100') ? {message:'batch failure'} : null,
+  }), 4), /batch failure/);
+});

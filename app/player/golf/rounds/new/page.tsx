@@ -504,20 +504,21 @@ export default function NewRoundPage() {
               <div style={{ display: "grid", gap: 10 }}>
                 <div style={fieldLabelStyle}>{t("roundsNew.roundType")}</div>
 
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                  <label style={{ ...chipRadioStyle, ...(roundType === "training" ? chipRadioActive : {}) }}>
-                    <input type="radio" checked={roundType === "training"} onChange={() => setRoundType("training")} disabled={busy} />
-                    <span>{t("rounds.training")}</span>
+                <div className={styles.scoreChoices}>
+                  <label className={`${styles.scoreChoice} ${roundType === "training" ? styles.scoreChoiceActive : ""}`}>
+                    <input type="radio" name="round-type" checked={roundType === "training"} onChange={() => setRoundType("training")} disabled={busy} />
+                    <span><strong>{t("rounds.training")}</strong></span>
                   </label>
 
-                  <label style={{ ...chipRadioStyle, ...(roundType === "competition" ? chipRadioActive : {}) }}>
+                  <label className={`${styles.scoreChoice} ${roundType === "competition" ? styles.scoreChoiceActive : ""}`}>
                     <input
                       type="radio"
+                      name="round-type"
                       checked={roundType === "competition"}
                       onChange={() => setRoundType("competition")}
                       disabled={busy}
                     />
-                    <span>{t("rounds.competition")}</span>
+                    <span><strong>{t("rounds.competition")}</strong></span>
                   </label>
                 </div>
 
@@ -816,26 +817,4 @@ const fieldLabelStyle: React.CSSProperties = {
   fontSize: 12,
   fontWeight: 900,
   color: "rgba(0,0,0,0.70)",
-};
-
-const chipRadioStyle: React.CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 8,
-  borderWidth: 1,
-  borderStyle: "solid",
-  borderColor: "rgba(0,0,0,0.12)",
-  borderRadius: 999,
-  padding: "8px 12px",
-  background: "rgba(255,255,255,0.70)",
-  fontWeight: 900,
-  fontSize: 13,
-  color: "rgba(0,0,0,0.78)",
-  cursor: "pointer",
-  userSelect: "none",
-};
-
-const chipRadioActive: React.CSSProperties = {
-  borderColor: "rgba(53,72,59,0.35)",
-  background: "rgba(53,72,59,0.10)",
 };

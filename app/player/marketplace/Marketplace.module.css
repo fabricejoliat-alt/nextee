@@ -1,0 +1,6 @@
+:global(.player-page-root) :global(.player-marketplace-page) .header.header{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:space-between!important;gap:16px!important}
+:global(.player-page-root) .header .title{order:0;flex:1 1 auto;min-width:0;text-align:left!important;margin:0!important}
+:global(.player-page-root) .header .actions{order:1;display:flex;flex:0 0 auto!important;justify-content:flex-end!important;gap:8px;margin-left:auto!important}
+@media(max-width:640px){:global(.player-page-root) :global(.player-marketplace-page) .header.header{flex-direction:column!important;align-items:stretch!important}:global(.player-page-root) .header .actions{width:100%;justify-content:flex-end!important}}
+
+@media(max-width:640px){:global(.player-page-root) .header .title{align-self:stretch!important;width:100%!important}}

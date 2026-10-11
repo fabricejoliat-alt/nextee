@@ -5,8 +5,11 @@ import { personalOrOrganizationFilter } from "@/lib/personalHistoryScope";
 import { canReadPlayerHistory } from "@/lib/server/personalHistoryAccess";
 import { legalNoStore } from "@/lib/server/legalAccess";
 import { createRequestTiming } from "@/lib/server/requestTiming";
-import { readAllRows, readRelatedRows } from "@/lib/server/paginatedRead";
+import { readAllRows, readRelatedRows as readRelatedRowsSequential } from "@/lib/server/paginatedRead";
 import { summarizePlayerHome, type HomeHistorySession, type HomeHistoryItem, type HomeHistoryEvent, type HomeHistoryAttendance } from "@/lib/playerHomeSummary";
+
+// At most four independent ID batches; each batch retains its stable pagination.
+const readRelatedRows = <T,>(ids:string[], query:Parameters<typeof readRelatedRowsSequential<T>>[1]) => readRelatedRowsSequential<T>(ids,query,4);
 
 type Session = HomeHistorySession & { location_text: string | null; coach_name: string | null; notes: string | null };
 type Event = HomeHistoryEvent & { club_id: string; group_id: string | null; location_text: string | null };
@@ -38,7 +41,7 @@ export async function GET(req: NextRequest) {
     const readTraining = async () => {
       const [sessions, attendees, performance] = await Promise.all([
         readAllRows<Session>((from, to) => db.from("training_sessions")
-          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,location_text,coach_name,notes")
+          .select(view === "pending" ? "id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,location_text" : "id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,location_text,coach_name,notes")
           .eq("user_id", playerId).or(scope("club_id")).order("id").range(from, to)),
         readAllRows<HomeHistoryAttendance>((from, to) => db.from("club_event_attendees").select("event_id,status")
           .eq("player_id", playerId).order("event_id").range(from, to)),
@@ -46,14 +49,21 @@ export async function GET(req: NextRequest) {
           .eq("is_active", true).eq("is_performance", true).in("club_id", orgIds).limit(1),
       ]);
       if (performance.error) throw performance.error;
+      if(view === "pending" && !performance.data?.length)return {sessions:[],items:[],events:[],pending:[],performanceEnabled:false,attendance:{}};
       const ids = [...new Set([...attendees.map(row => row.event_id), ...sessions.map(row => row.club_event_id)].filter((id): id is string => Boolean(id)))];
-      const [items, rawEvents] = await Promise.all([
-        readRelatedRows<Item>(sessions.map(row => row.id), (ids, from, to) => db.from("training_session_items")
-          .select("id,session_id,category,minutes").in("session_id", ids).order("id").range(from, to)),
-        readRelatedRows<Event>(ids, (ids, from, to) => db.from("club_events")
+      const itemSessionIds = (view === "pending" ? sessions.filter(row => typeof row.motivation === "number" && typeof row.difficulty === "number" && typeof row.satisfaction === "number") : sessions).map(row=>row.id);
+      const itemsRead = readRelatedRows<Item>(itemSessionIds, (ids, from, to) => {
+        const query = db.from("training_session_items").select(view === "pending" ? "id,session_id,minutes" : "id,session_id,category,minutes").in("session_id",ids).order("id").range(from,to);
+        return view === "pending" ? query.gt("minutes",0) : query;
+      });
+      // Attach a rejection handler while event/camp reads progress independently.
+      void itemsRead.catch(()=>{});
+      const rawEvents = await readRelatedRows<Event>(ids, (ids, from, to) => {
+        const query = db.from("club_events")
           .select("id,event_type,title,starts_at,ends_at,duration_minutes,status,requires_evaluation,club_id,group_id,location_text")
-          .in("id", ids).in("club_id", orgIds).order("id").range(from, to)),
-      ]);
+          .in("id",ids).in("club_id",orgIds).order("id").range(from,to);
+        return view === "pending" ? query.in("event_type",["training","camp"]).eq("status","scheduled").eq("requires_evaluation",true).lt("starts_at",new Date().toISOString()) : query;
+      });
       // A cancelled/draft camp can still have scheduled day events.
       const campLinks = await readRelatedRows<{ event_id: string; camp_id: string }>(
         rawEvents.filter(event => event.event_type === "camp").map(event => event.id),
@@ -62,6 +72,7 @@ export async function GET(req: NextRequest) {
         (ids, from, to) => db.from("club_camps").select("id,status").in("id", ids).in("club_id", orgIds).order("id").range(from, to));
       const visibleCamps = new Set(camps.filter(camp => camp.status === "scheduled").map(camp => camp.id));
       const hiddenCampEvents = new Set(campLinks.filter(link => !visibleCamps.has(link.camp_id)).map(link => link.event_id));
+      const items = await itemsRead;
       const events = rawEvents.filter(event => !hiddenCampEvents.has(event.id));
       const eventIds = new Set(events.map(row => row.id));
       const visibleAttendance = attendees.filter(row => eventIds.has(row.event_id));
@@ -82,7 +93,8 @@ export async function GET(req: NextRequest) {
         return session ? { kind: "session", id: session.id, starts_at: session.start_at, club_event_id: session.club_event_id, location_text: session.location_text, href: row.href }
           : { kind: "event", ...event!, href: row.href };
       });
-      const relevant = data.events.filter(event => data.pending.some(row => row.id === event.id));
+      const pendingIds = new Set(data.pending.map(row=>row.id));
+      const relevant = data.events.filter(event => pendingIds.has(event.id));
       const clubIds = [...new Set(relevant.map(row => row.club_id))], groupIds = [...new Set(relevant.map(row => row.group_id).filter((id): id is string => Boolean(id)))];
       const [clubs, groups] = await timing.measure("names", () => Promise.all([
         clubIds.length ? db.from("organizations").select("id,name").in("id", clubIds) : { data: [], error: null },

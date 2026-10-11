@@ -8,7 +8,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { List, Plus } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { loadPlayerMarketplace } from "@/lib/playerMarketplaceRead";
+import styles from "./Marketplace.module.css";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { marketplaceConditionLabel } from "@/lib/marketplaceLabels";
@@ -97,20 +98,17 @@ export default function PlayerMarketplaceHome() {
     setLoading(true);
     setError(null);
     try {
-      const ctx = await resolveEffectivePlayerContext();
-
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token ?? "";
-      if (!token) throw new Error("Session invalide.");
-
-      const params = new URLSearchParams();
-      if (ctx.role === "parent") params.set("child_id", ctx.effectiveUserId);
-      const res = await fetch(`/api/player/marketplace?${params.toString()}`, {
-        headers: { Authorization: `Bearer ${token}` },
-        cache: "no-store",
+      const explicitChildId = new URL(window.location.href).searchParams.get("child_id") ?? "";
+      const json = await loadPlayerMarketplace<{ viewerUserId:string; effectiveUserId:string; items:Item[]; mainImageByItemId:Record<string,string> }>({
+        token, explicitChildId,
+        storedChildId:window.localStorage.getItem("parent:selected_child_id") ?? "",
+        forgetStoredChild:()=>window.localStorage.removeItem("parent:selected_child_id"),
+        fetcher:fetch,
       });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(String(json?.error ?? t("marketplace.noActiveClub")));
+      if(json.viewerUserId!==json.effectiveUserId)window.localStorage.setItem("parent:selected_child_id",json.effectiveUserId);
+      else if(!explicitChildId)window.localStorage.removeItem("parent:selected_child_id");
 
       setItems((json?.items ?? []) as Item[]);
       setMainImageByItemId((json?.mainImageByItemId ?? {}) as Record<string, string>);
@@ -200,10 +198,10 @@ export default function PlayerMarketplaceHome() {
         <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace") }]} />
         {/* Header */}
         <div className="glass-section">
-          <div className="marketplace-header">
-            <h1 className="section-title">{t("nav.marketplace")}</h1>
+          <div className={`marketplace-header ${styles.header}`}>
+            <h1 className={`section-title ${styles.title}`}>{t("nav.marketplace")}</h1>
 
-            <div className="marketplace-actions marketplace-header-actions">
+            <div className={`marketplace-actions marketplace-header-actions ${styles.actions}`}>
               <Link className="btn" href="/player/marketplace/mine">
                 <List size={15} aria-hidden="true" />
                 {t("player.myListings")}
@@ -269,7 +267,7 @@ export default function PlayerMarketplaceHome() {
                       <div className="marketplace-item">
                         <div className="marketplace-row">
                           <div className="marketplace-thumb">
-                            <img src={img} alt={it.title} loading="lazy" />
+                            <img src={img} alt={it.title} loading="lazy" decoding="async" width={240} height={180} />
                           </div>
 
                           <div className="marketplace-body">

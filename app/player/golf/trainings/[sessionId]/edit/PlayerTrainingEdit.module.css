@@ -1,4 +1,5 @@
 .pageBackground {
+  --player-primary: #35483b;
   min-height: 100%;
   padding-bottom: 48px;
 }

@@ -16,15 +16,14 @@ import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
 import { PLAYER_DOCUMENT_ACCEPT } from "@/lib/playerDocumentPolicy";
-import ActiviteeEChart from "@/components/ui/ActiviteeEChart";
+import dynamic from "next/dynamic";
 import { buildManagementDualLineChartOption, buildManagementLineChartOption, buildManagementVolumeChartOption, MANAGEMENT_CHART_COLORS } from "@/lib/managementCharts";
 import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import overviewStyles from "./PlayerGolfOverview.module.css";
 import documentStyles from "./PlayerGolfDocuments.module.css";
 import trainingStyles from "./PlayerGolfTraining.module.css";
 import activityStyles from "./trainings/PlayerActivities.module.css";
-import TrainingDashboard from "@/components/golf/TrainingDashboard";
-import GolfRoundsWorkspace from "@/components/golf/GolfRoundsWorkspace";
+
 import { DifficultyIcon, EvaluationIconBadge, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
 import {
   ArrowLeft,
@@ -59,6 +58,11 @@ import {
   X,
   ChevronDown,
 } from "lucide-react";
+
+function GolfSectionLoading(){const {t}=useI18n();return <div className={overviewStyles.chartSkeleton} role="status" aria-label={t("common.loading")}/>}
+const ActiviteeEChart = dynamic(()=>import("@/components/ui/ActiviteeEChart"),{ssr:false,loading:GolfSectionLoading});
+const TrainingDashboard = dynamic(()=>import("@/components/golf/TrainingDashboard"),{ssr:false,loading:GolfSectionLoading});
+const GolfRoundsWorkspace = dynamic(()=>import("@/components/golf/GolfRoundsWorkspace"),{ssr:false,loading:GolfSectionLoading});
 
 type SessionType = "club" | "private" | "individual";
 

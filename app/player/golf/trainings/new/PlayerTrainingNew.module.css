@@ -177,3 +177,9 @@
   .summarySkeleton span, .sectionSkeleton span, .standardSkeleton span { animation: none; }
   .cancelEvaluation, .saveEvaluation { transition: none; }
 }
+
+.individualForm :global(.card-title){margin:0!important;padding-bottom:17px;border-bottom:1px solid #e6ece4;color:#35483b!important;font:750 19px/1.25 var(--font-inter-tight),var(--font-inter),sans-serif!important;letter-spacing:-.02em!important;text-transform:none!important}
+.individualForm .cardTitleRow :global(.card-title){padding-bottom:0;border-bottom:0}
+.individualForm .cardTitleRow{padding-bottom:17px;border-bottom:1px solid #e6ece4}
+:global(.player-page-root) .individualHero.individualHero{align-items:flex-start!important;text-align:left}
+@media(max-width:640px){:global(.player-page-root) .individualHero.individualHero{flex-direction:column!important;align-items:stretch!important}:global(.player-page-root) .individualHero>div:first-child{align-self:stretch!important;width:100%;text-align:left!important}}

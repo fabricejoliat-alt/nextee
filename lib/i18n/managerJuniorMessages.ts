@@ -1,4 +1,6 @@
 export const managerJuniorEntries: Record<string, readonly [string, string, string, string]> = {
+  "edit.performanceMode": ["Mode performance", "Performance mode", "Leistungsmodus", "Modalità performance"],
+  "edit.performanceHelp": ["Permet au junior de structurer ses entraînements et de les évaluer. Si une de ses organisations active ce mode, il s’applique à son espace joueur.", "Allows the junior to structure and evaluate training sessions. If any of their organisations enables this mode, it applies to their player area.", "Ermöglicht dem Junior, Trainings zu strukturieren und zu bewerten. Aktiviert eine seiner Organisationen diesen Modus, gilt er für seinen Spielerbereich.", "Consente al junior di strutturare e valutare gli allenamenti. Se una delle sue organizzazioni attiva questa modalità, si applica al suo spazio giocatore."],
   "fieldsError": ["Impossible de charger les champs.", "Unable to load fields.", "Die Felder konnten nicht geladen werden.", "Impossibile caricare i campi."],
   "formError": ["Impossible de préparer le formulaire.", "Unable to prepare the form.", "Das Formular konnte nicht vorbereitet werden.", "Impossibile preparare il modulo."],
   "birthRequired": ["La date de naissance est obligatoire.", "Date of birth is required.", "Das Geburtsdatum ist erforderlich.", "La data di nascita è obbligatoria."],

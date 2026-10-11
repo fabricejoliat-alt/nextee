@@ -564,10 +564,10 @@ export default function PlayerTrainingEditPage() {
           ]}
         />
 
-        <header className={styles.hero}>
+        <header className={`${styles.hero} ${playerUiStyles.topline}`}>
           <div>
             <h1>{pickLocaleText(locale, "Modifier l’activité", "Edit activity")}</h1>
-            <p>{pickLocaleText(locale, "Mets à jour la structure réalisée et ton auto-évaluation.", "Update the completed structure and your self-assessment.")}</p>
+            <p className={playerUiStyles.lead}>{performanceEnabled ? pickLocaleText(locale, "Mets à jour la structure réalisée et ton auto-évaluation.", "Update the completed structure and your self-assessment.") : pickLocaleText(locale, "Mets à jour les informations de ton entraînement.", "Update your training information.", "Aktualisiere die Informationen zu deinem Training.", "Aggiorna le informazioni del tuo allenamento.")}</p>
           </div>
           <Link className={playerUiStyles.secondary} href={"/player/golf/trainings/" + sessionId}>
             <ArrowLeft size={15} aria-hidden="true" />
