@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { CalendarDays, Dumbbell, Flag, LayoutDashboard, Plus, ShoppingBag, User } from "lucide-react";
+import { CalendarDays, Dumbbell, Flag, Plus, ShoppingBag, User } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 function scrollTop() {
@@ -60,15 +60,19 @@ export default function MobileFooter() {
 
   const items = [
     { href: "/player/golf/trainings?type=all", label: t("player.activities"), Icon: CalendarDays },
-    { href: "/player", label: t("player.dashboard"), Icon: LayoutDashboard },
+    { href: "/player/golf", label: t("player.myGolf"), Icon: Flag },
     { href: "/player/marketplace", label: t("nav.marketplace"), Icon: ShoppingBag },
     { href: "/player/profile", label: t("nav.profile"), Icon: User },
   ];
 
   function isActive(path: string, href: string) {
     const hrefPath = href.split("?")[0] || href;
-    if (hrefPath === "/player") return path === "/player";
     if (hrefPath === "/player/golf/trainings") return path === hrefPath || path.startsWith(hrefPath + "/");
+    if (hrefPath === "/player/golf") {
+      const inGolf = path === hrefPath || path.startsWith(hrefPath + "/");
+      const inTrainings = path === "/player/golf/trainings" || path.startsWith("/player/golf/trainings/");
+      return inGolf && !inTrainings;
+    }
     return path === hrefPath || path.startsWith(hrefPath + "/");
   }
 
