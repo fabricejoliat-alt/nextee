@@ -3310,15 +3310,17 @@ body:has([data-design-system]){
 
 }
 
-/* In the installed app there is no Safari toolbar to collapse. Keep the page
-   fixed and scroll only its content, so iOS rubber-band scrolling cannot move
-   the Player header. Use the same photo from the first loading frame onward. */
+/* Installed Player uses one full-screen column. iOS can subtract the status
+   bar from dvh/fixed-bottom after launch with black-translucent status bars.
+   lvh keeps the photo edge-to-edge; normal-flow header/footer avoid that offset.
+   Only the middle content scrolls. Safari tabs keep native document scrolling. */
 @media (max-width: 899px) and (display-mode: standalone),
        (max-width: 899px) and (display-mode: fullscreen) {
   html:has(.player-page-root),
   body:has(.player-page-root){
-    height:100%;
-    min-height:100%;
+    height:100vh;
+    height:100lvh;
+    min-height:0;
     overflow:hidden;
     overscroll-behavior:none;
     background:#35483b !important;
@@ -3329,29 +3331,31 @@ body:has([data-design-system]){
   }
 
   .player-page.player-page-root{
-    position:static;
+    position:relative;
     z-index:auto;
-    height:100dvh;
-    min-height:100dvh !important;
+    display:flex;
+    flex-direction:column;
+    height:100vh;
+    height:100lvh;
+    min-height:0 !important;
     overflow:hidden;
     background:
       linear-gradient(90deg, rgba(12,30,20,.82) 0%, rgba(16,38,25,.68) 34%, rgba(16,38,25,.30) 61%, rgba(16,38,25,.14) 100%),
       url("/hero-golf.jpg") center / cover no-repeat !important;
   }
 
-  .player-page-root .app-header{
-    position:fixed;
-    top:0;
+  .player-page-root .app-header,
+  .player-page-root .mobile-nav{
+    position:relative;
+    inset:auto;
+    flex:none;
     transform:none;
   }
 
-  .player-scroll-area,
-  .player-scroll-area--home{
-    position:fixed;
-    top:calc(var(--header-h) + var(--safe-top));
-    right:0;
-    bottom:0;
-    left:0;
+  .player-page-root .player-scroll-area{
+    position:relative;
+    inset:auto;
+    flex:1 1 0;
     min-height:0;
     margin-top:0;
     overflow-x:hidden;
@@ -3359,6 +3363,19 @@ body:has([data-design-system]){
     overscroll-behavior-y:contain;
     -webkit-overflow-scrolling:touch;
     background:transparent !important;
+  }
+
+  .player-page-root .player-shell{
+    padding-bottom:24px;
+  }
+
+  .player-page-root .role-guard-photo-loading{
+    position:relative;
+    inset:auto;
+    flex:1;
+    height:100%;
+    min-height:0;
+    background:transparent;
   }
 }
 
