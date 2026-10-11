@@ -248,7 +248,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
 
     if (membersError) return NextResponse.json({ error: membersError.message }, { status: 400 });
 
-    const members = membersRows ?? [];
+    const requestedMemberId = new URL(req.url).searchParams.get("member_id");
+    if (requestedMemberId && !(membersRows ?? []).some(row => row.id === requestedMemberId && row.role === "player")) {
+      return NextResponse.json({ error: "Player not found" }, { status: 404 });
+    }
+    // Detail view retains parent editing data but avoids hydrating every other junior and staff account.
+    const members = (membersRows ?? []).filter(row => !requestedMemberId || row.id === requestedMemberId || row.role === "parent");
     const playerFields = await fetchClubPlayerFields(supabaseAdmin, clubId);
     const userIds = Array.from(new Set(members.map((m: any) => String(m.user_id)).filter(Boolean)));
     const memberIds = Array.from(new Set(members.map((m: any) => String(m.id)).filter(Boolean)));

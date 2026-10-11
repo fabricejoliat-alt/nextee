@@ -2,7 +2,7 @@ import { organizationGuardians } from "@/lib/server/organizationGuardians";
 import { authorizedReportRecipients } from "@/lib/server/periodicReportAccess";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
-import { cleanFamilyEmail, defaultFamilyMailConfig, renderFamilyTemplate } from "@/lib/familyAccess";
+import { familyMailAppUrl, cleanFamilyEmail, defaultFamilyMailConfig, renderFamilyTemplate } from "@/lib/familyAccess";
 import { nextReportDate, type ReportFrequency } from "@/lib/periodicReports";
 import { buildPeriodicReportContent, defaultPeriodicReportSections } from "@/lib/periodicReportContent";
 
@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 
 const defaultSections = defaultPeriodicReportSections;
 function validFrequency(value: string): value is ReportFrequency { return ["monthly", "quarterly", "semiannual"].includes(value); }
-function appUrl() { return String(process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000").replace(/\/+$/, ""); }
+function appUrl() { return familyMailAppUrl(process.env.APP_URL, process.env.NEXT_PUBLIC_APP_URL, process.env.NEXT_PUBLIC_SITE_URL); }
 async function authorize(db: any, callerId: string, clubId: string, playerId: string) {
   const [admin, manager, player] = await Promise.all([
     db.from("app_admins").select("user_id").eq("user_id", callerId).maybeSingle(),

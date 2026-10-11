@@ -29,8 +29,8 @@ export function juniorAccessTarget(junior: FamilyJunior, selectedRecipient?: str
 
 /** These are illustrative links only. Previewing never creates a token or sends a message. */
 export function familyAccessPreview(data: FamilyAccessData, target: FamilyAccessTarget) {
-  const variables: Record<string, string> = { app_url: "https://www.activitee.golf/", player_guide_url: PLAYER_GUIDE_URL,
-    reset_url: "https://www.activitee.golf/reset-password?invite_token=exemple", club_name: data.club.name };
+  const variables: Record<string, string> = { app_url: "https://activitee.app/", player_guide_url: PLAYER_GUIDE_URL,
+    reset_url: "https://activitee.app/reset-password?invite_token=exemple", club_name: data.club.name };
   let subject: string, body: string;
   if (target.selection.kind === "parent_access") {
     const parent = data.parents.find(row => row.parent_user_id === target.selection.parent_user_id);

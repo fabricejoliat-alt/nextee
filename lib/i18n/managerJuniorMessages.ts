@@ -1,4 +1,6 @@
 export const managerJuniorEntries: Record<string, readonly [string, string, string, string]> = {
+  "warning.noParent": ["Junior mineur sans parent configuré", "Minor junior without a configured parent", "Minderjähriger Junior ohne eingerichteten Elternteil", "Junior minorenne senza genitore configurato"],
+  "warning.noConsent": ["Consentement non accordé", "Consent not granted", "Einwilligung nicht erteilt", "Consenso non concesso"],
   "edit.performanceMode": ["Mode performance", "Performance mode", "Leistungsmodus", "Modalità performance"],
   "edit.performanceHelp": ["Permet au junior de structurer ses entraînements et de les évaluer. Si une de ses organisations active ce mode, il s’applique à son espace joueur.", "Allows the junior to structure and evaluate training sessions. If any of their organisations enables this mode, it applies to their player area.", "Ermöglicht dem Junior, Trainings zu strukturieren und zu bewerten. Aktiviert eine seiner Organisationen diesen Modus, gilt er für seinen Spielerbereich.", "Consente al junior di strutturare e valutare gli allenamenti. Se una delle sue organizzazioni attiva questa modalità, si applica al suo spazio giocatore."],
   "fieldsError": ["Impossible de charger les champs.", "Unable to load fields.", "Die Felder konnten nicht geladen werden.", "Impossibile caricare i campi."],

@@ -4,6 +4,7 @@ import { fetchVisiblePlayerNews } from "@/app/api/news/_lib";
 import { playerAccessErrorStatus } from "@/app/api/player/access";
 
 export async function GET(req: NextRequest) {
+  const started = performance.now();
   try {
     const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
     if (!accessToken) return NextResponse.json({ error: "Missing token" }, { status: 401 });
@@ -20,11 +21,14 @@ export async function GET(req: NextRequest) {
       locale: searchParams.get("locale"),
     });
 
-    return NextResponse.json(payload);
+    return NextResponse.json(payload, { headers: {
+      "Cache-Control": "private, no-store",
+      "Server-Timing": `news;dur=${(performance.now() - started).toFixed(1)}`,
+    } });
   } catch (error: unknown) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Server error" },
-      { status: playerAccessErrorStatus(error) }
+      { status: playerAccessErrorStatus(error), headers: { "Cache-Control": "private, no-store" } }
     );
   }
 }

@@ -15,6 +15,7 @@ import { useManagerResource } from "@/components/manager/useManagerResource";
 import ManagerClubSelect from "@/components/manager/ManagerClubSelect";
 import { useManagerClubChangeGuard } from "@/components/manager/useManagerClubChangeGuard";
 import {
+  PLAYER_GUIDE_URL,
   defaultFamilyMailConfig,
   FAMILY_MAIL_TEMPLATE_DEFINITIONS,
   renderFamilyTemplate,
@@ -36,13 +37,14 @@ const examples: Record<string, string> = {
   parent_username_or_existing: "sophie.martin",
   junior_name: "Léa Martin",
   junior_username: "lea.martin",
-  consent_url: "https://www.activitee.golf/parent/consent",
-  app_url: "https://www.activitee.golf/",
-  player_guide_url: "https://www.activitee.golf/guide-junior.pdf",
+  reset_url: "https://activitee.app/reset-password?invite_token=exemple",
+  consent_url: "https://activitee.app/parent/consent",
+  app_url: "https://activitee.app/",
+  player_guide_url: PLAYER_GUIDE_URL,
   period_label: "septembre 2026",
   junior_names: "Léa Martin",
   summary: "Léa a participé régulièrement aux activités du club et poursuit son objectif d’entraînement.",
-  report_url: "https://www.activitee.golf/parent/reports/exemple",
+  report_url: "https://activitee.app/parent/reports/exemple",
 };
 
 export default function FamilyEmailConfigurationPage() {

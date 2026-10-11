@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, Eye, Newspaper, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
-import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import { loadPlayerNews } from "@/lib/playerNewsRead";
 import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -63,15 +63,17 @@ export default function PlayerNewsFeed() {
         const { data } = await supabase.auth.getSession();
         const token = data.session?.access_token;
         if (!token) throw new Error(pickLocaleText(locale, "Session invalide.", "Invalid session."));
-        const context = await resolveEffectivePlayerContext();
-        const childId = context.role === "parent" ? context.effectiveUserId : null;
-        const params = new URLSearchParams({ include_archived: "1" });
-        params.set("locale", locale);
-        if (childId) params.set("child_id", childId);
-        const response = await fetch(`/api/player/news?${params}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(String(payload.error ?? pickLocaleText(locale, "Impossible de charger les actualités.", "Could not load news.")));
+        const explicitChildId = new URL(window.location.href).searchParams.get("child_id") ?? "";
+        const payload = await loadPlayerNews<{ viewer_role: "player" | "parent"; effective_player_id: string; news: NewsItem[] }>({
+          token, locale, explicitChildId,
+          storedChildId: window.localStorage.getItem("parent:selected_child_id") ?? "",
+          forgetStoredChild: () => window.localStorage.removeItem("parent:selected_child_id"),
+          fetcher: fetch,
+        });
         if (cancelled) return;
+        const childId = payload.viewer_role === "parent" ? payload.effective_player_id : null;
+        if (childId) window.localStorage.setItem("parent:selected_child_id", childId);
+        else if (!explicitChildId) window.localStorage.removeItem("parent:selected_child_id");
         setParentChildId(childId);
         setNews(Array.isArray(payload.news) ? payload.news as NewsItem[] : []);
       } catch (cause) {
@@ -121,7 +123,7 @@ export default function PlayerNewsFeed() {
             const link = openHref(item);
             return (
               <article className={`${styles.activeArticle} ${item.image_url ? styles.activeArticleWithImage : ""}`} key={item.id}>
-                {item.image_url ? <div className={styles.coverImage}><img src={item.image_url} alt="" /></div> : null}
+                {item.image_url ? <div className={styles.coverImage}><img src={item.image_url} alt="" loading="lazy" decoding="async" /></div> : null}
                 <div className={styles.articleContent}>
                   <div className={styles.articleMeta}><span>{formatDate(displayDate(item), locale)}</span>{item.club_name ? <span className={styles.clubName}>{item.club_name}</span> : null}</div>
                   <h3>{item.title}</h3>
@@ -140,7 +142,7 @@ export default function PlayerNewsFeed() {
       <div className={playerUiStyles.panelHeader}><div><h2 id="archived-player-news-title">{tr("Actualités archivées", "Archived news")}</h2><p>{loading ? <span className={styles.countSkeleton} aria-hidden="true"/> : tr(`${archivedNews.length} actualité${archivedNews.length > 1 ? "s" : ""} archivée${archivedNews.length > 1 ? "s" : ""}.`, `${archivedNews.length} archived news item${archivedNews.length === 1 ? "" : "s"}.`, `${archivedNews.length} archivierte Meldung${archivedNews.length === 1 ? "" : "en"}.`, `${archivedNews.length} notizi${archivedNews.length === 1 ? "a archiviata" : "e archiviate"}.`)}</p></div></div>
       {loading ? <ArchivedNewsSkeleton label={tr("Chargement des archives…", "Loading archives…")} /> : archivedNews.length === 0 ? <div className={playerUiStyles.empty}>{tr("Aucune actualité archivée.", "No archived news.")}</div> : <div className={playerUiStyles.tableWrap}><table className={`${playerUiStyles.table} ${styles.archiveTable}`}><thead><tr><th>{tr("Date", "Date")}</th><th>{tr("Titre", "Title")}</th><th>Club</th><th>{tr("Actions", "Actions")}</th></tr></thead><tbody>{archivedNews.map((item) => <tr key={item.id}><td data-label={tr("Date", "Date")} className={styles.dateCell}>{formatDate(displayDate(item), locale)}</td><td data-label={tr("Titre", "Title")}><div className={playerUiStyles.titleCell}><b>{item.title}</b>{item.summary ? <span className={playerUiStyles.muted}>{item.summary}</span> : null}</div></td><td data-label="Club">{item.club_name || "—"}</td><td data-label={tr("Actions", "Actions")}><div className={playerUiStyles.actions}><button type="button" className={playerUiStyles.iconButton} title={tr("Voir le détail", "View details")} aria-label={tr(`Voir le détail de ${item.title}`, `View details of ${item.title}`, `Details zu ${item.title} ansehen`, `Vedi i dettagli di ${item.title}`)} onClick={() => setSelectedNews(item)}><Eye size={15} aria-hidden="true"/></button></div></td></tr>)}</tbody></table></div>}
     </section>
-    {selectedNews ? <div className={styles.modalOverlay} role="presentation"><button type="button" className={styles.modalBackdrop} aria-label={tr("Fermer le détail", "Close details")} onClick={() => setSelectedNews(null)}/><section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="archived-player-news-detail-title"><header className={styles.modalHeader}><div><span className={styles.date}>{formatDate(displayDate(selectedNews), locale)}</span><h2 id="archived-player-news-detail-title">{selectedNews.title}</h2>{selectedNews.summary ? <p>{selectedNews.summary}</p> : null}</div><button type="button" className={playerUiStyles.iconButton} title={tr("Fermer", "Close")} aria-label={tr("Fermer", "Close")} onClick={() => setSelectedNews(null)}><X size={17} aria-hidden="true"/></button></header><div className={styles.modalBody}>{selectedNews.image_url ? <div className={styles.modalCover}><img src={selectedNews.image_url} alt="" /></div> : null}{selectedNews.linked_content_label ? <span className={styles.linkedLabel}>{selectedNews.linked_content_label}</span> : null}<div className={styles.body} dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(selectedNews.body) }}/></div></section></div> : null}
+    {selectedNews ? <div className={styles.modalOverlay} role="presentation"><button type="button" className={styles.modalBackdrop} aria-label={tr("Fermer le détail", "Close details")} onClick={() => setSelectedNews(null)}/><section className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="archived-player-news-detail-title"><header className={styles.modalHeader}><div><span className={styles.date}>{formatDate(displayDate(selectedNews), locale)}</span><h2 id="archived-player-news-detail-title">{selectedNews.title}</h2>{selectedNews.summary ? <p>{selectedNews.summary}</p> : null}</div><button type="button" className={playerUiStyles.iconButton} title={tr("Fermer", "Close")} aria-label={tr("Fermer", "Close")} onClick={() => setSelectedNews(null)}><X size={17} aria-hidden="true"/></button></header><div className={styles.modalBody}>{selectedNews.image_url ? <div className={styles.modalCover}><img src={selectedNews.image_url} alt="" decoding="async" /></div> : null}{selectedNews.linked_content_label ? <span className={styles.linkedLabel}>{selectedNews.linked_content_label}</span> : null}<div className={styles.body} dangerouslySetInnerHTML={{ __html: normalizeCampRichTextHtml(selectedNews.body) }}/></div></section></div> : null}
   </main>;
 }
 

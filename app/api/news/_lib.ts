@@ -92,13 +92,15 @@ export async function fetchPublishedPlatformNewsForClubs(
     .filter((row) => (Array.isArray(row.target_roles) ? row.target_roles : ["player", "coach", "manager"]).includes(audienceRole))
     .map((row) => String(row.news_id ?? "")).filter(Boolean)));
   if (!newsIds.length) return [] as VisibleNewsRow[];
-  const news = await supabaseAdmin.from("platform_news")
-    .select("id,status,visible_on_home,image_url,published_at,scheduled_for,created_at,updated_at")
-    .in("id", newsIds)
-    .in("status", options?.includeArchived ? ["published", "scheduled", "archived"] : ["published", "scheduled"]);
+  const [news, translations] = await Promise.all([
+    supabaseAdmin.from("platform_news")
+      .select("id,status,visible_on_home,image_url,published_at,scheduled_for,created_at,updated_at")
+      .in("id", newsIds)
+      .in("status", options?.includeArchived ? ["published", "scheduled", "archived"] : ["published", "scheduled"]),
+    supabaseAdmin.from("platform_news_translations")
+      .select("news_id,locale,title,summary,body").in("news_id", newsIds),
+  ]);
   if (news.error) throw new Error(news.error.message);
-  const translations = await supabaseAdmin.from("platform_news_translations")
-    .select("news_id,locale,title,summary,body").in("news_id", newsIds);
   if (translations.error) throw new Error(translations.error.message);
   const byNews = new Map<string, Map<string, any>>();
   for (const row of translations.data ?? []) {
@@ -183,6 +185,7 @@ export async function fetchPublishedNewsForClubs(supabaseAdmin: any, clubIds: st
   if (newsRes.error) throw new Error(newsRes.error.message);
 
   const newsRows = (newsRes.data ?? []) as any[];
+  if (newsRows.length === 0) return [] as VisibleNewsRow[];
   const newsIds = newsRows.map((row) => String(row.id ?? "")).filter(Boolean);
   const linkedEventIds = Array.from(new Set(newsRows.map((row) => String(row.linked_club_event_id ?? "")).filter(Boolean)));
   const linkedCampIds = Array.from(new Set(newsRows.map((row) => String(row.linked_camp_id ?? "")).filter(Boolean)));

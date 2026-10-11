@@ -14,6 +14,24 @@ export type FamilyMailConfig = {
   periodic_report_body: string;
 };
 
+export const FAMILY_APP_URL = "https://activitee.app";
+
+/** Update former application links without changing contact email addresses or custom text. */
+export function currentFamilyAppLinks(text: string) {
+  return text.replace(/https?:\/\/(?:www\.)?activitee\.golf(?=[/?#\s<>"')]|$)/gi, FAMILY_APP_URL);
+}
+
+export function familyMailAppUrl(...configuredUrls: (string | undefined)[]) {
+  for (const configured of configuredUrls) {
+    try {
+      const url = new URL(String(configured ?? "").trim());
+      if (!/^https?:$/.test(url.protocol) || ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) continue;
+      return currentFamilyAppLinks(url.origin);
+    } catch { /* Try the next configured public URL. */ }
+  }
+  return FAMILY_APP_URL;
+}
+
 export const PLAYER_GUIDE_URL =
   "https://qgyshibomgcuaxhyhrgo.supabase.co/storage/v1/object/public/Docs/ActiviTee_V1_player.pdf";
 
@@ -132,11 +150,11 @@ export function normalizeAccessInvitationTemplate(template: string) {
 
 export function renderFamilyTemplate(template: string, variables: Record<string, string>) {
   if (variables.reset_url) template = normalizeAccessInvitationTemplate(template);
-  return template.replace(/\{\{([a-z0-9_]+)(?::([^}]+))?\}\}/gi, (_match, key: string, label?: string) => {
+  return currentFamilyAppLinks(template.replace(/\{\{([a-z0-9_]+)(?::([^}]+))?\}\}/gi, (_match, key: string, label?: string) => {
     const value = variables[key] ?? "";
     if (!value) return "";
     return label ? `${label}: ${value}` : value;
-  });
+  }));
 }
 
 export function cleanFamilyEmail(value: string | null | undefined) {

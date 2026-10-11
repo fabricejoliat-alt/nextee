@@ -5,6 +5,8 @@ import { createHash, randomBytes } from "crypto";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
+  familyMailAppUrl,
+  currentFamilyAppLinks,
   cleanFamilyEmail,
   defaultFamilyMailConfig,
   PLAYER_GUIDE_URL,
@@ -33,10 +35,7 @@ function fullName(profile: Profile | undefined) {
 }
 
 function appBaseUrl() {
-  const configured = [process.env.APP_URL, process.env.NEXT_PUBLIC_APP_URL, process.env.NEXT_PUBLIC_SITE_URL]
-    .map((value) => String(value ?? "").trim())
-    .find((value) => value && !/localhost|127\.0\.0\.1/i.test(value));
-  return (configured || "https://www.activitee.golf").replace(/\/+$/, "");
+  return familyMailAppUrl(process.env.APP_URL, process.env.NEXT_PUBLIC_APP_URL, process.env.NEXT_PUBLIC_SITE_URL);
 }
 
 async function authorize(req: NextRequest, db: any, clubId: string) {
@@ -94,7 +93,7 @@ async function loadFamilyMailConfig(db: any, clubId: string): Promise<FamilyMail
   }
   if (response.error) throw new Error(response.error.message);
   const row = response.data;
-  return {
+  const config = {
     parent_subject: String(row?.parent_subject ?? defaults.parent_subject),
     parent_body: String(row?.parent_body ?? defaults.parent_body),
     junior_direct_subject: String(row?.junior_direct_subject ?? row?.junior_subject ?? defaults.junior_direct_subject),
@@ -106,6 +105,7 @@ async function loadFamilyMailConfig(db: any, clubId: string): Promise<FamilyMail
     periodic_report_subject: String(row?.periodic_report_subject ?? defaults.periodic_report_subject),
     periodic_report_body: String(row?.periodic_report_body ?? defaults.periodic_report_body),
   };
+  return Object.fromEntries(Object.entries(config).map(([key, value]) => [key, currentFamilyAppLinks(value)])) as FamilyMailConfig;
 }
 
 function latestLog(logs: InvitationLog[], kind: InvitationKind, targetUserId: string, recipientUserId?: string) {

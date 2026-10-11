@@ -90,7 +90,7 @@ test("junior profile and family tabs retain drafts, consent and custom fields in
   const parent={id:"parent-member",user_id:"parent",role:"parent",auth_email:"parent@example.test",profiles:{first_name:"Alex",last_name:"Exemple",username:"alex"}};
   const consent={status:"pending",decided_at:null,signer_guardian_user_id:"parent",signer_name:"Alex Exemple",source:"manager",consent_version:"v1",internal_notes:"Note privée maison"};
   const families={club:{name:"Club maison"},mail_config:{...defaultFamilyMailConfig(),parent_subject:"Objet maison {{parent_name}}"},parents:[{parent_user_id:"parent",parent_name:"Alex Exemple",parent_username:"alex",parent_email:null,parent_status:"not_ready",parent_send_count:0}],juniors:[{junior_user_id:"player",junior_name:"Léa Exemple",junior_username:"junior",junior_email:"junior@example.test",parents:[],recipient_email:"junior@example.test",recipient_name:"Léa Exemple",junior_status:"ready",junior_send_count:0}]};
-  const h=coachComponentHarness("components/manager/PlayerEditPage.tsx",{props:{memberId:"member"},modules:{"@/components/i18n/AppI18nProvider":lang.module,"next/navigation":{useSearchParams:()=>new URLSearchParams({club:"club",season:"season"})},"@/components/manager/ManagerPlayerStatistics":{default:"statistics"},"@/components/manager/ManagerPeriodicReport":{default:"periodic-report"},recharts:Object.fromEntries(["CartesianGrid","Line","LineChart","ResponsiveContainer","Tooltip","XAxis","YAxis"].map(n=>[n,n]))},fetch:async(url,init)=>{if(init?.method){writes.push({url:String(url),body:JSON.parse(String(init.body??"{}"))});return Response.json({ok:true});}reads++;const path=String(url);return Response.json(path.endsWith("members")?{members:[member,parent],playerFields:[{id:"flag",label:"Option du club",field_type:"boolean",scope:"permanent",is_active:true},{id:"seasonFlag",label:"Choix maison",field_type:"boolean",scope:"season",is_active:true}]}:path.endsWith("seasons")?{seasons:[{id:"season",name:"Saison maison",is_current:true}]}:path.endsWith("guardians")?{parents:[parent],all_links:[{player_id:"player",guardian_user_id:"parent",relation:"mother",is_primary:true}]}:path.endsWith("consent")?{consent,history:[],guardians:[{guardian_user_id:"parent",guardian_name:"Alex Exemple",email:"parent@example.test"}]}:path.endsWith("access-invitations")?families:path.endsWith("handicap-history")?{entries:[],current_handicap:0}:{records:[{club_member_id:"member",registration_status:"cancelled",custom_field_values:{seasonFlag:false}}]});}});
+  const h=coachComponentHarness("components/manager/PlayerEditPage.tsx",{props:{memberId:"member"},modules:{"@/components/i18n/AppI18nProvider":lang.module,"next/navigation":{useSearchParams:()=>new URLSearchParams({club:"club",season:"season"})},"@/components/manager/ManagerPlayerStatistics":{default:"statistics"},"@/components/manager/ManagerPeriodicReport":{default:"periodic-report"},recharts:Object.fromEntries(["CartesianGrid","Line","LineChart","ResponsiveContainer","Tooltip","XAxis","YAxis"].map(n=>[n,n]))},fetch:async(url,init)=>{if(init?.method){writes.push({url:String(url),body:JSON.parse(String(init.body??"{}"))});return Response.json({ok:true});}reads++;const path=String(url).split("?")[0];return Response.json(path.endsWith("members")?{members:[member,parent],playerFields:[{id:"flag",label:"Option du club",field_type:"boolean",scope:"permanent",is_active:true},{id:"seasonFlag",label:"Choix maison",field_type:"boolean",scope:"season",is_active:true}]}:path.endsWith("seasons")?{seasons:[{id:"season",name:"Saison maison",is_current:true}]}:path.endsWith("guardians")?{parents:[parent],all_links:[{player_id:"player",guardian_user_id:"parent",relation:"mother",is_primary:true}]}:path.endsWith("consent")?{consent,history:[],guardians:[{guardian_user_id:"parent",guardian_name:"Alex Exemple",email:"parent@example.test"}]}:path.endsWith("access-invitations")?families:path.endsWith("handicap-history")?{entries:[],current_handicap:0}:{records:[{club_member_id:"member",registration_status:"cancelled",custom_field_values:{seasonFlag:false}}]});}});
   let tree=await settle(h);elements(tree).find(n=>n.props.label===tr("fr")("manager.profile.firstName"))!.props.onChange("Prénom conservé");tree=h.render();const before=reads;
   for(const locale of locales){lang.set(locale);tree=await settle(h);assert.equal(reads,before);assert.equal(elements(tree).find(n=>n.props.label===tr(locale)("manager.profile.firstName"))!.props.value,"Prénom conservé");assert.equal(elements(tree).find(n=>n.props.label===tr(locale)("manager.administration.loginEmail"))!.props.readOnly,true);assert.equal(elements(tree).find(n=>n.props.prefix==="permanent")!.props.values.flag,false);assert.equal(elements(tree).find(n=>n.props.prefix==="season")!.props.values.seasonFlag,false);assert.ok(!elements(tree).some(n=>n.props.label===tr(locale)("manager.junior.avs")));assert.doesNotMatch(ui(tree),/manager\.junior\./);}
   await elements(tree).find(n=>n.type==="form")!.props.onSubmit({preventDefault(){}});tree=await settle(h);assert.equal(writes[0].body.role,"player");assert.equal(writes[0].body.first_name,"Prénom conservé");assert.equal(writes[0].body.email,undefined);assert.equal(writes[0].body.password,undefined);assert.deepEqual(writes[0].body.custom_field_values,{flag:false});
@@ -113,7 +113,7 @@ test("adding an existing parent account links the selected junior and reports re
       "@/components/manager/ManagerPeriodicReport": { default: "periodic-report" },
     },
     fetch: async (url, init) => {
-      const path = String(url);
+      const path = String(url).split("?")[0];
       if (init?.method) {
         const body = JSON.parse(String(init.body));
         writes.push({ path, body });
@@ -195,4 +195,32 @@ test("report preview uses the report language, preserves authored and archived c
   const base={id:"report",club_name:"Club maison",period_label:"Période archivée",personalized_comment:"Commentaire maison",published_content:{playerName:"Léa Exemple",summary:"Synthèse archivée",sections:{attendance:{present:0,invited:1,absent:1,excused:0,rate:0},training:{minutes:90,sessions:1,regularityRate:0,objectiveRate:0},competitions:{competitions:0,rounds:1,results:1},handicap:{end:0,change:1,ftemCode:"T1"},evaluations:{sample:3,engagement:3,attitude:4,application:5},upcoming:[{id:"event",title:"Activité maison",startsAt:"2026-10-04T10:00:00Z"}],nextPeriod:{priority:"Priorité maison"}}}};
   const h=coachComponentHarness("components/parent/PeriodicReportView.tsx",{exportName:"PeriodicReportView",props:{report:base},inlineComponentNames:["Card"],fetch:async()=>{throw Error("View must not fetch");}});
   try{for(const locale of locales){const tree=h.render({report:{...base,published_content:{...base.published_content,locale}}});const labels=periodicReportLabels(locale);assert.ok(ui(tree).includes(labels.t("title")));assert.ok(ui(tree).includes(labels.t("summary")));assert.ok(ui(tree).includes(labels.t("coachMessage")));assert.ok(ui(tree).includes("Synthèse archivée"));assert.ok(ui(tree).includes("Commentaire maison"));assert.ok(ui(tree).includes("Activité maison"));assert.ok(ui(tree).includes("0 / 1"));assert.ok(ui(tree).includes("1 h 30"));}const override=h.render({report:base,locale:"en"});assert.ok(ui(override).includes("Period summary"));}finally{h.cleanup();}
+});
+
+test('junior tabs warn only about missing family/consent and defer handicap reads', async () => {
+  for (const [birth_date, hasParent, status, missingParent, missingConsent] of [
+    ['2014-01-01', false, 'pending', true, true],
+    ['2014-01-01', true, 'granted', false, false],
+    ['2000-01-01', false, 'adult', false, false],
+  ] as const) {
+    const reads: string[] = [];
+    const member = { id:'member',user_id:'player',role:'player',profiles:{first_name:'Junior',birth_date},player_consent_status:status };
+    const h = coachComponentHarness('components/manager/PlayerEditPage.tsx', {
+      props:{memberId:'member'}, searchParams:'club=club',
+      fetch: async url => {
+        const path=String(url).split('?')[0]; reads.push(path);
+        return Response.json(path.endsWith('members') ? {members:[member],playerFields:[]}
+          : path.endsWith('seasons') ? {seasons:[]}
+          : path.endsWith('guardians') ? {parents:[],all_links:hasParent?[{player_id:'player',guardian_user_id:'parent'}]:[]}
+          : path.endsWith('consent') ? {consent:{status},history:[],guardians:[]}
+          : {parents:[],juniors:[],mail_config:defaultFamilyMailConfig(),club:{name:'Club'}});
+      },
+    });
+    try {
+      const tree = await settle(h);
+      assert.equal(elements(tree).some(n=>n.props.label===tr('fr')('manager.junior.warning.noParent')),missingParent);
+      assert.equal(elements(tree).some(n=>n.props.label===tr('fr')('manager.junior.warning.noConsent')),missingConsent);
+      assert.ok(!reads.some(path=>path.endsWith('handicap-history')));
+    } finally { h.cleanup(); }
+  }
 });

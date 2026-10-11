@@ -4,7 +4,7 @@ import { managerMutationError } from "@/lib/server/managerMutationError";
 import { NextResponse, type NextRequest } from "next/server";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { createClient } from "@supabase/supabase-js";
-import { cleanFamilyEmail, defaultFamilyMailConfig, renderFamilyTemplate } from "@/lib/familyAccess";
+import { familyMailAppUrl, cleanFamilyEmail, defaultFamilyMailConfig, renderFamilyTemplate } from "@/lib/familyAccess";
 
 export const runtime = "nodejs";
 type ConsentStatus = "pending" | "granted" | "refused" | "adult";
@@ -12,7 +12,7 @@ type ConsentStatus = "pending" | "granted" | "refused" | "adult";
 function mustEnv(name: string) { const value = process.env[name]; if (!value) throw new Error(`Missing env var: ${name}`); return value; }
 function db() { return createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"), { auth: { persistSession: false } }); }
 async function authorize(req: NextRequest, database: any, clubId: string) { const token = req.headers.get("authorization")?.replace("Bearer ", ""); if (!token) return null; const caller = await database.auth.getUser(token); if (caller.error || !caller.data.user) return null; const callerId = caller.data.user.id; const [admin, member] = await Promise.all([database.from("app_admins").select("user_id").eq("user_id", callerId).maybeSingle(), database.from("club_members").select("id").eq("club_id", clubId).eq("user_id", callerId).eq("role", "manager").eq("is_active", true).maybeSingle()]); return admin.data || member.data ? callerId : null; }
-function appUrl() { return String(process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "https://www.activitee.golf").replace(/\/+$/, ""); }
+function appUrl() { return familyMailAppUrl(process.env.APP_URL, process.env.NEXT_PUBLIC_APP_URL, process.env.NEXT_PUBLIC_SITE_URL); }
 function name(row: any) { return `${row?.first_name ?? ""} ${row?.last_name ?? ""}`.trim() || "Utilisateur"; }
 
 async function load(database: any, clubId: string, playerId: string) {

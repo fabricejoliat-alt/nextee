@@ -29,7 +29,7 @@ test("player and coach feeds request localized platform news", () => {
   const api = read("app/api/news/_lib.ts");
   assert.match(api, /fetchPublishedPlatformNewsForClubs/);
   assert.match(api, /localized\?\.get\(locale\) \?\? localized\?\.get\("fr"\)/);
-  assert.match(read("components/player/PlayerNewsFeed.tsx"), /params\.set\("locale", locale\)/);
+  assert.match(read("lib/playerNewsRead.ts"), /params\.set\("locale", args\.locale\)/);
   assert.match(read("components/coach/CoachNewsFeed.tsx"), /api\/coach\/news\?locale=/);
   assert.match(read("app/api/manager/news/route.ts"), /"manager"/);
   assert.match(read("components/manager/ManagerNewsWorkspace.tsx"), /t\("manager.content.platformNews"\)/);

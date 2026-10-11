@@ -3440,6 +3440,17 @@ body:has([data-design-system]){
     display:none;
   }
 
+  /* Compact Player footer; keep the iOS gesture inset below the controls. */
+  .player-page-root{
+    --footer-h:60px;
+  }
+
+  .player-page-root .player-mobile-nav{
+    height:calc(var(--footer-h) + var(--safe-bottom));
+    min-height:calc(var(--footer-h) + var(--safe-bottom));
+    padding:6px 8px calc(2px + var(--safe-bottom));
+  }
+
   .player-mobile-nav .mobile-nav-label{
     max-width:100%;
     line-height:1.15;

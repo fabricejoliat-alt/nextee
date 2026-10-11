@@ -87,7 +87,7 @@ const EMPTY_STATS: DashboardStats = {
 };
 
 const managerHomeCacheKey = (userId: string, window: "30d" | "90d" | "6m" | "1y") =>
-  `page-cache:manager-home-v6:${userId}:${window}`;
+  `page-cache:manager-home-v7:${userId}:${window}`;
 const MANAGER_HOME_CACHE_TTL_MS = 60_000;
 
 function eventDateParts(iso: string, locale: string) {

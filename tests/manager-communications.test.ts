@@ -172,3 +172,31 @@ test("news dispatch keeps the completion timestamp empty until all retryable del
  const first=await dispatchNews(args);assert.equal(first.lastEmailSentAt,null);assert.equal(first.lastDispatchResult.email_failed_count,1);
  attempt++;const second=await dispatchNews(args);assert.ok(second.lastEmailSentAt);assert.equal(second.lastDispatchResult.email_failed_count,0);assert.deepEqual(sent,['one@example.invalid','two@example.invalid','two@example.invalid']);
 });
+
+
+test("dashboard flags juniors without parents even without an active group", async () => {
+ const tables = managerFixture();
+ tables.coach_groups = []; tables.coach_group_players = [];
+ tables.club_members.push(
+  { club_id: "A", user_id: "second-junior", role: "player", is_active: true },
+  { club_id: "A", user_id: "adult", role: "player", is_active: true },
+  { club_id: "A", user_id: "linked-junior", role: "player", is_active: true },
+  { club_id: "A", user_id: "inactive-junior", role: "player", is_active: false },
+ );
+ tables.profiles.push(
+  { id: "second-junior", birth_date: "2015-01-01" },
+  { id: "adult", birth_date: "1990-01-01" },
+  { id: "linked-junior", birth_date: "2015-01-01" },
+  { id: "inactive-junior", birth_date: "2015-01-01" },
+ );
+ tables.player_guardian_scopes = [
+  { organization_id: "A", player_id: "linked-junior", guardian_user_id: "parent", status: "pending", can_view: true },
+  { organization_id: "B", player_id: "second-junior", guardian_user_id: "other-parent", status: "active", can_view: true },
+ ];
+ const h = managerDatabase(tables);
+ const response = await loadManagerModule("app/api/manager/dashboard/home/route.ts", h.mocks).GET(managerRequest("GET"));
+ const body = await response.json();
+ assert.equal(response.status, 200, JSON.stringify(body));
+ assert.equal(body.stats.juniorsWithoutParentCount, 2);
+ assert.deepEqual(new Set(body.stats.juniorsWithoutParent.map((row: Row) => row.id)), new Set(["player", "second-junior"]));
+});

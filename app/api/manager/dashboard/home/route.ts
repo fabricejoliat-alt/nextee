@@ -220,24 +220,8 @@ export async function GET(req: NextRequest) {
     const activeGroups = groups.filter((g) => Boolean(g.is_active) && !String(g.name ?? "").trim().startsWith("__ARCHIVE_"));
     const planningGroupIds = activeGroups.map((g) => g.id);
 
-    const groupPlayersRes =
-      planningGroupIds.length > 0 && activePlayerIds.length > 0
-        ? await supabaseAdmin
-            .from("coach_group_players")
-            .select("player_user_id")
-            .in("group_id", planningGroupIds)
-            .in("player_user_id", activePlayerIds)
-        : ({ data: [], error: null } as any);
-    if (groupPlayersRes.error) return NextResponse.json({ error: groupPlayersRes.error.message }, { status: 400 });
-
-    const playersInActiveGroups = new Set(
-      ((groupPlayersRes.data ?? []) as Array<{ player_user_id: string | null }>)
-        .map((row) => String(row.player_user_id ?? "").trim())
-        .filter(Boolean)
-    );
-
+    // Family access is required independently of group enrollment.
     const eligibleJuniorIds = activePlayerIds.filter((pid) => {
-      if (!playersInActiveGroups.has(pid)) return false;
       const age = computeAge(profileById.get(pid)?.birth_date);
       return age == null || age < 18;
     });
