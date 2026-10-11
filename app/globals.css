@@ -2766,6 +2766,48 @@ body:has([data-design-system]){
     url("/hero-golf.jpg") center / cover fixed !important;
 }
 
+/* Safari only collapses its browser chrome when the document itself scrolls.
+   Player and Coach use the document on phones; desktop keeps its workspace scroller. */
+@media (max-width: 899px){
+  html:has(.player-page-root),
+  body:has(.player-page-root),
+  html:has(.coach-page-root),
+  body:has(.coach-page-root){
+    height:auto;
+    min-height:100%;
+    overflow-x:hidden;
+    overflow-y:auto;
+  }
+
+  .player-page.player-page-root,
+  .coach-page-root{
+    height:auto;
+    min-height:100dvh !important;
+    overflow:visible;
+  }
+
+  .player-scroll-area,
+  .coach-scroll-area{
+    position:relative;
+    inset:auto;
+    min-height:calc(100dvh - var(--header-h) - var(--safe-top));
+    margin-top:calc(var(--header-h) + var(--safe-top));
+    overflow:visible;
+    overscroll-behavior:auto;
+  }
+
+  .player-scroll-area,
+  .player-scroll-area--home{
+    background:transparent !important;
+  }
+
+  body:has(.player-page-root)::before{
+    background-image:
+      linear-gradient(90deg, rgba(12,30,20,.82) 0%, rgba(16,38,25,.68) 34%, rgba(16,38,25,.30) 61%, rgba(16,38,25,.14) 100%),
+      url("/hero-golf.jpg");
+  }
+}
+
 /* Coach workspace shares the current Manager design system. Legacy Coach pages
    keep their business markup while the former Player/glass skin is retired. */
 .coach-page-root .coach-shell{
@@ -3252,8 +3294,8 @@ body:has([data-design-system]){
 
   .mobile-nav{
     /* ⬇️ un peu plus bas uniquement en PWA */
-    height: calc(var(--footer-h) + var(--safe-bottom) - 20px);
-    padding: 6px 10px calc(6px + var(--safe-bottom));
+    height: calc(var(--footer-h) + var(--safe-bottom));
+    padding: 6px 10px calc(8px + var(--safe-bottom));
   }
 
 }

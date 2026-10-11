@@ -5,6 +5,7 @@ import { organizationFetch as fetch } from "@/lib/organizationFetch";
 /* eslint-disable @next/next/no-img-element -- Marketplace thumbnails use user-managed Storage URLs. */
 
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { PlayerHomeBootstrapContext } from "@/components/player/PlayerHomeBootstrapContext";
 import Image from "next/image";
 import Link from "next/link";
@@ -1479,7 +1480,7 @@ export default function PlayerHomePage() {
           </section>
         </div>
       </div>
-      {showProfilePhotoPrompt ? (
+      {showProfilePhotoPrompt && typeof document !== "undefined" ? createPortal(
         <div
           className={styles.photoPromptOverlay}
           onClick={() => {
@@ -1556,7 +1557,8 @@ export default function PlayerHomePage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       ) : null}
     </div>
   );
