@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import styles from "./LoginClient.module.css";
+import { loginMessages } from "./loginMessages";
+import type { AppLocale } from "@/lib/i18n/messages";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,6 +27,21 @@ export default function LoginPage() {
   const [contactLastName, setContactLastName] = useState("");
   const [contactBirthDate, setContactBirthDate] = useState("");
   const [contactClub, setContactClub] = useState("");
+  const [locale, setLocale] = useState<AppLocale>("fr");
+  const [localeReady, setLocaleReady] = useState(false);
+  const copy = loginMessages[locale];
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("app_locale");
+    if (saved === "fr" || saved === "en" || saved === "de" || saved === "it") setLocale(saved);
+    setLocaleReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!localeReady) return;
+    window.localStorage.setItem("app_locale", locale);
+    document.documentElement.lang = locale;
+  }, [locale, localeReady]);
 
   useEffect(() => {
     const hostname = window.location.hostname;
@@ -47,7 +64,7 @@ export default function LoginPage() {
       const resolveJson = await resolveRes.json().catch(() => ({}));
 
       if (!resolveRes.ok || !resolveJson.email) {
-        setError("Identifiant ou mot de passe invalide.");
+        setError(copy.invalid);
         return;
       }
 
@@ -57,7 +74,7 @@ export default function LoginPage() {
       });
 
       if (error || !data.session) {
-        setError("Identifiant ou mot de passe invalide.");
+        setError(copy.invalid);
         return;
       }
 
@@ -76,7 +93,7 @@ export default function LoginPage() {
       redirected = true;
       router.push(json?.redirectTo || "/player");
     } catch {
-      setError("Erreur de connexion.");
+      setError(copy.connectionError);
     } finally {
       if (!redirected) setLoading(false);
     }
@@ -93,13 +110,9 @@ export default function LoginPage() {
         body: JSON.stringify({ identifier: recoverIdentifier }),
       });
       await res.json().catch(() => ({}));
-      setRecoverMessage(
-        "Si un accès récupérable existe, un e-mail contenant l’identifiant et le lien de réinitialisation a été envoyé."
-      );
+      setRecoverMessage(copy.recoverySent);
     } catch {
-      setRecoverMessage(
-        "Si un accès récupérable existe, un e-mail contenant l’identifiant et le lien de réinitialisation a été envoyé."
-      );
+      setRecoverMessage(copy.recoverySent);
     } finally {
       setRecoverLoading(false);
     }
@@ -122,16 +135,16 @@ export default function LoginPage() {
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setContactMessage(String(json?.error ?? "Envoi impossible."));
+        setContactMessage(String(json?.error ?? copy.sendError));
         return;
       }
-      setContactMessage("Ta demande a bien été envoyée.");
+      setContactMessage(copy.requestSent);
       setContactFirstName("");
       setContactLastName("");
       setContactBirthDate("");
       setContactClub("");
     } catch {
-      setContactMessage("Envoi impossible.");
+      setContactMessage(copy.sendError);
     } finally {
       setContactLoading(false);
     }
@@ -144,62 +157,69 @@ export default function LoginPage() {
         <div className={styles.contentStack}>
         <section className={styles.intro} aria-labelledby="welcome-title">
           <div className={`brand ${styles.brand}`} aria-label="ActiviTee"><span className="brand-nex">Activi</span><span className="brand-tee">Tee</span></div>
-          <p className={styles.eyebrow}>La plateforme de gestion des sections juniors de golf</p>
-          <h1 id="welcome-title">Faire grandir les jeunes golfeurs, ensemble.</h1>
-          <p className={styles.introText}>ActiviTee réunit clubs, coachs, juniors et familles pour organiser la section junior et accompagner la progression des jeunes.</p>
+          <p className={styles.eyebrow}>{copy.eyebrow}</p>
+          <h1 id="welcome-title">{copy.title}</h1>
+          <p className={styles.introText}>{copy.intro}</p>
         </section>
 
         <section className={styles.loginColumn} aria-labelledby="login-title">
           <div className={styles.loginCard}>
             <div className={styles.cardHeading}>
-              <h2 id="login-title">Accéder à ActiviTee</h2>
-              <p>Connectez-vous avec votre identifiant ou votre adresse e-mail.</p>
+              <h2 id="login-title">{copy.access}</h2>
             </div>
             <form onSubmit={handleLogin} className={styles.form}>
               <div className={styles.field}>
-                <label htmlFor="login-identifier">E-mail ou identifiant</label>
+                <label htmlFor="login-identifier">{copy.identifier}</label>
                 <input id="login-identifier" required value={identifier} onChange={(e) => setIdentifier(e.target.value)} autoComplete="username" />
               </div>
               <div className={styles.field}>
-                <label htmlFor="login-password">Mot de passe</label>
+                <label htmlFor="login-password">{copy.password}</label>
                 <input id="login-password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
               </div>
               {error ? <div className={styles.error} role="alert">{error}</div> : null}
-              <button className={styles.submit} type="submit" disabled={loading}>{loading ? "Connexion…" : "Se connecter"}</button>
-              <button type="button" className={`${styles.secondary} ${styles.forgot}`} onClick={() => { setRecoverOpen((current) => !current); setRecoverMessage(null); setContactOpen(false); setContactMessage(null); }}>Identifiant ou mot de passe oublié ?</button>
+              <button className={styles.submit} type="submit" disabled={loading}>{loading ? copy.loggingIn : copy.login}</button>
+              <button type="button" className={`${styles.secondary} ${styles.forgot}`} onClick={() => { setRecoverOpen((current) => !current); setRecoverMessage(null); setContactOpen(false); setContactMessage(null); }}>{copy.forgot}</button>
 
               {recoverOpen ? (
                 <div className={styles.recovery}>
-                  <div className={styles.recoveryCopy}>Saisis ton e-mail ou ton username. Si tu es junior et que tu n’as pas d&apos;adresse e-mail, le lien de récupération sera envoyé à tes parents. Si tu ne te souviens pas de ton username, <button type="button" className={styles.textAction} onClick={() => { setContactOpen((current) => !current); setContactMessage(null); }}>clique ici</button>.</div>
+                  <div className={styles.recoveryCopy}>{copy.recoveryCopy} <button type="button" className={styles.textAction} onClick={() => { setContactOpen((current) => !current); setContactMessage(null); }}>{copy.clickHere}</button>.</div>
                   <div className={styles.recoveryForm}>
-                    <input required value={recoverIdentifier} onChange={(e) => setRecoverIdentifier(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleRecoverAccess(); } }} placeholder="E-mail ou identifiant" autoComplete="username" aria-label="E-mail ou identifiant à récupérer" />
-                    <button className={styles.secondary} type="button" onClick={() => void handleRecoverAccess()} disabled={recoverLoading || !recoverIdentifier.trim()}>{recoverLoading ? "Envoi…" : "Récupérer mes accès"}</button>
+                    <input required value={recoverIdentifier} onChange={(e) => setRecoverIdentifier(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void handleRecoverAccess(); } }} placeholder={copy.identifier} autoComplete="username" aria-label={copy.recoverIdentifier} />
+                    <button className={styles.secondary} type="button" onClick={() => void handleRecoverAccess()} disabled={recoverLoading || !recoverIdentifier.trim()}>{recoverLoading ? copy.sending : copy.recover}</button>
                   </div>
                   {recoverMessage ? <div className={styles.message} role="status">{recoverMessage}</div> : null}
                   {contactOpen ? (
                     <div className={styles.contactBlock}>
-                      <div className={styles.contactIntro}>Remplis ce formulaire. La demande sera envoyée à ActiviTee.</div>
+                      <div className={styles.contactIntro}>{copy.contactIntro}</div>
                       <div className={styles.contactGrid}>
-                        <input value={contactFirstName} onChange={(e) => setContactFirstName(e.target.value)} placeholder="Prénom" aria-label="Prénom" />
-                        <input value={contactLastName} onChange={(e) => setContactLastName(e.target.value)} placeholder="Nom" aria-label="Nom" />
+                        <input value={contactFirstName} onChange={(e) => setContactFirstName(e.target.value)} placeholder={copy.firstName} aria-label={copy.firstName} />
+                        <input value={contactLastName} onChange={(e) => setContactLastName(e.target.value)} placeholder={copy.lastName} aria-label={copy.lastName} />
                       </div>
                       <div className={styles.contactGrid}>
-                        <input type="date" value={contactBirthDate} onChange={(e) => setContactBirthDate(e.target.value)} aria-label="Date de naissance" />
-                        <input value={contactClub} onChange={(e) => setContactClub(e.target.value)} placeholder="Club" aria-label="Club" />
+                        <input type="date" value={contactBirthDate} onChange={(e) => setContactBirthDate(e.target.value)} aria-label={copy.birthDate} />
+                        <input value={contactClub} onChange={(e) => setContactClub(e.target.value)} placeholder={copy.club} aria-label={copy.club} />
                       </div>
-                      <button className={styles.secondary} type="button" onClick={() => void handleRecoverUsernameContact()} disabled={contactLoading || !contactFirstName.trim() || !contactLastName.trim() || !contactBirthDate.trim() || !contactClub.trim()}>{contactLoading ? "Envoi…" : "Envoyer la demande"}</button>
+                      <button className={styles.secondary} type="button" onClick={() => void handleRecoverUsernameContact()} disabled={contactLoading || !contactFirstName.trim() || !contactLastName.trim() || !contactBirthDate.trim() || !contactClub.trim()}>{contactLoading ? copy.sending : copy.sendRequest}</button>
                       {contactMessage ? <div className={styles.message} role="status">{contactMessage}</div> : null}
                     </div>
                   ) : null}
                 </div>
               ) : null}
-              {isLocalDev ? <div className={styles.devLink}><Link href="/dev/impersonate">Mode dev : se connecter en tant qu’un autre utilisateur</Link></div> : null}
+              {isLocalDev ? <div className={styles.devLink}><Link href="/dev/impersonate">{copy.devLink}</Link></div> : null}
             </form>
           </div>
         </section>
         </div>
         <footer className={styles.footer}>
-          <nav aria-label="Informations ActiviTee"><Link href="/legal">Documents juridiques</Link><span aria-hidden="true">·</span><Link href="/legal/request">Mes données</Link><span aria-hidden="true">·</span><Link href="/contact">Contact</Link></nav>
+          <nav aria-label={copy.information}><Link href="/legal">{copy.legal}</Link><span aria-hidden="true">·</span><Link href="/legal/request">{copy.myData}</Link><span aria-hidden="true">·</span><Link href="/contact">{copy.contact}</Link></nav>
+          <nav className={styles.languages} aria-label={copy.language}>
+            {(["fr", "en", "de", "it"] as const).map((language, index) => (
+              <span className={styles.languageItem} key={language}>
+                {index > 0 ? <span className={styles.languageSeparator} aria-hidden="true">·</span> : null}
+                <button type="button" lang={language} aria-pressed={locale === language} className={locale === language ? styles.activeLanguage : undefined} onClick={() => setLocale(language)}>{language.toUpperCase()}</button>
+              </span>
+            ))}
+          </nav>
         </footer>
       </div>
     </main>
