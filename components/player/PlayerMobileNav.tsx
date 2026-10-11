@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
-import { Home, CalendarDays, Flag, ShoppingBag, User } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { CalendarDays, Dumbbell, Flag, LayoutDashboard, Plus, ShoppingBag, User } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 function scrollTop() {
@@ -30,17 +30,37 @@ function scrollTop() {
 export default function MobileFooter() {
   const pathname = usePathname();
   const { t } = useI18n();
+  const [quickActionsOpen, setQuickActionsOpen] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!quickActionsOpen) return;
+    const closeOnOutsidePress = (event: PointerEvent) => {
+      if (!navRef.current?.contains(event.target as Node)) setQuickActionsOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setQuickActionsOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [quickActionsOpen]);
 
   // Après navigation (quand la nouvelle page est montée)
   useEffect(() => {
     // double raf = plus fiable sur certains layouts / transitions
-    requestAnimationFrame(() => requestAnimationFrame(scrollTop));
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      setQuickActionsOpen(false);
+      scrollTop();
+    }));
   }, [pathname]);
 
   const items = [
-    { href: "/player", label: t("nav.home"), Icon: Home },
     { href: "/player/golf/trainings?type=all", label: t("player.activities"), Icon: CalendarDays },
-    { href: "/player/golf", label: t("player.myGolf"), Icon: Flag },
+    { href: "/player", label: t("player.dashboard"), Icon: LayoutDashboard },
     { href: "/player/marketplace", label: t("nav.marketplace"), Icon: ShoppingBag },
     { href: "/player/profile", label: t("nav.profile"), Icon: User },
   ];
@@ -49,30 +69,36 @@ export default function MobileFooter() {
     const hrefPath = href.split("?")[0] || href;
     if (hrefPath === "/player") return path === "/player";
     if (hrefPath === "/player/golf/trainings") return path === hrefPath || path.startsWith(hrefPath + "/");
-    if (hrefPath === "/player/golf") {
-      const inGolf = path === hrefPath || path.startsWith(hrefPath + "/");
-      const inTrainings = path === "/player/golf/trainings" || path.startsWith("/player/golf/trainings/");
-      return inGolf && !inTrainings;
-    }
     return path === hrefPath || path.startsWith(hrefPath + "/");
   }
 
   return (
-    <nav className="mobile-nav" aria-label={t("common.navigation")}>
-      {items.map(({ href, label, Icon }) => {
-        const active = isActive(pathname, href);
-        return (
-          <Link
-            key={href}
-            href={href}
-            className={`mobile-nav-item ${active ? "active" : ""}`}
-            onClick={() => scrollTop()}   // ✅ au clic
-          >
-            <Icon aria-hidden="true" />
-            <div className="mobile-nav-label">{label}</div>
+    <nav ref={navRef} className="mobile-nav player-mobile-nav" aria-label={t("common.navigation")}>
+      {items.slice(0, 2).map(({ href, label, Icon }) => (
+        <Link key={href} href={href} className={`mobile-nav-item ${isActive(pathname, href) ? "active" : ""}`} aria-current={isActive(pathname, href) ? "page" : undefined} onClick={() => { setQuickActionsOpen(false); scrollTop(); }}>
+          <Icon aria-hidden="true" />
+          <span className="mobile-nav-label">{label}</span>
+        </Link>
+      ))}
+      <button type="button" className={`mobile-nav-item player-nav-add${quickActionsOpen ? " active" : ""}`} aria-label={t("common.add")} aria-haspopup="menu" aria-expanded={quickActionsOpen} aria-controls="player-quick-actions" onClick={() => setQuickActionsOpen((open) => !open)}>
+        <Plus aria-hidden="true" />
+      </button>
+      {items.slice(2).map(({ href, label, Icon }) => (
+        <Link key={href} href={href} className={`mobile-nav-item ${isActive(pathname, href) ? "active" : ""}`} aria-current={isActive(pathname, href) ? "page" : undefined} onClick={() => { setQuickActionsOpen(false); scrollTop(); }}>
+          <Icon aria-hidden="true" />
+          <span className="mobile-nav-label">{label}</span>
+        </Link>
+      ))}
+      {quickActionsOpen && (
+        <div id="player-quick-actions" className="player-quick-actions" role="menu" aria-label={t("common.add")}>
+          <Link href="/player/golf/trainings/new" role="menuitem" onClick={() => setQuickActionsOpen(false)}>
+            <Dumbbell aria-hidden="true" />{t("player.newTraining")}
           </Link>
-        );
-      })}
+          <Link href="/player/golf/rounds/new" role="menuitem" onClick={() => setQuickActionsOpen(false)}>
+            <Flag aria-hidden="true" />{t("player.newRound")}
+          </Link>
+        </div>
+      )}
     </nav>
   );
 }
