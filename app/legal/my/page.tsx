@@ -7,6 +7,7 @@ import type { OrganizationAccessSummary } from "@/lib/organizationPolicy";
 import { supabase } from "@/lib/supabaseClient";
 import styles from "./MyLegalPage.module.css";
 import { parentAuthorizationItems, type LegalChild } from "@/lib/parentAuthorization";
+import { requiresParentCode } from "@/lib/legalParentConfirmation";
 
 type Doc = { id: string; document_key: string; kind: string; purpose_key: string; scope: string; club_id: string | null; club_name: string | null; org_type?: string | null; audience_roles: string[]; eligible_role: string | null; action_kind: string; required: boolean;
   version: { id: string; version_number: number; published_at: string; snapshot: { translations?: Record<string, { title: string }> } } | null;
@@ -110,8 +111,7 @@ export default function MyLegalPage() {
   const juniorConsentMissing = access.state === "ready" && access.consentRequired;
   const pendingClubNames = access.state === "ready" ? access.pendingClubNames ?? [] : [];
   const parentConsentMissing = access.state === "ready" && (access.parentConsentRequired);
-  const requiresParentCode = subject !== "self" && (selected?.kind !== "parent_authorization"
-    || selected.purpose_key !== "service.parent_authorization" || parentConfirmation.code_required);
+  const parentCodeRequired = requiresParentCode(subject === "self", selected, parentConfirmation.code_required);
   const canEnter = access.state === "ready" && accessMissing.length === 0 && !juniorConsentMissing && !parentConsentMissing && homeDestinations.has(destination);
   const currentHistoryChild = children.find((child) => `${child.child_id}:${child.club_id}` === historyChild);
   const subjectName = children.find((child) => child.child_id === subject)?.child_name ?? "votre enfant";
@@ -221,14 +221,14 @@ export default function MyLegalPage() {
     <div className={styles.modalScroll}>{status && <p className={styles.notice} role="status">{status}</p>}<article className={styles.legalText}>{presentation.rendered_snapshot.body}</article>
       {selected?.kind === "parent_authorization" && <label className={styles.parentConsentCheck}><input type="checkbox" checked={parentConsentChecked} onChange={(event) => setParentConsentChecked(event.target.checked)} /><span>Je confirme être habilité à autoriser {subjectName} et avoir lu ce document.</span></label>}
       {subject !== "self" && <div className={styles.confirmationBox}><div className={styles.confirmationHeading}><LockKeyhole size={19} aria-hidden="true" /><strong>Confirmation parentale</strong></div>
-        {requiresParentCode ? <><p>Cette décision concerne {subjectName}. Une confirmation par code envoyé à votre adresse e-mail vérifiée est nécessaire.</p>
+        {parentCodeRequired ? <><p>Cette décision concerne {subjectName}. Une confirmation par code envoyé à votre adresse e-mail vérifiée est nécessaire.</p>
           {!parentConfirmation.email_ready && <p>Demandez à votre club de renseigner et vérifier votre adresse e-mail pour recevoir ce code.</p>}
           {parentConfirmation.email_ready && !parentConfirmation.delivery_ready && <p>L’envoi des codes est temporairement indisponible. Contactez l’assistance à info@activitee.golf.</p>}
           <div className={styles.confirmationControls}><button type="button" className={styles.secondaryButton} disabled={busy || !parentConfirmation.email_ready || !parentConfirmation.delivery_ready} onClick={sendCode}>Envoyer un code</button><label>Code reçu <input inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(event) => setCode(event.target.value)} /></label></div></>
-          : <><p>Cette autorisation concerne {subjectName}. La confirmation par code est temporairement désactivée ; votre décision reste enregistrée avec ce document et sa version.</p>
+          : <><p>Cette autorisation concerne {subjectName}. Aucun code supplémentaire n’est nécessaire : votre compte Parent, votre lien avec ce junior et votre adresse e-mail vérifiée sont contrôlés. Votre décision reste enregistrée avec ce document et sa version.</p>
             {!parentConfirmation.email_ready && <p>Votre adresse e-mail doit être vérifiée par le club avant de pouvoir autoriser l’accès.</p>}</>}</div>}
     </div>
-    <div className={styles.modalFooter}><button type="button" className={styles.primaryButton} disabled={busy || (selected?.kind === "parent_authorization" && (!parentConsentChecked || !parentConfirmation.email_ready || (requiresParentCode && !/^\d{6}$/.test(code))))} onClick={() => decide(({ accept: "accepted", acknowledge: "acknowledged", authorize: "authorized", consent: "consented", read: "acknowledged" } as Record<string,string>)[selected?.action_kind ?? "accept"])}><Check size={17} aria-hidden="true" /> {presentation.rendered_snapshot.action_label}</button><button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => decide("refused")}>Refuser</button>{(selected?.kind === "specific_consent" || (selected?.kind === "parent_authorization" && parentItems.some((item) => item.doc?.id === selected.id && item.child.child_id === subject && item.complete))) && <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => decide("withdrawn")}>Retirer mon consentement</button>}<button type="button" className={styles.textButton} onClick={closePresentation}>Fermer</button></div>
+    <div className={styles.modalFooter}><button type="button" className={styles.primaryButton} disabled={busy || (selected?.kind === "parent_authorization" && (!parentConsentChecked || !parentConfirmation.email_ready || (parentCodeRequired && !/^\d{6}$/.test(code))))} onClick={() => decide(({ accept: "accepted", acknowledge: "acknowledged", authorize: "authorized", consent: "consented", read: "acknowledged" } as Record<string,string>)[selected?.action_kind ?? "accept"])}><Check size={17} aria-hidden="true" /> {presentation.rendered_snapshot.action_label}</button><button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => decide("refused")}>Refuser</button>{(selected?.kind === "specific_consent" || (selected?.kind === "parent_authorization" && parentItems.some((item) => item.doc?.id === selected.id && item.child.child_id === subject && item.complete))) && <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => decide("withdrawn")}>Retirer mon consentement</button>}<button type="button" className={styles.textButton} onClick={closePresentation}>Fermer</button></div>
   </section></div>}
   </main>;
 }
