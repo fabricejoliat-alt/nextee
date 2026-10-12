@@ -1,4 +1,7 @@
 .workspace { display: grid; gap: 16px; min-width: 0; }
+.roundShortcutCopy { display: grid; gap: 4px; }
+.roundShortcutCopy h2 { margin: 0; color: #fff !important; font: 750 clamp(20px,2.5vw,27px)/1.15 var(--font-inter-tight),var(--font-inter),sans-serif; letter-spacing: -.025em; }
+.roundShortcutCopy p { margin: 0; color: #e8f0e5; font-size: 12px; line-height: 1.5; }
 .roundCard:focus-visible, .filter:focus-visible { outline: 3px solid rgba(137,157,125,.35); outline-offset: 2px; }
 .filters { grid-template-columns: 1.2fr 1.4fr 1fr 1fr; }
 .filterLabel { display: grid; gap: 5px; color: #5a6c5e; font-size: 10px; font-weight: 800; }
