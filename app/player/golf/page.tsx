@@ -1980,25 +1980,20 @@ export default function GolfDashboardPage() {
     { id: "overview" as DashboardSection, label: t("player.golfDashboard") },
     { id: "trainings" as DashboardSection, label: t("player.golfTrainings") },
     { id: "rounds" as DashboardSection, label: t("player.golfRounds") },
-    { id: "camps" as const, label: t("player.camps") },
     { id: "evaluations" as DashboardSection, label: t("player.golfEvaluations") },
     { id: "documents" as DashboardSection, label: t("player.golfDocuments") },
   ];
   const golfSectionNavigation = (
     <section className={overviewStyles.navigationCard}>
       <div className={overviewStyles.navigationTabs} aria-label={pickLocaleText(locale, "Sections Mon golf", "My golf sections")}>
-        {golfSections.map((tab) => tab.id === "camps"
-          ? <Link key={tab.id} href="/player/camps">{tab.label}</Link>
-          : <button key={tab.id} type="button" aria-current={activeSection === tab.id ? "page" : undefined} onClick={() => selectSection(tab.id)}>{tab.label}</button>)}
+        {golfSections.map((tab) => <button key={tab.id} type="button" aria-current={activeSection === tab.id ? "page" : undefined} onClick={() => selectSection(tab.id)}>{tab.label}</button>)}
       </div>
       <div ref={mobileGolfMenuRef} className={overviewStyles.mobileNavigation}>
         <button type="button" className={overviewStyles.mobileNavigationToggle} aria-expanded={mobileGolfMenuOpen} aria-controls="player-golf-mobile-sections" onClick={() => setMobileGolfMenuOpen((open) => !open)}>
           <span>{golfSections.find((section) => section.id === activeSection)?.label ?? t("player.golfDashboard")}</span><ChevronDown size={20} aria-hidden="true" />
         </button>
         {mobileGolfMenuOpen ? <div id="player-golf-mobile-sections" className={overviewStyles.mobileNavigationMenu}>
-          {golfSections.map((tab) => tab.id === "camps"
-            ? <Link key={tab.id} href="/player/camps" onClick={() => setMobileGolfMenuOpen(false)}>{tab.label}</Link>
-            : <button key={tab.id} type="button" aria-current={activeSection === tab.id ? "page" : undefined} onClick={() => selectSection(tab.id)}>{tab.label}</button>)}
+          {golfSections.map((tab) => <button key={tab.id} type="button" aria-current={activeSection === tab.id ? "page" : undefined} onClick={() => selectSection(tab.id)}>{tab.label}</button>)}
         </div> : null}
       </div>
     </section>
