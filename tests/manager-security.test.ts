@@ -51,10 +51,10 @@ test("platform administrator can still manage credentials through the shared end
   const tables = managerFixture(); tables.app_admins = [{ user_id: "manager" }];
   const h = managerDatabase(tables);
   const response = await loadManagerModule(membersPath, h.mocks).PATCH(managerRequest("PATCH", {
-    memberId: "target-A", auth_password: "new-test-password",
+    memberId: "target-A", auth_password: "New-test-password!",
   }), clubContext);
   assert.equal(response.status, 200);
-  assert.deepEqual(h.authWrites, [{ id: "target", patch: { password: "new-test-password" } }]);
+  assert.deepEqual(h.authWrites, [{ id: "target", patch: { password: "New-test-password!" } }]);
 });
 
 test("an existing foreign account cannot be attached, including beyond the first Auth page", async () => {

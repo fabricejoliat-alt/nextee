@@ -142,6 +142,12 @@
 .field { display: grid; gap: 6px; min-width: 0; width: 100%; }
 .field > label { color: #5f7063; font-size: 9px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 .field :is(input, select) { box-sizing: border-box; width: 100%; }
+.field textarea { box-sizing: border-box; width: 100%; min-height: 100px; }
+.legalCard { display: flex; gap: 12px; align-items: flex-start; padding: 16px; border: 1px solid #dce8d9; border-radius: 14px; background: #fff; color: #35483b; box-shadow: 0 7px 20px rgba(35, 54, 41, .045); }
+.legalCard > svg { flex: 0 0 auto; color: #526d50; }
+.legalCard > div { display: grid; gap: 8px; }
+.legalCard strong { font-size: 13px; }
+.legalCard a { width: fit-content; color: #356c48 !important; font-size: 12px; font-weight: 750; text-decoration: underline; text-underline-offset: 3px; }
 .staticValue { display: flex; min-height: 42px; box-sizing: border-box; align-items: center; padding: 10px 12px; border: 1px solid #e1e7df; border-radius: 9px; background: #f7f9f6; color: #304438; font-size: 12px; font-weight: 700; }
 
 .handicapSection { display: grid; gap: 13px; }
@@ -191,6 +197,8 @@
   .skeletonGrid { grid-template-columns: 1fr; }
   .wideCard { grid-column: 1; }
   .handicapHistory { grid-template-columns: 1fr; }
+  .fullWidthField { grid-column: 1 / -1; }
+  .organizationGroup :global(.grid-2) { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 480px) {

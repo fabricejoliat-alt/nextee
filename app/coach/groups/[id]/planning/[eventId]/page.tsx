@@ -265,6 +265,7 @@ export default function CoachEventDetailPage() {
   const [sendingThreadMessage, setSendingThreadMessage] = useState(false);
   const [coachBusyIds, setCoachBusyIds] = useState<Record<string, boolean>>({});
   const [attendanceBusyIds, setAttendanceBusyIds] = useState<Record<string, boolean>>({});
+  const [attendanceLockedIds, setAttendanceLockedIds] = useState<Set<string>>(new Set());
   const [evaluatedPlayersById, setEvaluatedPlayersById] = useState<Map<string, PlayerEvaluationSummary>>(new Map());
   const [copyingStructure, setCopyingStructure] = useState(false);
   const [copyStructureMessage, setCopyStructureMessage] = useState<string | null>(null);
@@ -459,6 +460,14 @@ export default function CoachEventDetailPage() {
       const assistanceEnabled = detailJson?.coachTrainingAssistanceEnabled === true;
       setCoachTrainingAssistanceEnabled(assistanceEnabled);
       setAttendees(Array.isArray(detailJson?.attendees) ? (detailJson.attendees as AttendeeUiRow[]) : []);
+      if (ev.event_type === "training" && new Date(ev.ends_at ?? ev.starts_at).getTime() <= Date.now()) {
+        const attendanceRes = await fetch(`/api/coach/events/${encodeURIComponent(ev.id)}/attendance`, {
+          headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+        });
+        const attendanceJson = await attendanceRes.json().catch(() => ({}));
+        if (!attendanceRes.ok) throw new Error(String(attendanceJson.error ?? "Présences indisponibles."));
+        setAttendanceLockedIds(new Set(Array.isArray(attendanceJson.lockedPlayerIds) ? attendanceJson.lockedPlayerIds : []));
+      } else setAttendanceLockedIds(new Set());
       setCoaches(Array.isArray(detailJson?.coaches) ? (detailJson.coaches as CoachLite[]) : []);
       setSelectedCoachIds(
         Array.isArray(detailJson?.selectedCoachIds)
@@ -623,29 +632,41 @@ export default function CoachEventDetailPage() {
   }
 
   async function setAttendanceStatus(playerId: string, nextStatus: "present" | "absent") {
-    if (!event || attendanceBusyIds[playerId]) return;
-    const prev = attendees.find((a) => a.player_id === playerId)?.status ?? "expected";
-    if (prev === nextStatus) return;
+    if (!event || attendanceBusyIds[playerId] || attendanceLockedIds.has(playerId)) return;
+    const previousAttendee = attendees.find((a) => a.player_id === playerId);
+    const prev = previousAttendee?.status ?? "expected";
+    const effectiveStatus = previousAttendee?.coach_recorded_status ?? prev;
+    if (effectiveStatus === nextStatus) return;
 
     setAttendanceBusyIds((m) => ({ ...m, [playerId]: true }));
     setAttendees((list) => list.map((a) => (a.player_id === playerId ? { ...a, status: nextStatus } : a)));
 
-    const up = await supabase
-      .from("club_event_attendees")
-      .update({ status: nextStatus })
-      .eq("event_id", event.id)
-      .eq("player_id", playerId);
+    const isPastTraining = event.event_type === "training" && new Date(event.ends_at ?? event.starts_at).getTime() <= Date.now();
+    let up: { error: { message: string } | null };
+    try { up = isPastTraining ? await (async () => {
+      const { data } = await supabase.auth.getSession();
+      const response = await fetch(`/api/coach/events/${encodeURIComponent(event.id)}/attendance`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+        body: JSON.stringify({ playerId, status: nextStatus }),
+      });
+      const result = await response.json().catch(() => ({}));
+      return { error: response.ok ? null : { message: String(result.error ?? "Présence non enregistrée.") } };
+    })() : await supabase.from("club_event_attendees").update({ status: nextStatus }).eq("event_id", event.id).eq("player_id", playerId);
+    } catch {
+      up = { error: { message: tr("Présence non enregistrée. Réessayez.", "Attendance was not saved. Try again.") } };
+    }
 
     if (up.error) {
       setError(up.error.message);
       setAttendees((list) => list.map((a) => (a.player_id === playerId ? { ...a, status: prev } : a)));
     }
+    else if (isPastTraining) setAttendees((list) => list.map((a) => a.player_id === playerId ? { ...a, coach_recorded_status: nextStatus } : a));
 
     setAttendanceBusyIds((m) => ({ ...m, [playerId]: false }));
   }
 
   function handleAttendanceToggle(playerId: string, status: "expected" | "present" | "absent" | "excused") {
-    const current: "present" | "absent" = status === "absent" ? "absent" : "present";
+    const current: "present" | "absent" = status === "present" ? "present" : "absent";
     const next: "present" | "absent" = current === "present" ? "absent" : "present";
     const ok = window.confirm(
       tr(
@@ -799,7 +820,7 @@ export default function CoachEventDetailPage() {
                     <b>{nameOf(player?.first_name ?? null, player?.last_name ?? null)}</b>
                   </div>
                 <div className={eventStyles.attendance}>
-                  {isTrainingPast ? (
+                  {isTrainingPast && attendanceLockedIds.has(attendee.player_id) ? (
                     <span className="pill-soft">
                       {attendanceStatus === "present"
                         ? t("coachDebrief.present")
@@ -808,7 +829,7 @@ export default function CoachEventDetailPage() {
                           : t("coachDebrief.noPreset")}
                     </span>
                   ) : (
-                    <AttendanceToggle variant="pill" checked={attendee.status === "present"} onToggle={() => handleAttendanceToggle(attendee.player_id, attendee.status)} disabled={Boolean(attendanceBusyIds[attendee.player_id])} ariaLabel={tr("Basculer présence", "Toggle attendance")} leftLabel={tr("Absent", "Absent")} rightLabel={tr("Présent", "Present")} />
+                    <AttendanceToggle variant="pill" checked={attendanceStatus === "present"} onToggle={() => handleAttendanceToggle(attendee.player_id, attendanceStatus ?? attendee.status)} disabled={Boolean(attendanceBusyIds[attendee.player_id])} ariaLabel={tr("Basculer présence", "Toggle attendance")} leftLabel={tr("Absent", "Absent")} rightLabel={tr("Présent", "Present")} />
                   )}
                 </div>
                   </div>

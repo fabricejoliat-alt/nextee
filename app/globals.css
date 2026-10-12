@@ -186,6 +186,9 @@ a { color: inherit; text-decoration: none; }
   grid-template-columns: 56px 1fr 56px;
   align-items: center;
 }
+.app-header-grid--centered { position: relative; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.app-header-grid--centered .header-center { grid-column: 2; }
+.app-header-grid--centered .header-right { grid-column: 3; min-width: 0; }
 
 .player-page-root .app-header-grid,
 .coach-page-root .app-header-grid{

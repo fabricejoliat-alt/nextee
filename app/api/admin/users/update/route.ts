@@ -1,3 +1,4 @@
+import { isValidPassword } from "@/lib/passwordPolicy";
 import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -32,8 +33,8 @@ export const POST = withAdminMutationAudit(async function POST(req: NextRequest)
     if (!userId) return NextResponse.json({ error: "Missing userId" }, { status: 400 });
 
     const nextPassword = typeof body.auth_password === "string" ? body.auth_password : "";
-    if (nextPassword && (nextPassword.length < 12 || nextPassword.length > 128)) return NextResponse.json(
-      { error: "Le mot de passe doit contenir de 12 à 128 caractères." }, { status: 400 });
+    if (nextPassword && (!isValidPassword(nextPassword))) return NextResponse.json(
+      { error: "Le mot de passe doit contenir de 6 à 128 caractères, une majuscule et un caractère spécial." }, { status: 400 });
 
     const nextRole = typeof body.role === "string" ? body.role.trim().toLowerCase() : "";
     const allowedRoles = new Set(["manager", "coach", "player", "parent", "captain", "staff"]);

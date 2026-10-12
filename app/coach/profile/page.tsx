@@ -1,5 +1,6 @@
 "use client";
 
+import { isValidPassword } from "@/lib/passwordPolicy";
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 import Link from "next/link";
 
@@ -295,7 +296,7 @@ export default function CoachProfilePage() {
     const nextPassword = newPassword;
     const nextPasswordConfirm = confirmPassword;
     if (nextPassword || nextPasswordConfirm) {
-      if (nextPassword.length < 8) {
+      if (!isValidPassword(nextPassword)) {
         setError("coach.profile.passwordShort");
         return;
       }

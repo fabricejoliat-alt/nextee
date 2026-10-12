@@ -1,5 +1,6 @@
 "use client";
 
+import { isValidPassword } from "@/lib/passwordPolicy";
 import Link from "next/link";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { KeyRound, Pencil, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
@@ -54,7 +55,7 @@ export default function ParentsManagementPage() {
     const changingPassword = selected.mode === "password";
     if (changingPassword) {
       if (!parent?.can_change_password) return;
-      if (password.length < 8 || password.length > 128) { setDialogError("manager.administration.parents.passwordLength"); return; }
+      if (!isValidPassword(password)) { setDialogError("manager.administration.parents.passwordLength"); return; }
       if (password !== confirmPassword) { setDialogError("manager.administration.parents.passwordMismatch"); return; }
     } else if (selected.mode !== "remove") {
       if (!form.first_name.trim()) { setDialogError("manager.administration.firstNameRequired"); return; }
@@ -135,8 +136,8 @@ export default function ParentsManagementPage() {
         </div> : activeDialog.mode === "password" ? <>
           <p><strong>{name(activeDialog.parent!)}</strong><br/>{local("passwordHelp")}</p>
           <label className={actions.field}><span>{local("login")}</span><input name="username" autoComplete="username" readOnly value={activeDialog.parent!.username || activeDialog.parent!.email || "—"}/></label>
-          <label className={actions.field}><span>{local("newPassword")}</span><input type="password" name="new-password" autoComplete="new-password" required minLength={8} maxLength={128} disabled={busy} value={password} onChange={event => setPassword(event.target.value)}/></label>
-          <label className={actions.field}><span>{local("confirmPassword")}</span><input type="password" name="confirm-password" autoComplete="new-password" required minLength={8} maxLength={128} disabled={busy} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)}/></label>
+          <label className={actions.field}><span>{local("newPassword")}</span><input type="password" name="new-password" autoComplete="new-password" required minLength={6} maxLength={128} disabled={busy} value={password} onChange={event => setPassword(event.target.value)}/></label>
+          <label className={actions.field}><span>{local("confirmPassword")}</span><input type="password" name="confirm-password" autoComplete="new-password" required minLength={6} maxLength={128} disabled={busy} value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)}/></label>
         </> : <><p>{local(activeDialog.mode === "create" ? "createHelp" : "emailLocked")}</p>
           {activeDialog.mode === "edit" ? <label className={actions.field}><span>{local("login")}</span><input readOnly value={activeDialog.parent!.username || activeDialog.parent!.email || "—"}/></label> : null}
           {(["first_name","last_name","email","phone"] as const).map(key => <label key={key} className={actions.field}>

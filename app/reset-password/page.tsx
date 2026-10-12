@@ -1,5 +1,6 @@
 "use client";
 
+import { isValidPassword } from "@/lib/passwordPolicy";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -24,7 +25,7 @@ export default function ResetPasswordPage() {
   const [saving, setSaving] = useState(false);
   const inviteToken = searchParams.get("invite_token");
 
-  const canSubmit = useMemo(() => password.length >= 8 && confirmPassword.length >= 8 && !saving, [password, confirmPassword, saving]);
+  const canSubmit = useMemo(() => isValidPassword(password) && confirmPassword.length >= 6 && !saving, [password, confirmPassword, saving]);
 
   useEffect(() => {
     let active = true;
@@ -195,7 +196,7 @@ export default function ResetPasswordPage() {
         const changed = await fetch("/api/auth/initial-password", { method: "POST",
           headers: { Authorization: `Bearer ${current.access_token}`, "Content-Type": "application/json" },
           body: JSON.stringify({ password, confirmPassword }), cache: "no-store" });
-        if (!changed.ok) { setError("Choisissez un nouveau mot de passe d’au moins 12 caractères."); return; }
+        if (!changed.ok) { setError("Choisissez un mot de passe d’au moins 6 caractères, avec une majuscule et un caractère spécial."); return; }
         const refreshed = await supabase.auth.refreshSession();
         if (refreshed.error) { setError(translateAuthMessage(refreshed.error.message)); return; }
       } else {
@@ -267,7 +268,7 @@ export default function ResetPasswordPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   autoComplete="new-password"
-                  minLength={8}
+                  minLength={6}
                   required
                 />
               </div>
@@ -279,7 +280,7 @@ export default function ResetPasswordPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   autoComplete="new-password"
-                  minLength={8}
+                  minLength={6}
                   required
                 />
               </div>
@@ -291,7 +292,7 @@ export default function ResetPasswordPage() {
               </button>
 
               <div className="auth-footnote">
-                Utilise au minimum 8 caractères. Une fois validé, tu seras redirigé automatiquement vers ton espace.
+                Utilise au moins 6 caractères, une majuscule et un caractère spécial. Une fois validé, tu seras redirigé automatiquement vers ton espace.
               </div>
             </form>
           ) : null}

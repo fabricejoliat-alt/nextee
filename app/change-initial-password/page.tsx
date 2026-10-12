@@ -1,5 +1,6 @@
 "use client";
 
+import { isValidPassword } from "@/lib/passwordPolicy";
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import AppI18nProvider, { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -30,10 +31,10 @@ function InitialPasswordForm() {
     <div className="auth-brand-wrapper"><div className="auth-brand auth-brand--dark"><span className="auth-brand-nex">Activi</span><span className="auth-brand-tee">Tee</span></div></div>
     <h1>{t("security.passwordTitle")}</h1><p className="auth-footnote">{t("security.passwordHelp")}</p>
     <form className="auth-form" onSubmit={submit}>
-      <div className="field auth-field"><label htmlFor="initial-password">{t("security.newPassword")}</label><input id="initial-password" type="password" autoComplete="new-password" minLength={12} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} required disabled={busy}/></div>
-      <div className="field auth-field"><label htmlFor="initial-password-confirmation">{t("security.confirmPassword")}</label><input id="initial-password-confirmation" type="password" autoComplete="new-password" minLength={12} maxLength={128} value={confirmation} onChange={event => setConfirmation(event.target.value)} required disabled={busy}/></div>
+      <div className="field auth-field"><label htmlFor="initial-password">{t("security.newPassword")}</label><input id="initial-password" type="password" autoComplete="new-password" minLength={6} maxLength={128} value={password} onChange={event => setPassword(event.target.value)} required disabled={busy}/></div>
+      <div className="field auth-field"><label htmlFor="initial-password-confirmation">{t("security.confirmPassword")}</label><input id="initial-password-confirmation" type="password" autoComplete="new-password" minLength={6} maxLength={128} value={confirmation} onChange={event => setConfirmation(event.target.value)} required disabled={busy}/></div>
       {error ? <p className="auth-error" role="alert">{t(error)}</p> : null}
-      <button className="cta-green auth-submit" disabled={busy || password.length < 12 || password !== confirmation}>{t(busy ? "common.loading" : "security.savePassword")}</button>
+      <button className="cta-green auth-submit" disabled={busy || !isValidPassword(password) || password !== confirmation}>{t(busy ? "common.loading" : "security.savePassword")}</button>
       <button className="btn" type="button" disabled={busy} onClick={() => void supabase.auth.signOut().then(() => window.location.assign("/login"))}>{t("common.logout")}</button>
     </form>
   </section></main></div>;

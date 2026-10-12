@@ -1,3 +1,4 @@
+import { isValidPassword } from "@/lib/passwordPolicy";
 import { encodeMemberFieldValue, decodeMemberFieldValue, type MemberFieldValue } from "@/lib/memberFieldValues";
 import { requireManagerClub, isPlatformAccount } from "@/lib/server/managerAccess";
 import { NextResponse, type NextRequest } from "next/server";
@@ -628,8 +629,8 @@ export async function PATCH(req: NextRequest, ctx: { params: Promise<{ clubId: s
         if (authEmail) authPatch.email = authEmail;
       }
       if (has("auth_password")) {
-        if (authPassword && authPassword.length < 8) {
-          return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+        if (authPassword && !isValidPassword(authPassword)) {
+          return NextResponse.json({ error: "Password must contain at least 6 characters, an uppercase letter and a special character" }, { status: 400 });
         }
         if (authPassword) authPatch.password = authPassword;
       }

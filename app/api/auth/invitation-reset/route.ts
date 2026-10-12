@@ -1,3 +1,4 @@
+import { isValidPassword } from "@/lib/passwordPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
@@ -62,8 +63,8 @@ export async function POST(req: NextRequest) {
     const password = String(body?.password ?? "");
 
     if (!token) return NextResponse.json({ error: "Token manquant" }, { status: 400 });
-    if (password.length < 8) {
-      return NextResponse.json({ error: "Le mot de passe doit contenir au moins 8 caractères." }, { status: 400 });
+    if (!isValidPassword(password)) {
+      return NextResponse.json({ error: "Le mot de passe doit contenir au moins 6 caractères, une majuscule et un caractère spécial." }, { status: 400 });
     }
 
     const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"), {

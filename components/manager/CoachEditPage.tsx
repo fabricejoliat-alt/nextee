@@ -1,5 +1,6 @@
 "use client";
 
+import { isValidPassword } from "@/lib/passwordPolicy";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -50,7 +51,7 @@ export default function CoachEditPage({ memberId }: { memberId: string }) {
   async function changePassword(event: React.FormEvent) {
     event.preventDefault();
     if (!coach || passwordBusyRef.current) return;
-    if (password.length < 12 || password.length > 128) { setPasswordError("passwordLength"); return; }
+    if (!isValidPassword(password)) { setPasswordError("passwordLength"); return; }
     if (password !== confirmPassword) { setPasswordError("passwordMismatch"); return; }
     passwordBusyRef.current = true; setPasswordBusy(true); setPasswordError("");
     try {
@@ -108,8 +109,8 @@ export default function CoachEditPage({ memberId }: { memberId: string }) {
         <h2>{t("manager.administration.coaches.changePassword")}</h2>
         <p>{t("manager.administration.coaches.passwordHelp")}</p>
         <label className={actionStyles.field}><span>{t("manager.administration.coaches.loginIdentifier")}</span><input autoComplete="username" readOnly value={form.username || form.email || "—"} /></label>
-        <label className={actionStyles.field}><span>{t("manager.administration.coaches.newPassword")}</span><input type="password" name="new-password" autoComplete="new-password" required minLength={12} maxLength={128} disabled={passwordBusy} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-        <label className={actionStyles.field}><span>{t("manager.administration.coaches.confirmPassword")}</span><input type="password" name="confirm-password" autoComplete="new-password" required minLength={12} maxLength={128} disabled={passwordBusy} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
+        <label className={actionStyles.field}><span>{t("manager.administration.coaches.newPassword")}</span><input type="password" name="new-password" autoComplete="new-password" required minLength={6} maxLength={128} disabled={passwordBusy} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+        <label className={actionStyles.field}><span>{t("manager.administration.coaches.confirmPassword")}</span><input type="password" name="confirm-password" autoComplete="new-password" required minLength={6} maxLength={128} disabled={passwordBusy} value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} /></label>
         {passwordError ? <div className={actionStyles.errorAlert} role="alert">{t(`manager.administration.coaches.${passwordError}`)}</div> : null}
         <div className={passwordStyles.actions}><button type="button" className={actionStyles.secondaryButton} disabled={passwordBusy} onClick={closePassword}>{t("common.cancel")}</button><button type="submit" className={actionStyles.primaryButton} disabled={passwordBusy}>{passwordBusy ? t("manager.administration.loading") : t("manager.administration.coaches.changePassword")}</button></div>
       </form>

@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import styles from "./PlayerProfile.module.css";
+import { isValidPassword } from "@/lib/passwordPolicy";
 
 type ProfileRow = {
   id: string;
@@ -588,8 +589,7 @@ export default function PlayerProfilePage() {
 
     const upsertPayload: Partial<ProfileRow> & { id: string } = {
       id: userId,
-      first_name: firstName.trim() || null,
-      last_name: lastName.trim() || null,
+      ...(viewerRole === "parent" ? { first_name: firstName.trim() || null, last_name: lastName.trim() || null } : {}),
       phone: phone.trim() || null,
       address: address.trim() || null,
       postal_code: postalCode.trim() || null,
@@ -663,8 +663,8 @@ export default function PlayerProfilePage() {
     }
 
     if (newPassword.trim()) {
-      if (newPassword.trim().length < 8) {
-        setError("Le mot de passe doit contenir au moins 8 caractères.");
+      if (!isValidPassword(newPassword)) {
+        setError("Le mot de passe doit contenir au moins 6 caractères, une majuscule et un caractère spécial.");
         setBusy(false);
         return;
       }
@@ -1006,7 +1006,7 @@ export default function PlayerProfilePage() {
 
         {info && <div className={styles.successAlert}>{info}</div>}
 
-        <p style={{ margin: "12px 0" }}><Link href="/legal/my">Documents et consentements</Link> · <Link href="/legal/request">Mes données</Link></p>
+        <nav className={styles.legalCard} aria-label="Documents et données personnelles"><ShieldCheck size={19} aria-hidden="true" /><div><strong>Documents et données personnelles</strong><Link href="/legal/my">Documents et consentements →</Link><Link href="/legal/request">Mes données →</Link></div></nav>
         <section className={styles.profileContent}>
           <div className={styles.contentHeading}><div><span>Mon compte</span><h2>Informations personnelles</h2></div></div>
 
@@ -1018,11 +1018,11 @@ export default function PlayerProfilePage() {
                 <SectionCard title={t("playerProfile.identity")} icon={<UserRound size={17} />} wide>
                   <div className="grid-2">
                     <Field label={t("playerProfile.firstName")}>
-                      <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                      {viewerRole === "player" ? <span className={styles.staticValue}>{staticDisplayValue(firstName)}</span> : <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />}
                     </Field>
 
                     <Field label={t("playerProfile.lastName")}>
-                      <input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                      {viewerRole === "player" ? <span className={styles.staticValue}>{staticDisplayValue(lastName)}</span> : <input value={lastName} onChange={(e) => setLastName(e.target.value)} />}
                     </Field>
                   </div>
 
@@ -1243,7 +1243,7 @@ export default function PlayerProfilePage() {
                           <div className="grid-2">
                             {group.fields.map((field) => (
                               field.editable_in_profile ? (
-                                <Field key={`${group.member_id}-${field.id}`} label={field.label}>
+                                <Field key={`${group.member_id}-${field.id}`} label={field.label} className={field.field_type === "long_text" ? styles.fullWidthField : undefined}>
                                   <ProfileCustomFieldControl field={field} name={`${group.member_id}-${field.id}`} disabled={!field.editable_in_profile} yes="Oui" no="Non"
                                     onChange={(value) => setCustomFieldGroups((previous) => previous.map((currentGroup) => currentGroup.member_id !== group.member_id ? currentGroup : {
                                       ...currentGroup, fields: currentGroup.fields.map((currentField) => currentField.id !== field.id ? currentField : { ...currentField, value }),
@@ -1254,6 +1254,7 @@ export default function PlayerProfilePage() {
                                   key={`${group.member_id}-${field.id}`}
                                   label={field.label}
                                   value={profileCustomFieldDisplayValue(field, field.value)}
+                                  className={field.field_type === "long_text" ? styles.fullWidthField : undefined}
                                 />
                               )
                             ))}
@@ -1282,13 +1283,14 @@ export default function PlayerProfilePage() {
 
                 {(viewerRole === "player" || viewerRole === "parent") ? (
                   <SectionCard title="Mot de passe" icon={<KeyRound size={17} />}>
+                    <p className={styles.helperText}>Au moins 6 caractères, une majuscule et un caractère spécial.</p>
                     <Field label="Nouveau mot de passe">
                       <input
                         type="password"
                         value={newPassword}
                         onChange={(e) => setNewPassword(e.target.value)}
                         autoComplete="new-password"
-                        minLength={8}
+                        minLength={6}
                       />
                     </Field>
 
@@ -1298,7 +1300,7 @@ export default function PlayerProfilePage() {
                         value={confirmPassword}
                         onChange={(e) => setConfirmPassword(e.target.value)}
                         autoComplete="new-password"
-                        minLength={8}
+                        minLength={6}
                       />
                     </Field>
                   </SectionCard>
@@ -1362,18 +1364,18 @@ export default function PlayerProfilePage() {
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className={styles.field}>
+    <div className={`${styles.field} ${className ?? ""}`}>
       <label>{label}</label>
       {children}
     </div>
   );
 }
 
-function StaticField({ label, value }: { label: string; value: string | null | undefined }) {
+function StaticField({ label, value, className }: { label: string; value: string | null | undefined; className?: string }) {
   return (
-    <div className={styles.field}>
+    <div className={`${styles.field} ${className ?? ""}`}>
       <label>{label}</label>
       <div className={styles.staticValue}>{staticDisplayValue(value)}</div>
     </div>

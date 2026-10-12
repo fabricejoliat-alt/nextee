@@ -1,3 +1,4 @@
+import { isValidPassword } from "@/lib/passwordPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { requireManagerClub } from "@/lib/server/managerAccess";
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ clubId: st
     if (!actor.ok) return reply({ error: actor.error }, actor.status);
     const body = await req.json().catch(() => null);
     if (typeof body?.member_id !== "string" || !body.member_id) return reply({ error: "invalid_parent" }, 400);
-    if (typeof body.password !== "string" || body.password.length < 8 || body.password.length > 128) {
+    if (typeof body.password !== "string" || !isValidPassword(body.password)) {
       return reply({ error: "invalid_password" }, 400);
     }
     // Derive the Auth target from this club's parent membership, never a client user_id.

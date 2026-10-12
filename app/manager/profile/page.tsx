@@ -1,4 +1,5 @@
 "use client";
+import { isValidPassword } from "@/lib/passwordPolicy";
 import Link from "next/link";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
@@ -264,7 +265,7 @@ export default function ManagerProfilePage() {
     setInfo(null);
 
     if (newPassword.trim() || confirmPassword.trim()) {
-      if (newPassword.length < 8) {
+      if (!isValidPassword(newPassword)) {
         setError(t("manager.profile.passwordShort"));
         setBusy(false);
         return;

@@ -1,3 +1,6 @@
 .navLink{display:inline-flex;align-items:center;gap:7px;min-height:38px;padding:0 10px;border:1px solid rgba(255,255,255,.24);border-radius:9px;color:#fff;font-size:11px;font-weight:700;white-space:nowrap}
 .navLink:hover{background:rgba(255,255,255,.12)}
 @media(max-width:600px){.navLink{width:40px;justify-content:center;padding:0}.navLink span{display:none}}
+.menu{position:absolute;top:calc(var(--header-h) + var(--safe-top) - 2px);left:14px;z-index:1001;display:grid;min-width:210px;padding:8px;border:1px solid #dce8d9;border-radius:12px;background:#fff;box-shadow:0 16px 36px rgba(0,0,0,.22)}
+.menu a{padding:11px 12px;border-radius:8px;color:#304438;font-size:13px;font-weight:700;text-decoration:none}
+.menu a:hover,.menu a:focus-visible{background:#edf3ea}

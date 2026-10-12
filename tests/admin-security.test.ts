@@ -114,8 +114,12 @@ test("signature verification errors fail closed instead of trusting decoded JWT 
 test("initial credentials use a cryptographic generator with a minimum length", () => {
   const values = new Set(Array.from({ length: 50 }, () => randomPassword()));
   assert.equal(values.size, 50);
-  for (const value of values) assert.equal(value.length, 20);
-  assert.throws(() => randomPassword(8));
+  for (const value of values) {
+    assert.equal(value.length, 20);
+    assert.match(value, /[A-Z]/);
+    assert.match(value, /[^A-Za-z0-9]/);
+  }
+  assert.throws(() => randomPassword(5));
 });
 
 test("creating a manager forces first-login password replacement and audits without logging the password", async () => {
@@ -139,7 +143,7 @@ test("initial password replacement affects only the verified caller and preserve
   const request = (body: object) => managerRequest("POST", body);
   assert.equal((await route.POST(request({ password: "short", confirmPassword: "short" }))).status, 400);
   assert.equal(network.length, 0); assert.equal(h.authWrites.length, 0);
-  const response = await route.POST(request({ password: "personal-fixture-password", confirmPassword: "personal-fixture-password", userId: target }));
+  const response = await route.POST(request({ password: "Personal-fixture-password!", confirmPassword: "Personal-fixture-password!", userId: target }));
   assert.equal(response.status, 200);
   assert.equal(h.authWrites[0].id, actor);
   assert.deepEqual(h.authWrites[0].patch.app_metadata, { initial_password_required: false, preserved: "fixture" });
@@ -151,6 +155,6 @@ test("a rejected personal password never clears the required flag", async () => 
   const route = loadManagerModule<{ POST: (r: Request) => Promise<Response> }>("app/api/auth/initial-password/route.ts", {
     ...h.mocks, fetch: async () => Response.json({ error: "Password rejected" }, { status: 422 }),
   });
-  assert.equal((await route.POST(managerRequest("POST", { password: "fixture-password", confirmPassword: "fixture-password" }))).status, 400);
+  assert.equal((await route.POST(managerRequest("POST", { password: "Fixture-password!", confirmPassword: "Fixture-password!" }))).status, 400);
   assert.equal(h.authWrites.length, 0);
 });
