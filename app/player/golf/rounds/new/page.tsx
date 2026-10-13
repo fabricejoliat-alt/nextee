@@ -600,7 +600,7 @@ export default function NewRoundPage() {
                         {Array.from({ length: omRounds18Count - 1 }, (_, offset) => offset + 1).map((idx) => (
                           <label key={`round-date-${idx}`} style={{ display: "grid", gap: 6 }}>
                             <span style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.62)" }}>
-                              {pickLocaleText(locale, `Partie ${idx + 1}`, `Round ${idx + 1}`)}
+                              {pickLocaleText(locale, `Partie ${idx + 1}`, `Round ${idx + 1}`, `Runde ${idx + 1}`)}
                             </span>
                             <input
                               type="date"

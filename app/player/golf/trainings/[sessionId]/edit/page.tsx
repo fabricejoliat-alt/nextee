@@ -518,7 +518,7 @@ export default function PlayerTrainingEditPage() {
     if (performanceEnabled && linkedEventId) {
       const missing = customCriteria.find((criterion) => criterion.snapshot_is_required && !validateResponseValue(criterion.snapshot_response_format, criterion.snapshot_choices, customResponses[criterion.id]));
       if (missing) {
-        setError(pickLocaleText(locale, `Le critère « ${missing.snapshot_name} » est obligatoire.`, `“${missing.snapshot_name}” is required.`));
+        setError(pickLocaleText(locale, `Le critère « ${missing.snapshot_name} » est obligatoire.`, `“${missing.snapshot_name}” is required.`, `Das Kriterium «${missing.snapshot_name}» ist erforderlich.`));
         setBusy(false);
         return;
       }

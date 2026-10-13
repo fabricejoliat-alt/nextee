@@ -237,11 +237,11 @@ export default function PlayerCampNewPage() {
     for (let i = 0; i < days.length; i += 1) {
       const day = days[i];
       if (!day.starts_at || !day.ends_at) {
-        setError(pickLocaleText(locale, `Jour ${i + 1}: début et fin requis.`, `Day ${i + 1}: start and end are required.`));
+        setError(pickLocaleText(locale, `Jour ${i + 1}: début et fin requis.`, `Day ${i + 1}: start and end are required.`, `Tag ${i + 1}: Beginn und Ende sind erforderlich.`));
         return;
       }
       if (new Date(day.ends_at).getTime() <= new Date(day.starts_at).getTime()) {
-        setError(pickLocaleText(locale, `Jour ${i + 1}: la fin doit être après le début.`, `Day ${i + 1}: end must be after start.`));
+        setError(pickLocaleText(locale, `Jour ${i + 1}: la fin doit être après le début.`, `Day ${i + 1}: end must be after start.`, `Tag ${i + 1}: Das Ende muss nach dem Beginn liegen.`));
         return;
       }
     }

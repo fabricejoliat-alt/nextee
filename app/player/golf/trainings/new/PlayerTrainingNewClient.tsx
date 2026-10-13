@@ -789,7 +789,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
     if (linkedEvent && showSensationsCard) {
       const missing = customCriteria.find((criterion) => criterion.snapshot_is_required && !validateResponseValue(criterion.snapshot_response_format, criterion.snapshot_choices, customResponses[criterion.id]));
       if (missing) {
-        setError(pickLocaleText(locale, `Le critère « ${missing.snapshot_name} » est obligatoire.`, `“${missing.snapshot_name}” is required.`));
+        setError(pickLocaleText(locale, `Le critère « ${missing.snapshot_name} » est obligatoire.`, `“${missing.snapshot_name}” is required.`, `Das Kriterium «${missing.snapshot_name}» ist erforderlich.`));
         setBusy(false);
         return;
       }
@@ -911,7 +911,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
     (clubIdForTraining ? clubsById[clubIdForTraining]?.name : null) ??
     t("common.club");
   const plannedEventTitle = linkedEvent?.event_type === "camp"
-    ? `${linkedCampTitle || linkedEvent.title || pickLocaleText(locale, "Stage/Camp", "Camp")}${typeof linkedCampDayIndex === "number" ? ` • ${pickLocaleText(locale, `Jour ${linkedCampDayIndex + 1}`, `Day ${linkedCampDayIndex + 1}`)}` : ""}`
+    ? `${linkedCampTitle || linkedEvent.title || pickLocaleText(locale, "Stage/Camp", "Camp")}${typeof linkedCampDayIndex === "number" ? ` • ${pickLocaleText(locale, `Jour ${linkedCampDayIndex + 1}`, `Day ${linkedCampDayIndex + 1}`, `Tag ${linkedCampDayIndex + 1}`)}` : ""}`
     : `${pickLocaleText(locale, "Entraînement", "Training")} ${plannedClubName}`;
   const infoCardTitle = linkedEvent
     ? linkedEvent.event_type === "camp"
@@ -984,7 +984,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
                       locale={locale}
                       type={linkedEvent.event_type === "camp" ? pickLocaleText(locale, "Stage", "Camp") : pickLocaleText(locale, "Entraînement", "Training")}
                       detail={linkedEvent.event_type === "camp" && typeof linkedCampDayIndex === "number"
-                        ? `${linkedCampTitle || linkedEvent.title || pickLocaleText(locale, "Stage/Camp", "Camp")} · ${pickLocaleText(locale, `Jour ${linkedCampDayIndex + 1}`, `Day ${linkedCampDayIndex + 1}`)}`
+                        ? `${linkedCampTitle || linkedEvent.title || pickLocaleText(locale, "Stage/Camp", "Camp")} · ${pickLocaleText(locale, `Jour ${linkedCampDayIndex + 1}`, `Day ${linkedCampDayIndex + 1}`, `Tag ${linkedCampDayIndex + 1}`)}`
                         : linkedGroupName || pickLocaleText(locale, "Groupe", "Group")}
                       organizer={plannedClubName}
                       location={linkedEvent.location_text}
