@@ -122,7 +122,13 @@ export default function CoachHomePage() {
       </section>
       <section className={styles.panel}>
         <div className={styles.panelHeader}><div><h2>{t("coach.home.attention")}</h2><p>{t("coach.home.attentionHint")}</p></div></div>
-        {error ? null : <EventList loading={loading} events={(data?.pendingEvalEvents ?? []).slice(0, 5)} groups={data?.groupNameById ?? {}} clubs={data?.clubNameByGroupId ?? {}} empty={t("coach.home.noAttention")} pending/>}
+        {error ? null : loading ? <Skeleton /> : (data?.pendingEvalEvents.length ?? 0) ? <div className={styles.attentionList}>
+          {(data?.pendingEvalEvents ?? []).slice(0, 5).map((event) => <Link key={event.id} href={`/coach/groups/${event.group_id}/planning/${event.id}/debrief`}>
+            <span className={styles.attentionIcon}><ClipboardCheck size={17} aria-hidden="true" /></span>
+            <span className={styles.attentionText}><b>{t("coachCalendar.toEvaluate")}</b><small>{eventTypeLabel(event, t)} · {data?.groupNameById[event.group_id] || t("coach.activity.noGroup")} · {new Intl.DateTimeFormat(coachDateLocale(locale), { day: "numeric", month: "short" }).format(new Date(event.starts_at))}</small></span>
+            <ArrowRight size={15} aria-hidden="true" />
+          </Link>)}
+        </div> : <div className={styles.empty}>{t("coach.home.noAttention")}</div>}
         {!loading && !error && (data?.pendingEvalEvents.length ?? 0) > 5 ? <Link className={styles.textLink} href={COACH_PENDING_EVALUATIONS_HREF}>{coachText(t, "coach.home.allPending", { count: data?.pendingEvalEvents.length ?? 0 })}<ArrowRight size={16} aria-hidden="true"/></Link> : null}
       </section>
     </div>
@@ -138,16 +144,16 @@ export default function CoachHomePage() {
   </div>;
 }
 
-function EventList({ loading, events, groups, clubs, empty, pending = false }: { loading: boolean; events: EventLite[]; groups: Record<string, string>; clubs: Record<string, string>; empty: string; pending?: boolean }) {
+function EventList({ loading, events, groups, clubs, empty }: { loading: boolean; events: EventLite[]; groups: Record<string, string>; clubs: Record<string, string>; empty: string }) {
   const { t } = useI18n();
   if (loading) return <Skeleton />;
   if (!events.length) return <div className={styles.empty}>{empty}</div>;
   const showClub = new Set(Object.values(clubs)).size > 1;
   return <div className={activityStyles.list}>{events.map((event) => {
-    const href = `/coach/groups/${event.group_id}/planning/${event.id}${pending ? "/debrief" : ""}`;
-    return <CoachActivityCard key={event.id} variant="list" startsAt={event.starts_at} endsAt={event.ends_at} typeLabel={eventTypeLabel(event, t)} title={event.title}
+    const href = `/coach/groups/${event.group_id}/planning/${event.id}`;
+    return <CoachActivityCard key={event.id} variant="list" startsAt={event.starts_at} typeLabel={eventTypeLabel(event, t)}
       groupName={groups[event.group_id]} clubName={clubs[event.group_id]} showClub={showClub} location={event.location_text} href={href}
-      actions={<CoachActivityAction state={pending ? "needs_evaluation" : "view_activity"} groupId={event.group_id} eventId={event.id} name={event.title || eventTypeLabel(event, t)}/>}/>;
+      actions={<CoachActivityAction state="view_activity" groupId={event.group_id} eventId={event.id} name={event.title || eventTypeLabel(event, t)}/>}/>;
   })}</div>;
 }
 

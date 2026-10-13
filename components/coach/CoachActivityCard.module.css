@@ -18,3 +18,11 @@
 .listItem .body{gap:4px}
 .listItem .title{font-size:12px;font-weight:750;color:#2f4135}
 .listItem .meta,.listItem .location{font-size:10px;line-height:1.35;color:#7a857c}
+.listItem .date{align-self:stretch;width:72px;box-sizing:border-box;gap:0;text-align:center}
+.listItem .date>span{line-height:1}
+.listItem .date time{min-width:38px;margin-top:5px;padding-top:4px;line-height:1}
+.listItem .body{align-content:center}
+.listItem .title,.listItem .meta,.listItem .location{line-height:1.35}
+.listItem .meta,.listItem .location>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.listItem .location{align-items:center;min-width:0;gap:4px}
+.listItem .location svg{margin-top:0}

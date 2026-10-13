@@ -7,3 +7,21 @@
 .newsPreviewItem{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #edf1eb;color:#2f4135;text-decoration:none}.newsThumbnail{display:block;width:92px;aspect-ratio:16/9;overflow:hidden;border-radius:9px;background:#e9efe8}.newsThumbnail img{display:block;width:100%;height:100%;object-fit:cover}.newsPreviewContent{display:grid;gap:3px;min-width:0}.newsPreviewContent>small,.newsPreviewContent>span{overflow:hidden;color:#7a857c;font-size:9px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}.newsPreviewContent>b{overflow:hidden;color:#2f4135;font-size:12px;font-weight:750;text-overflow:ellipsis;white-space:nowrap}.newsPreviewContent>p{display:-webkit-box;overflow:hidden;margin:1px 0 0;color:#526056;font-size:10px;line-height:1.4;-webkit-box-orient:vertical;-webkit-line-clamp:2}.newsPreviewItem>svg{color:#718173}
 @media(max-width:1080px){.homeCards{grid-template-columns:repeat(2,minmax(0,1fr))}.homeCards>.panel:last-child{grid-column:1/-1}}
 @media(max-width:760px){.homeCards{grid-template-columns:1fr}.homeCards>.panel:last-child{grid-column:auto}}
+
+/* Keep the Coach home cards on the same spacing and type scale as Player home. */
+.homeCards .panel{gap:16px}
+.homeCards .panelHeader h2{font-weight:750;line-height:1.2}
+.homeCards .panelHeader p{line-height:1.45}
+.homeCards .newsPreviewContent>small{color:#65815f;font-weight:850;letter-spacing:.06em;line-height:1.35;text-transform:uppercase}
+.homeCards .newsPreviewContent>span{color:#657368;font-weight:750;line-height:1.35}
+.homeCards .newsPreviewItem{padding:11px 0}
+.attentionList{display:grid;gap:8px}
+.attentionList>a{display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:9px;padding:9px;border:1px solid #eee1b9;border-radius:11px;background:#fff9e9;color:#5b4e2b;text-decoration:none}
+.attentionList>a:hover{background:#fff5dc}
+.attentionIcon{display:grid;width:32px;height:32px;place-items:center;border-radius:9px;background:#fff0c7;color:#8b6d25}
+.attentionText{display:grid;gap:3px;min-width:0}
+.attentionText b,.attentionText small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.attentionText b{font-size:10px}
+.attentionText small{color:#827653;font-size:9px}
+.attentionList>a>svg{color:#aa914d}
+@media(max-width:760px){.homeCards .panel{padding:16px}}
