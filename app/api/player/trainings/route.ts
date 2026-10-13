@@ -10,12 +10,15 @@ import {
 import { createRequestTiming } from "@/lib/server/requestTiming";
 import { readRelatedRows } from "@/lib/server/paginatedRead";
 import { legalNoStore } from "@/lib/server/legalAccess";
+import { canChangePastTrainingAttendance } from "@/lib/playerTrainingAttendanceChange";
+import { coachEventEndMs } from "@/lib/coachCalendar";
 
 type AttendanceStatus = "expected" | "present" | "absent" | "excused" | "not_registered";
 
 type AttendeeRow = {
   event_id: string | null;
   status: AttendanceStatus | null;
+  coach_recorded_status: string | null;
 };
 
 type TrainingSessionRow = {
@@ -132,7 +135,7 @@ export async function GET(req: NextRequest) {
         .order("start_at", { ascending: false }),
       supabaseAdmin
         .from("club_event_attendees")
-        .select("event_id,status")
+        .select("event_id,status,coach_recorded_status")
         .eq("player_id", effectiveUserId),
       supabaseAdmin
         .from("player_activity_events")
@@ -219,6 +222,37 @@ export async function GET(req: NextRequest) {
       (event) => event.event_type !== "camp" || !hiddenCampEventIds.has(String(event.id ?? "").trim()),
     );
 
+    const now = new Date();
+    const pastTrainingEvents = attendeeEvents.filter((event) => event.id && event.starts_at && event.event_type === "training"
+      && event.status === "scheduled" && coachEventEndMs({ starts_at: event.starts_at, ends_at: event.ends_at, duration_minutes: event.duration_minutes }) < now.getTime());
+    const pastTrainingIds = pastTrainingEvents.map((event) => String(event.id));
+    const [feedbackRows, responseRows] = await timing.measure("attendance_eligibility", () => Promise.all([
+      readRelatedRows<{ event_id: string }>(pastTrainingIds, (ids, from, to) => supabaseAdmin
+        .from("club_event_coach_feedback").select("event_id").eq("player_id", effectiveUserId)
+        .in("event_id", ids).order("event_id").order("coach_id").range(from, to)),
+      readRelatedRows<{ event_id: string; respondent_role: string }>(pastTrainingIds, (ids, from, to) => supabaseAdmin
+        .from("club_event_evaluation_responses").select("event_id,respondent_role").eq("player_id", effectiveUserId)
+        .in("event_id", ids).in("respondent_role", ["coach", "player"]).order("event_id").order("id").range(from, to)),
+    ]));
+    const feedbackEventIds = new Set(feedbackRows.map((row) => row.event_id));
+    const coachResponseEventIds = new Set(responseRows.filter((row) => row.respondent_role === "coach").map((row) => row.event_id));
+    const playerResponseEventIds = new Set(responseRows.filter((row) => row.respondent_role === "player").map((row) => row.event_id));
+    const attendeeByEventId = new Map(attendeeRows.map((row) => [String(row.event_id), row]));
+    const sessionsByEventId = new Map<string, TrainingSessionRow[]>();
+    sessions.forEach((session) => { if (session.club_event_id) sessionsByEventId.set(session.club_event_id, [...(sessionsByEventId.get(session.club_event_id) ?? []), session]); });
+    const attendanceChangeableEventIds = access.permissions.edit ? pastTrainingEvents.filter((event) => canChangePastTrainingAttendance({
+      eventType: event.event_type,
+      eventStatus: event.status,
+      eventStartsAt: String(event.starts_at),
+      eventEndsAt: event.ends_at,
+      eventDurationMinutes: event.duration_minutes,
+      coachRecordedStatus: attendeeByEventId.get(String(event.id))?.coach_recorded_status ?? null,
+      coachFeedbackRecorded: feedbackEventIds.has(String(event.id)),
+      coachResponseRecorded: coachResponseEventIds.has(String(event.id)),
+      playerRatings: (sessionsByEventId.get(String(event.id)) ?? []).flatMap((session) => [session.motivation, session.difficulty, session.satisfaction]),
+      playerResponseRecorded: playerResponseEventIds.has(String(event.id)),
+    }, now)).map((event) => String(event.id)) : [];
+
     if (campDaysRes.error) return NextResponse.json({ error: campDaysRes.error.message }, { status: 400 });
     const campDays = (campDaysRes.data ?? []) as CampDayRow[];
 
@@ -278,6 +312,7 @@ export async function GET(req: NextRequest) {
       sessions: enrichedSessions,
       attendeeEvents,
       attendeeStatusByEventId,
+      attendanceChangeableEventIds,
       competitionEvents: competitionRes.data ?? [],
       activeClubCount: access.organizationIds.length,
       completedSessionIds: sessions.filter(row => withContent.has(String(row.id))
