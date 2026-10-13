@@ -189,6 +189,35 @@
   color: #566c58;
 }
 
+.attendanceControl {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 14px;
+  border: 1px solid #dce6da;
+  border-radius: 11px;
+  background: #f3f7f1;
+}
+
+.attendanceControl > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.attendanceControl strong {
+  color: #35483b;
+  font-size: 12px;
+}
+
+.attendanceControl p {
+  margin: 0;
+  color: #566c58;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
 .plannedList,
 .trainingItems {
   display: grid;
@@ -382,6 +411,9 @@
 }
 
 @media (max-width: 640px) {
+  .attendanceControl {
+    flex-wrap: wrap;
+  }
   .pageBackground {
     padding-bottom: 30px;
   }

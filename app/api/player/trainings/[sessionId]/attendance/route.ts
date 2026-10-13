@@ -1,0 +1,98 @@
+import { NextResponse, type NextRequest } from "next/server";
+import { bearerTokenFromRequest, playerAccessErrorStatus, resolveAuthenticatedPlayerAccess } from "@/app/api/player/access";
+import { requestedOrganizationId } from "@/lib/organizationPolicy";
+import { canChangePastTrainingAttendance } from "@/lib/playerTrainingAttendanceChange";
+
+type Access = Awaited<ReturnType<typeof resolveAuthenticatedPlayerAccess>>;
+const noStore = { "Cache-Control": "private, no-store" };
+
+async function readState(access: Access, sessionId: string) {
+  const db = access.supabaseAdmin;
+  const sessionResult = await db.from("training_sessions")
+    .select("id,club_event_id,motivation,difficulty,satisfaction")
+    .eq("id", sessionId).eq("user_id", access.subjectPlayerId).maybeSingle();
+  if (sessionResult.error) throw sessionResult.error;
+  const eventId = sessionResult.data?.club_event_id;
+  if (!eventId) return null;
+
+  const eventResult = await db.from("club_events")
+    .select("id,club_id,event_type,status,starts_at,ends_at,duration_minutes")
+    .eq("id", eventId).in("club_id", access.organizationIds).maybeSingle();
+  if (eventResult.error) throw eventResult.error;
+  if (!eventResult.data) return null;
+
+  const [attendeeResult, feedbackResult, responsesResult] = await Promise.all([
+    db.from("club_event_attendees").select("status,coach_recorded_status")
+      .eq("event_id", eventId).eq("player_id", access.subjectPlayerId).maybeSingle(),
+    db.from("club_event_coach_feedback").select("event_id")
+      .eq("event_id", eventId).eq("player_id", access.subjectPlayerId).limit(1),
+    db.from("club_event_evaluation_responses").select("respondent_role")
+      .eq("event_id", eventId).eq("player_id", access.subjectPlayerId).in("respondent_role", ["coach", "player"]),
+  ]);
+  for (const result of [attendeeResult, feedbackResult, responsesResult]) if (result.error) throw result.error;
+  if (!attendeeResult.data) return null;
+
+  const event = eventResult.data;
+  const attendee = attendeeResult.data;
+  const roles = new Set((responsesResult.data ?? []).map((row) => row.respondent_role));
+  const canChange = canChangePastTrainingAttendance({
+    eventType: event.event_type,
+    eventStatus: event.status,
+    eventStartsAt: event.starts_at,
+    eventEndsAt: event.ends_at,
+    eventDurationMinutes: event.duration_minutes,
+    coachRecordedStatus: attendee.coach_recorded_status,
+    coachFeedbackRecorded: Boolean(feedbackResult.data?.length),
+    coachResponseRecorded: roles.has("coach"),
+    playerRatings: [sessionResult.data.motivation, sessionResult.data.difficulty, sessionResult.data.satisfaction],
+    playerResponseRecorded: roles.has("player"),
+  }, new Date());
+  return { eventId, status: attendee.status, canChange };
+}
+
+async function authorize(req: NextRequest, mode: "view" | "edit") {
+  return resolveAuthenticatedPlayerAccess({
+    accessToken: bearerTokenFromRequest(req),
+    requestedPlayerId: new URL(req.url).searchParams.get("child_id"),
+    requestedOrganizationId: requestedOrganizationId(req.url),
+    mode,
+  });
+}
+
+export async function GET(req: NextRequest, context: { params: Promise<{ sessionId: string }> }) {
+  try {
+    const access = await authorize(req, "edit");
+    const { sessionId } = await context.params;
+    const state = await readState(access, sessionId);
+    if (!state) return NextResponse.json({ error: "Not found" }, { status: 404, headers: noStore });
+    return NextResponse.json({ status: state.status, canChange: state.canChange }, { headers: noStore });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to load attendance" },
+      { status: playerAccessErrorStatus(error), headers: noStore });
+  }
+}
+
+export async function PATCH(req: NextRequest, context: { params: Promise<{ sessionId: string }> }) {
+  try {
+    const access = await authorize(req, "edit");
+    const { sessionId } = await context.params;
+    const body = await req.json().catch(() => ({}));
+    const nextStatus = body?.status;
+    if (nextStatus !== "present" && nextStatus !== "absent")
+      return NextResponse.json({ error: "Invalid attendance status" }, { status: 400, headers: noStore });
+    const state = await readState(access, sessionId);
+    if (!state) return NextResponse.json({ error: "Not found" }, { status: 404, headers: noStore });
+    if (!state.canChange) return NextResponse.json({ error: "Attendance can no longer be changed" }, { status: 409, headers: noStore });
+    let update = access.supabaseAdmin.from("club_event_attendees")
+      .update({ status: nextStatus }).eq("event_id", state.eventId).eq("player_id", access.subjectPlayerId)
+      .is("coach_recorded_status", null);
+    update = state.status == null ? update.is("status", null) : update.eq("status", state.status);
+    const result = await update.select("status").maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return NextResponse.json({ error: "Attendance changed in the meantime" }, { status: 409, headers: noStore });
+    return NextResponse.json({ status: result.data.status, canChange: true }, { headers: noStore });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to update attendance" },
+      { status: playerAccessErrorStatus(error), headers: noStore });
+  }
+}

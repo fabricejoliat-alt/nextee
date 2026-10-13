@@ -9,6 +9,8 @@ import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import TrainingPageSkeleton from "@/components/player/TrainingPageSkeleton";
+import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
+import { invalidateClientPageCacheByPrefix } from "@/lib/clientPageCache";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
@@ -127,6 +129,8 @@ export default function PlayerTrainingEditPage() {
   const [linkedEventDurationMinutes, setLinkedEventDurationMinutes] = useState<number | null>(null);
   const [nonPerformanceDuration, setNonPerformanceDuration] = useState<string>("");
   const [attendanceStatus, setAttendanceStatus] = useState<"expected" | "present" | "absent" | "excused" | null>(null);
+  const [attendanceEditable, setAttendanceEditable] = useState(false);
+  const [attendanceBusy, setAttendanceBusy] = useState(false);
   const [linkedEventId, setLinkedEventId] = useState("");
   const [customCriteria, setCustomCriteria] = useState<EventEvaluationCriterion[]>([]);
   const [customResponses, setCustomResponses] = useState<Record<string, string | number | boolean | null>>({});
@@ -184,10 +188,10 @@ export default function PlayerTrainingEditPage() {
   }, [normalizedSessionType, startAt, nowTs]);
   const attendanceBlocked = attendanceStatus === "absent" || attendanceStatus === "excused";
 
-  const evaluationDisabled = busy || !isClubSessionPast || !performanceEnabled || attendanceBlocked;
+  const evaluationDisabled = busy || attendanceBusy || !isClubSessionPast || !performanceEnabled || attendanceBlocked;
 
   const canSave = useMemo(() => {
-    if (busy) return false;
+    if (busy || attendanceBusy) return false;
     if (attendanceBlocked) return false;
     if (!userId) return false;
     if (!sessionId) return false;
@@ -213,7 +217,7 @@ export default function PlayerTrainingEditPage() {
     }
 
     return true;
-  }, [busy, attendanceBlocked, performanceEnabled, nonPerformanceDuration, isCoachPlannedTraining, effectiveTotalMinutes, userId, sessionId, startAt, normalizedSessionType, clubIdForTraining, items]);
+  }, [busy, attendanceBusy, attendanceBlocked, performanceEnabled, nonPerformanceDuration, isCoachPlannedTraining, effectiveTotalMinutes, userId, sessionId, startAt, normalizedSessionType, clubIdForTraining, items]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowTs(new Date().getTime()), 30_000);
@@ -224,6 +228,7 @@ export default function PlayerTrainingEditPage() {
     (async () => {
       setLoading(true);
       setError(null);
+      setAttendanceEditable(false);
 
       if (!sessionId) {
         setError(t("trainingDetail.error.missingId"));
@@ -323,16 +328,18 @@ export default function PlayerTrainingEditPage() {
         }
         setCustomCriteria((eventJson?.customEvaluationCriteria ?? []) as EventEvaluationCriterion[]);
         setCustomResponses(Object.fromEntries(((eventJson?.customEvaluationResponses ?? []) as Array<{ event_criterion_id: string; value_json: string | number | boolean | null }>).map((row) => [row.event_criterion_id, row.value_json])));
-        const attRes = await supabase
-          .from("club_event_attendees")
-          .select("status")
-          .eq("event_id", sess.club_event_id)
-          .eq("player_id", uid)
-          .maybeSingle();
-        if (!attRes.error) {
-          setAttendanceStatus((attRes.data?.status ?? null) as "expected" | "present" | "absent" | "excused" | null);
-        } else {
+        const attendanceResponse = await fetch(`/api/player/trainings/${sessionId}/attendance?child_id=${encodeURIComponent(uid)}`, {
+          headers: authData.session?.access_token ? { Authorization: `Bearer ${authData.session.access_token}` } : {},
+          cache: "no-store",
+        });
+        const attendanceJson = await attendanceResponse.json().catch(() => ({}));
+        if (!attendanceResponse.ok) {
+          setError(String(attendanceJson?.error ?? t("common.errorLoading")));
           setAttendanceStatus(null);
+          setAttendanceEditable(false);
+        } else {
+          setAttendanceStatus((attendanceJson.status ?? null) as "expected" | "present" | "absent" | "excused" | null);
+          setAttendanceEditable(attendanceJson.canChange === true);
         }
         const evRes = await supabase
           .from("club_events")
@@ -370,6 +377,7 @@ export default function PlayerTrainingEditPage() {
         setCustomCriteria([]);
         setCustomResponses({});
         setAttendanceStatus(null);
+        setAttendanceEditable(false);
         setLinkedEventDurationMinutes(null);
         setPlannedStructureItems([]);
       }
@@ -437,6 +445,42 @@ export default function PlayerTrainingEditPage() {
       if (!clubIdForTraining && clubIds.length > 0) setClubIdForTraining(clubIds[0]);
     } else {
       setClubIdForTraining("");
+    }
+  }
+
+  async function togglePastAttendance() {
+    if (!attendanceEditable || attendanceBusy || !userId) return;
+    const nextStatus = attendanceBlocked ? "present" : "absent";
+    const confirmation = nextStatus === "absent"
+      ? pickLocaleText(locale, "Confirmer ton absence à cet entraînement ?", "Confirm your absence from this training session?")
+      : pickLocaleText(locale, "Confirmer ta présence à cet entraînement ?", "Confirm your attendance at this training session?");
+    if (!window.confirm(confirmation)) return;
+    setAttendanceBusy(true);
+    setError(null);
+    try {
+      const { data: authData } = await supabase.auth.getSession();
+      const response = await fetch(`/api/player/trainings/${sessionId}/attendance?child_id=${encodeURIComponent(userId)}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          ...(authData.session?.access_token ? { Authorization: `Bearer ${authData.session.access_token}` } : {}),
+        },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 409) setAttendanceEditable(false);
+        throw new Error(response.status === 409
+          ? pickLocaleText(locale, "La présence a changé ou une évaluation a été enregistrée. Actualise la page.", "Attendance changed or an evaluation was recorded. Refresh the page.")
+          : String(result.error ?? pickLocaleText(locale, "Impossible de modifier la présence.", "Unable to update attendance.")));
+      }
+      setAttendanceStatus(result.status === "absent" ? "absent" : "present");
+      invalidateClientPageCacheByPrefix("page-cache:player-home:");
+      invalidateClientPageCacheByPrefix("page-cache:player-trainings:");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : pickLocaleText(locale, "Impossible de modifier la présence.", "Unable to update attendance."));
+    } finally {
+      setAttendanceBusy(false);
     }
   }
 
@@ -586,6 +630,13 @@ export default function PlayerTrainingEditPage() {
                 title={pickLocaleText(locale, "Informations de l’activité", "Activity information")}
                 description={pickLocaleText(locale, "Date, lieu, durée et encadrement.", "Date, place, duration and coaching.")}
               />
+
+              {isCoachPlannedTraining && attendanceEditable ? (
+                <div className={styles.attendanceControl}>
+                  <div><strong>{pickLocaleText(locale, "Ma présence", "My attendance")}</strong><p>{pickLocaleText(locale, "Tu peux encore signaler ton absence tant que l’entraînement n’a pas été évalué.", "You can still report an absence until this training session is evaluated.")}</p></div>
+                  <AttendanceToggle variant="pill" checked={!attendanceBlocked} onToggle={() => void togglePastAttendance()} disabled={attendanceBusy || busy} ariaLabel={pickLocaleText(locale, "Présence à cet entraînement", "Attendance at this training session")} leftLabel={pickLocaleText(locale, "Absent", "Absent")} rightLabel={pickLocaleText(locale, "Présent", "Present")} />
+                </div>
+              ) : null}
 
               {attendanceBlocked ? (
                 <div className={styles.warning}>
