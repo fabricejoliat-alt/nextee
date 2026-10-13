@@ -1,3 +1,5 @@
+import { serverNotificationMessage, notificationTemplateData } from "@/lib/server/notificationTemplates";
+import { sendWebPush } from "@/lib/server/webPush";
 import { deliverManagerNewsEmails, RejectedNewsEmail } from "@/lib/server/managerNewsDelivery";
 import { createClient } from "@supabase/supabase-js";
 
@@ -847,30 +849,49 @@ async function createServerNotification(args: {
   const recipients = Array.from(new Set(args.recipientUserIds.filter(Boolean))).filter((userId) => userId !== args.actorUserId);
   if (recipients.length === 0) return null;
 
+  const template = { templateKey: "notif.managerNews", templateParams: { newsTitle: args.title, newsSummary: args.body || args.title } };
+  const message = await serverNotificationMessage(args.supabaseAdmin, template.templateKey, "fr", template.templateParams);
   const notificationRes = await args.supabaseAdmin
     .from("notifications")
     .insert({
       actor_user_id: args.actorUserId,
       type: args.kind,
       kind: args.kind,
-      title: args.title,
-      body: args.body,
-      data: args.data,
+      ...message,
+      data: { ...args.data, ...notificationTemplateData(template) },
     })
     .select("id")
     .single();
   if (notificationRes.error) throw new Error(notificationRes.error.message);
 
+  const deliveryChecks = await Promise.all(recipients.map(async userId => {
+    const allowed = await args.supabaseAdmin.rpc("organization_notification_visible", { p_notification: notificationRes.data.id, p_actor: userId });
+    if (allowed.error) throw allowed.error;
+    return allowed.data === true ? userId : null;
+  }));
+  const deliverable = deliveryChecks.filter((id): id is string => id !== null);
+  if (!deliverable.length) return String(notificationRes.data.id);
   const recipientsRes = await args.supabaseAdmin
     .from("notification_recipients")
     .insert(
-      recipients.map((userId) => ({
+      deliverable.map((userId) => ({
         notification_id: notificationRes.data.id,
         user_id: userId,
       }))
     );
   if (recipientsRes.error) throw new Error(recipientsRes.error.message);
 
+  const memberships = await args.supabaseAdmin.from("club_members").select("user_id,role")
+    .eq("club_id", args.data.club_id).eq("is_active", true).in("user_id", deliverable);
+  if (memberships.error) throw memberships.error;
+  const roles = new Map<string, Set<string>>();
+  for (const row of memberships.data ?? []) {
+    const set = roles.get(row.user_id) ?? new Set<string>(); set.add(row.role); roles.set(row.user_id, set);
+  }
+  await Promise.all(["player", "coach", "manager"].map(role => sendWebPush(args.supabaseAdmin, { ...template, ...message,
+    kind: args.kind, recipientUserIds: deliverable.filter(id => {
+      const available = roles.get(id); return (available?.has("manager") ? "manager" : available?.has("coach") ? "coach" : "player") === role;
+    }), url: `/${role}/news` })));
   return String(notificationRes.data.id ?? "");
 }
 

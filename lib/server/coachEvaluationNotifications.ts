@@ -1,3 +1,4 @@
+import { serverNotificationMessage, notificationTemplateData } from "@/lib/server/notificationTemplates";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendWebPush } from "@/lib/server/webPush";
 
@@ -14,14 +15,18 @@ export async function notifyCoachPlayerEvaluation(db: SupabaseClient, input: {
   if (existing.error) throw existing.error;
   if (existing.data) return { created: false, duplicate: true };
 
-  const moment = new Intl.DateTimeFormat("fr-CH", { day: "numeric", month: "long", year: "numeric", timeZone: "Europe/Zurich" })
+  const moment = new Intl.DateTimeFormat("fr-CH", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Europe/Zurich" })
     .format(new Date(event.starts_at));
-  const title = "Nouvelle évaluation coach";
-  const body = `L’évaluation de l’entraînement du ${moment} est disponible dans ActiviTee.`;
+  const profile = await db.from("profiles").select("first_name,last_name").eq("id", playerId).maybeSingle();
+  const template = { templateKey: "notif.coachPlayerEvaluated", templateParams: {
+    playerName: [profile.data?.first_name, profile.data?.last_name].filter(Boolean).join(" ") || "Joueur",
+    eventType: "Entraînement", dateTime: moment,
+  } };
+  const { title, body } = await serverNotificationMessage(db, template.templateKey, "fr", template.templateParams);
   const url = `/player/golf/trainings/new?club_event_id=${encodeURIComponent(event.id)}&mode=view&child_id=${encodeURIComponent(playerId)}`;
   const notification = await db.from("notifications").insert({
     actor_user_id: actorUserId, club_id: event.club_id, type: "coach_player_evaluated", kind: "coach_player_evaluated",
-    title, body, data: { ...identity, organization_id: event.club_id, child_id: playerId, url },
+    title, body, data: { ...notificationTemplateData(template), ...identity, organization_id: event.club_id, child_id: playerId, url },
   }).select("id").single();
   if (notification.error || !notification.data?.id) throw new Error("Evaluation notification unavailable");
 
@@ -41,6 +46,6 @@ export async function notifyCoachPlayerEvaluation(db: SupabaseClient, input: {
     recipients.map(userId => ({ notification_id: notification.data.id, user_id: userId })), { onConflict: "notification_id,user_id" });
   if (delivered.error) throw delivered.error;
   // Await the provider call so the server invocation cannot end before sending.
-  const push = await sendWebPush(db, { recipientUserIds: recipients, kind: "coach_player_evaluated", title, body, url });
+  const push = await sendWebPush(db, { recipientUserIds: recipients, kind: "coach_player_evaluated", title, body, url, ...template });
   return { created: true, recipients: recipients.length, push };
 }

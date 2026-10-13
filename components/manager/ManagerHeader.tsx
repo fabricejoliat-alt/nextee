@@ -36,7 +36,7 @@ export default function ManagerHeader() {
       const userId = authRes.data.user?.id;
       if (!userId || !mounted) return;
       try {
-        const count = await getUnreadNotificationsCount(userId, { hideThreadNotifications: true });
+        const count = await getUnreadNotificationsCount(userId, { hideThreadNotifications: true, role: "manager" });
         if (!mounted) return;
         setUnreadCount(count);
         applyPwaBadge(count);
@@ -86,7 +86,7 @@ export default function ManagerHeader() {
             filter: `user_id=eq.${userId}`,
           },
           async () => {
-            const count = await getUnreadNotificationsCount(userId, { hideThreadNotifications: true }).catch(() => 0);
+            const count = await getUnreadNotificationsCount(userId, { hideThreadNotifications: true, role: "manager" }).catch(() => 0);
             if (cancelled) return;
             setUnreadCount(count);
             applyPwaBadge(count);

@@ -214,9 +214,12 @@ export async function GET(req: NextRequest) {
     }
 
     const evaluationState = await loadCoachEvaluationState(supabaseAdmin, evaluationEvents.map((event) => event.id));
-    const pendingEvalEvents = evaluationEvents.filter((event) =>
-      evaluationState.attendees.some((attendee) => attendee.event_id === event.id)
-      && !evaluationState.completeByEvent[event.id]);
+    const pendingEvalEvents = evaluationEvents.map(event => {
+      const attendees = evaluationState.attendees.filter(row => row.event_id === event.id);
+      const completedPlayers = attendees.filter(attendee => coachTrainingEvaluationComplete([attendee],
+        evaluationState.feedback.filter(row => row.event_id === event.id), evaluationState.criteria, evaluationState.responses)).length;
+      return { ...event, totalPlayers: attendees.length, completedPlayers, remainingPlayers: attendees.length - completedPlayers };
+    }).filter(event => event.remainingPlayers > 0);
     const pendingAttendanceCount = evaluationState.attendees.filter((row) => row.coach_recorded_status == null).length;
     const pendingEvaluationCount = evaluationState.attendees.filter((attendee) =>
       !coachTrainingEvaluationComplete([attendee], evaluationState.feedback.filter((row) => row.event_id === attendee.event_id),

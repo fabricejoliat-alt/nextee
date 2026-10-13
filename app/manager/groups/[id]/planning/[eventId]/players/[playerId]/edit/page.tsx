@@ -183,7 +183,7 @@ export default function ManagerEventPlayerFeedbackEditPage() {
           playerName: nameOf(player?.first_name ?? null, player?.last_name ?? null),
           eventType: managerActivityLabel(t, event!.event_type), dateTime: participantDate(event!.starts_at, locale),
         });
-        await createAppNotification({ actorUserId: meId, kind: "coach_player_evaluated", title: msg.title, body: msg.body,
+        await createAppNotification({ actorUserId: meId, kind: "coach_player_evaluated", ...msg,
           data: { event_id: eventId, group_id: groupId, player_id: playerId, url: `/player/golf/trainings/new?club_event_id=${eventId}` }, recipientUserIds: [playerId] });
       }
       if (current === version.current) router.push(goNext ? nextPlayerId ? `/manager/groups/${groupId}/planning/${eventId}/players/${nextPlayerId}/edit${seasonQuery}` : activityHref : playerHref);

@@ -523,7 +523,7 @@ export default function CoachGroupPlanningPage() {
           locationPart: request.template.location_text ? ` · ${request.template.location_text}` : "",
           changesSummary: `${ids.length} · ${request.template.start_date} → ${request.template.end_date} · ${request.template.time_of_day}`,
         });
-        await createAppNotification({ actorUserId: meId, kind: "coach_event_created", title: msg.title, body: msg.body,
+        await createAppNotification({ actorUserId: meId, kind: "coach_event_created", ...msg,
           data: { event_id: ids[0], series_id: result.data.series_id, group_id: groupId,
             url: request.mode === "single" ? `/player/golf/trainings/new?club_event_id=${ids[0]}` : "/player/golf/trainings" },
           recipientUserIds: request.playerIds });

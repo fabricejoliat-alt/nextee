@@ -15,6 +15,7 @@ import {
   upsertMyNotificationPreferences,
 } from "@/lib/notificationPreferences";
 import { disablePushSubscription, ensurePushSubscription, supportsWebPush, pushFailureMessage, testPushSubscription, isNativeApp, hasLocalPushSubscription } from "@/lib/pushClient";
+import { notificationKindsForRole } from "@/lib/notificationCatalog";
 import { nextNotificationKinds } from "@/lib/notificationKindSelection";
 
 type Props = {
@@ -62,11 +63,11 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
 
   const pushSupported = useMemo(() => supportsWebPush(), []);
   const notificationKindOptions = useMemo(
-    () => hideThreadNotifications ? NOTIFICATION_KIND_OPTIONS.filter((option) => option.kind !== "thread_message") : NOTIFICATION_KIND_OPTIONS,
-    [hideThreadNotifications]
+    () => NOTIFICATION_KIND_OPTIONS.filter(option => notificationKindsForRole(homeHref === "/coach" ? "coach" : managerScope ? "manager" : "player").includes(option.kind) && (!hideThreadNotifications || option.kind !== "thread_message")),
+    [hideThreadNotifications, homeHref, managerScope]
   );
   const selectedKindsSet = useMemo(() => new Set(enabledKinds), [enabledKinds]);
-  const allKindIds = useMemo(() => notificationKindOptions.map((option) => option.kind), [notificationKindOptions]);
+  const allKindIds = useMemo(() => NOTIFICATION_KIND_OPTIONS.map((option) => option.kind), []);
 
   useEffect(() => {
     let active = true;
@@ -358,7 +359,7 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
                   <div style={{ fontWeight: 900, fontSize: 13 }}>{tr("Types de notifications", "Notification types", "Benachrichtigungstypen", "Tipi di notifiche")}</div>
 
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                    {NOTIFICATION_KIND_OPTIONS.map((opt) => {
+                    {notificationKindOptions.map((opt) => {
                       const checked = enabledKinds.length === 0 || selectedKindsSet.has(opt.kind);
                       return (
                         <label

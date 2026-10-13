@@ -77,7 +77,7 @@ export default function CoachHeader() {
       const userId = authRes.data.user?.id;
       if (!userId || !mounted) return;
       try {
-        const count = await getUnreadNotificationsCount(userId);
+        const count = await getUnreadNotificationsCount(userId, { role: "coach" });
         if (!mounted) return;
         setUnreadCount(count);
         applyPwaBadge(count);
@@ -132,7 +132,7 @@ export default function CoachHeader() {
             filter: `user_id=eq.${userId}`,
           },
           async () => {
-            const count = await getUnreadNotificationsCount(userId).catch(() => 0);
+            const count = await getUnreadNotificationsCount(userId, { role: "coach" }).catch(() => 0);
             if (cancelled) return;
             setUnreadCount(count);
             applyPwaBadge(count);

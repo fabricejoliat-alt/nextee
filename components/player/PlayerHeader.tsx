@@ -23,7 +23,7 @@ export default function PlayerHeader() {
       const userId = authRes.data.session?.user.id;
       if (!userId || !mounted) return;
       try {
-        const count = await getUnreadNotificationsCount(userId, { hideThreadNotifications: true });
+        const count = await getUnreadNotificationsCount(userId, { hideThreadNotifications: true, role: "player" });
         if (!mounted) return;
         setUnreadCount(count);
         applyPwaBadge(count);
@@ -88,7 +88,7 @@ export default function PlayerHeader() {
             filter: `user_id=eq.${userId}`,
           },
           async () => {
-            const count = await getUnreadNotificationsCount(userId, { hideThreadNotifications: true }).catch(() => 0);
+            const count = await getUnreadNotificationsCount(userId, { hideThreadNotifications: true, role: "player" }).catch(() => 0);
             if (cancelled) return;
             setUnreadCount(count);
             applyPwaBadge(count);

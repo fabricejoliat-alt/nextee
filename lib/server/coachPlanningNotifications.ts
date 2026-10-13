@@ -1,3 +1,5 @@
+import { notifyEventCoaches, type StaffNotificationEvent } from "@/lib/server/notificationStaff";
+import { serverNotificationMessage, notificationTemplateData, type NotificationTemplateInput } from "@/lib/server/notificationTemplates";
 /* eslint-disable @typescript-eslint/no-explicit-any -- Existing service-side notification adapter. */
 import { sendWebPush } from "@/lib/server/webPush";
 
@@ -26,7 +28,7 @@ function formatTrainingMoment(iso: string) {
 
 async function dispatchPushForRecipients(
   supabaseAdmin: any,
-  opts: { title: string; body: string; url: string; recipientUserIds: string[] }
+  opts: { title: string; body: string; url: string; recipientUserIds: string[] } & NotificationTemplateInput
 ) {
   await sendWebPush(supabaseAdmin, { ...opts, kind: "coach_event_deleted" }).catch(() => {});
 }
@@ -38,23 +40,22 @@ export async function notifyPlanningDeletion(
   recipientUserIds: string[],
   seriesCount?: number,
   seriesId?: string | null,
-  guardianChildId?: string
+  guardianChildId?: string,
+  staffSnapshot?: { event: StaffNotificationEvent; coachIds: string[] }
 ) {
   const recipients = uniq(recipientUserIds).filter((id) => id !== actorUserId);
-  if (recipients.length === 0) return;
+  if (recipients.length === 0 && !staffSnapshot?.coachIds.length) return;
 
   const type = String(event.event_type ?? "training");
   const isTraining = type === "training";
   const isInterclub = type === "interclub";
-  const isTrainingOrInterclub = isTraining || isInterclub;
   const moment = formatTrainingMoment(event.starts_at);
   const location = String(event.location_text ?? "").trim() || "Lieu à définir";
-  const title = seriesCount !== undefined ? "Récurrence supprimée" : isInterclub
-    ? `L'interclub du ${moment} a été annulé`
-    : isTraining
-      ? `L'entrainement du ${moment} a été annulé`
-      : "Une activité prévue a été annulée";
-  const body = seriesCount !== undefined ? `${seriesCount} activités annulées · ${moment}` : isTrainingOrInterclub ? "" : `Le ${moment} • ${location}`;
+  const template = { templateKey: seriesCount !== undefined ? "notif.coachSeriesDeleted" : "notif.coachEventDeleted", templateParams: {
+    eventType: isTraining ? "Entraînement" : isInterclub ? "Interclub" : "Activité", dateTime: moment, locationPart: ` · ${location}`,
+    changesSummary: `${seriesCount ?? 1} activités annulées · ${moment}`,
+  } };
+  const { title, body } = await serverNotificationMessage(supabaseAdmin, template.templateKey, "fr", template.templateParams);
   const url = "/player/golf/trainings" + (guardianChildId ? `?child_id=${encodeURIComponent(guardianChildId)}` : "");
 
   const ins = await supabaseAdmin
@@ -66,6 +67,7 @@ export async function notifyPlanningDeletion(
       title,
       body,
       data: {
+        ...notificationTemplateData(template),
         event_id: event.id,
         organization_id: event.club_id,
         ...(guardianChildId ? { child_id: guardianChildId } : {}),
@@ -78,6 +80,8 @@ export async function notifyPlanningDeletion(
   if (ins.error || !ins.data?.id) throw new Error(ins.error?.message ?? "Notification insert failed");
 
   const notificationId = String(ins.data.id);
+  if (!guardianChildId && staffSnapshot) await notifyEventCoaches(supabaseAdmin, { id: notificationId, actor_user_id: actorUserId,
+    kind: "coach_event_deleted", title, body, data: { event_id: event.id, ...notificationTemplateData(template) } }, staffSnapshot);
   const deliveryChecks=await Promise.all(recipients.map(async userId=>{
     const allowed=await supabaseAdmin.rpc("organization_notification_visible",{p_notification:notificationId,p_actor:userId});
     if(allowed.error)throw allowed.error;return allowed.data===true?userId:null;
@@ -97,6 +101,7 @@ export async function notifyPlanningDeletion(
     body,
     url,
     recipientUserIds: deliverable,
+    ...template,
   });
 
   // Preserve parent delivery when the edit screen delegates deletion to the API.

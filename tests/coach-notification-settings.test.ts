@@ -6,7 +6,7 @@ import { coachComponentHarness, elements, textContent, flush, deferred, type Ele
 import { messages } from "../lib/i18n/messages.ts";
 import { nextNotificationKinds, NO_NOTIFICATION_KINDS } from "../lib/notificationKindSelection.ts";
 
-const allKinds = ["thread_message", "coach_event_created", "competition_reminder", "coach_event_updated", "coach_event_deleted", "coach_player_evaluated", "player_marked_absent", "player_marked_present"];
+const allKinds = ["manager_news", "thread_message", "coach_event_created", "competition_reminder", "coach_event_updated", "coach_event_deleted", "coach_player_evaluated", "player_marked_absent", "player_marked_present"];
 const defaults = { receiveInApp: true, receivePush: false, enabledKinds: [] as string[] };
 const toggle = (tree: Element, label: string) => {
   const control = elements(tree).find((node) => node.props.label === label && typeof node.props.onToggle === "function");
@@ -36,7 +36,8 @@ test("notification settings and all category labels translate in four languages 
       harness.setLocale(locale);
       const tree = harness.render();
       assert.ok(textContent(tree).includes(messages[locale]["notifications.settings.title"]));
-      for (const kind of allKinds) assert.ok(toggle(tree, messages[locale][`notifications.kind.${kind}`]));
+      for (const kind of allKinds.filter(value => !["competition_reminder", "coach_player_evaluated"].includes(value))) assert.ok(toggle(tree, messages[locale][`notifications.kind.${kind}`]));
+      for (const kind of ["competition_reminder", "coach_player_evaluated"]) assert.ok(!elements(tree).some(node => node.props.label === messages[locale][`notifications.kind.${kind}`]));
     }
     assert.equal(reads, 1);
   } finally { harness.cleanup(); }

@@ -1,3 +1,4 @@
+import { notifyPlayerAttendance } from "@/lib/server/playerAttendanceNotifications";
 import { NextResponse, type NextRequest } from "next/server";
 import { bearerTokenFromRequest, playerAccessErrorStatus, resolveAuthenticatedPlayerAccess } from "@/app/api/player/access";
 import { requestedOrganizationId } from "@/lib/organizationPolicy";
@@ -49,7 +50,15 @@ export async function PATCH(req: NextRequest, context: { params: Promise<{ sessi
     if (!state.canChange) return NextResponse.json({ error: "Attendance can no longer be changed" }, { status: 409, headers: noStore });
     const status = await changePastTrainingAttendance(access, state, nextStatus);
     if (status == null) return NextResponse.json({ error: "Attendance changed in the meantime" }, { status: 409, headers: noStore });
-    return NextResponse.json({ status: status, canChange: true }, { headers: noStore });
+    let notificationWarning = false;
+    if (state.status !== status) {
+      try {
+        const result = await notifyPlayerAttendance(access.supabaseAdmin, { actorId: access.actorUserId,
+          playerId: access.subjectPlayerId, eventId: state.eventId, status });
+        notificationWarning = Boolean(result?.failed);
+      } catch { notificationWarning = true; }
+    }
+    return NextResponse.json({ status: status, canChange: true, notificationWarning }, { headers: noStore });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Unable to update attendance" },
       { status: playerAccessErrorStatus(error), headers: noStore });

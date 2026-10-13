@@ -1,3 +1,4 @@
+import { notifyEventCoaches } from "@/lib/server/notificationStaff";
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendWebPush, notificationPath } from "@/lib/server/webPush";
@@ -26,9 +27,12 @@ export async function POST(req: Request) {
       if (access.error) throw access.error;
       return access.data === true ? row.user_id : null;
     }));
+    const staffResult = await notifyEventCoaches(db, notification.data);
     const result = await sendWebPush(db, { recipientUserIds: checked.filter((id): id is string => id !== null),
       kind: notification.data.kind, title: notification.data.title, body: notification.data.body,
+      templateKey: notification.data.data?.template_key, templateParams: notification.data.data?.template_params,
       url: notificationPath(notification.data.data?.url) });
+    if (staffResult) { result.sent += staffResult.sent; result.failed += staffResult.failed; result.attempted += staffResult.attempted; }
     return NextResponse.json({ ok: result.configured && result.failed === 0, ...result },
       { status: !result.configured || result.failed ? 503 : 200, headers });
   } catch { return NextResponse.json({ error: "Push dispatch unavailable" }, { status: 503, headers }); }

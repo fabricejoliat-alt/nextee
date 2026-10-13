@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     const caller = await getCaller(req, supabaseAdmin);
     if (!caller.ok) return NextResponse.json({ error: caller.error }, { status: caller.status });
 
-    const body = (await req.json().catch(() => ({}))) as { subscription?: PushSubscriptionJson };
+    const body = (await req.json().catch(() => ({}))) as { subscription?: PushSubscriptionJson; locale?: string };
     const sub = body.subscription;
 
     if (!sub?.endpoint || !validPushEndpoint(sub.endpoint) || !sub.keys?.p256dh || !sub.keys?.auth) {
@@ -53,6 +53,7 @@ export async function POST(req: Request) {
         p256dh: sub.keys.p256dh,
         auth: sub.keys.auth,
         user_agent: ua,
+        locale: ["fr", "en", "de", "it"].includes(body.locale ?? "") ? body.locale : "fr",
         updated_at: new Date().toISOString(),
       },
       { onConflict: "endpoint" }

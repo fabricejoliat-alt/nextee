@@ -1,3 +1,5 @@
+import { getNotificationMessage } from "@/lib/notificationMessages";
+import { notificationKindsForRole, type NotificationRole, type NotificationLocale, type NotificationParams } from "@/lib/notificationCatalog";
 import { supabase } from "@/lib/supabaseClient";
 import { dispatchPush } from "@/lib/pushClient";
 import {
@@ -13,6 +15,8 @@ export type AppNotificationInput = {
   body?: string | null;
   data?: Record<string, unknown>;
   recipientUserIds: string[];
+  templateKey?: string;
+  templateParams?: NotificationParams;
 };
 
 function normalizeNotificationUrl(url: string | undefined) {
@@ -74,6 +78,7 @@ export async function createAppNotification(input: AppNotificationInput) {
     ...input,
     data: {
       ...(input.data ?? {}),
+      ...(input.templateKey ? { template_key: input.templateKey, template_params: input.templateParams ?? {} } : {}),
       ...(normalizedUrl ? { url: normalizedUrl } : {}),
     },
   };
@@ -87,8 +92,8 @@ export async function createAppNotification(input: AppNotificationInput) {
 
   if (rIns.error) throw new Error(rIns.error.message);
 
-  // Fire-and-forget web push dispatch (PWA) for recipients.
-  dispatchPush({
+  // Wait for the server dispatch before navigation can cancel the request.
+  await dispatchPush({
     notificationId,
     title: normalizedInput.title,
     body: normalizedInput.body ?? null,
@@ -156,7 +161,7 @@ export async function createAppNotification(input: AppNotificationInput) {
         });
         if (prIns.error) throw new Error(prIns.error.message);
 
-        dispatchPush({
+        await dispatchPush({
           notificationId: parentNotification.id,
           title: parentTitle,
           body: parentBody,
@@ -170,7 +175,7 @@ export async function createAppNotification(input: AppNotificationInput) {
   return { ok: true as const, notificationId };
 }
 
-export async function getUnreadNotificationsCount(userId: string, options?: { hideThreadNotifications?: boolean }) {
+export async function getUnreadNotificationsCount(userId: string, options?: { hideThreadNotifications?: boolean; role?: NotificationRole }) {
   const prefs = await loadMyNotificationPreferences(userId);
   if (!prefs.receiveInApp) return 0;
 
@@ -195,6 +200,7 @@ export async function getUnreadNotificationsCount(userId: string, options?: { hi
   return recipients.reduce((count, r) => {
     const kind = kindById.get(r.notification_id);
     if (!kind) return count;
+    if (options?.role && !notificationKindsForRole(options.role).includes(kind)) return count;
     if (options?.hideThreadNotifications && kind === "thread_message") return count;
     return isKindEnabled(kind, prefs) ? count + 1 : count;
   }, 0);
@@ -221,7 +227,7 @@ export type NotificationRow = {
   created_at: string;
 };
 
-export async function loadMyNotifications(userId: string) {
+export async function loadMyNotifications(userId: string, options?: { locale?: NotificationLocale; role?: NotificationRole }) {
   const prefs: NotificationPreferences = await loadMyNotificationPreferences(userId);
   if (!prefs.receiveInApp) return [] as Array<{ recipient: NotificationRecipientRow; notification: NotificationRow | null }>;
 
@@ -246,9 +252,20 @@ export async function loadMyNotifications(userId: string) {
   if (nRes.error) throw new Error(nRes.error.message);
   const byId = new Map((nRes.data ?? ([] as NotificationRow[])).map((n) => [n.id, n]));
 
-  return recipients
+  const visible = recipients
     .map((recipient) => ({ recipient, notification: byId.get(recipient.notification_id) ?? null }))
-    .filter((row) => row.notification && isKindEnabled(row.notification.kind, prefs));
+    .filter((row) => row.notification && isKindEnabled(row.notification.kind, prefs) && (!options?.role || notificationKindsForRole(options.role).includes(row.notification.kind)));
+  return Promise.all(visible.map(async row => {
+    const notification = row.notification!;
+    const key = notification.data?.template_key;
+    if (options?.locale && typeof key === "string") {
+      try {
+        const message = await getNotificationMessage(key, options.locale, notification.data.template_params as NotificationParams ?? {});
+        return { ...row, notification: { ...notification, title: message.title, body: message.body } };
+      } catch { /* Older notifications keep their stored text. */ }
+    }
+    return row;
+  }));
 }
 
 export async function markNotificationRead(recipientId: number) {

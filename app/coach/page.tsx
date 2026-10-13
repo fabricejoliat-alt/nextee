@@ -15,7 +15,7 @@ import { COACH_PENDING_EVALUATIONS_HREF } from "@/lib/coachCalendarPeriod";
 import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
-type EventLite = { id: string; group_id: string; event_type: string; title: string | null; camp_day_index: number | null; starts_at: string; ends_at: string | null; location_text: string | null; status: string };
+type EventLite = { completedPlayers?: number; totalPlayers?: number; remainingPlayers?: number; id: string; group_id: string; event_type: string; title: string | null; camp_day_index: number | null; starts_at: string; ends_at: string | null; location_text: string | null; status: string };
 type CoachNewsLite = { id: string; title: string; image_url: string | null; summary: string | null; body: string; status: "published" | "scheduled" | "archived"; published_at: string | null; scheduled_for: string | null; created_at: string; club_name: string | null };
 type HomeData = {
   me: { first_name: string | null; last_name: string | null; avatar_url: string | null } | null;
@@ -125,7 +125,7 @@ export default function CoachHomePage() {
         {error ? null : loading ? <Skeleton /> : (data?.pendingEvalEvents.length ?? 0) ? <div className={styles.attentionList}>
           {(data?.pendingEvalEvents ?? []).slice(0, 5).map((event) => <Link key={event.id} href={`/coach/groups/${event.group_id}/planning/${event.id}/debrief`}>
             <span className={styles.attentionIcon}><ClipboardCheck size={17} aria-hidden="true" /></span>
-            <span className={styles.attentionText}><b>{t("coachCalendar.toEvaluate")}</b><small>{eventTypeLabel(event, t)} · {data?.groupNameById[event.group_id] || t("coach.activity.noGroup")} · {new Intl.DateTimeFormat(coachDateLocale(locale), { day: "numeric", month: "short" }).format(new Date(event.starts_at))}</small></span>
+            <span className={styles.attentionText}><b>{event.remainingPlayers != null ? coachText(t, "coach.home.remainingPlayers", { count: event.remainingPlayers }) : t("coachCalendar.toEvaluate")}</b><small>{event.totalPlayers != null ? coachText(t, "coach.home.evaluationProgress", { completed: event.completedPlayers ?? 0, total: event.totalPlayers }) : ""}</small><small>{eventTypeLabel(event, t)} · {data?.groupNameById[event.group_id] || t("coach.activity.noGroup")} · {new Intl.DateTimeFormat(coachDateLocale(locale), { day: "numeric", month: "short" }).format(new Date(event.starts_at))}</small></span>
             <ArrowRight size={15} aria-hidden="true" />
           </Link>)}
         </div> : <div className={styles.empty}>{t("coach.home.noAttention")}</div>}

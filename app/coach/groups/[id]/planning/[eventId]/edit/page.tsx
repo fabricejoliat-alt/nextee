@@ -751,7 +751,7 @@ export default function CoachEventEditPage() {
               minutes: durationForDb, place: locationText.trim() || t("coach.activity.noPlace"),
             }),
           });
-          await createAppNotification({ actorUserId: meId, kind: "coach_event_updated", title: msg.title, body: msg.body,
+          await createAppNotification({ actorUserId: meId, kind: "coach_event_updated", ...msg,
             data: { event_id: eventId, group_id: groupId, url: `/player/golf/trainings/new?club_event_id=${eventId}` },
             recipientUserIds: recipientIds });
         }
@@ -812,8 +812,7 @@ export default function CoachEventEditPage() {
         await createAppNotification({
           actorUserId: meId,
           kind: "coach_event_updated",
-          title: msg.title,
-          body: msg.body,
+          ...msg,
           data: { series_id: event.series_id, group_id: groupId, url: "/player/golf/trainings" },
           recipientUserIds: attendeeIdsSelected,
         });

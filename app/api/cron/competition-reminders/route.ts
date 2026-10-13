@@ -1,3 +1,4 @@
+import { serverNotificationMessage, notificationTemplateData, type NotificationTemplateInput } from "@/lib/server/notificationTemplates";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -94,8 +95,8 @@ async function sendBrevoEmail(args: { to: string; name: string; subject: string;
   if (!response.ok) throw new Error(String(json?.message ?? "Email send failed"));
 }
 
-async function dispatchPush(supabaseAdmin: SupabaseAdminClient, recipientIds: string[], title: string, body: string) {
-  await sendWebPush(supabaseAdmin, { recipientUserIds: recipientIds, kind: "competition_reminder", title, body,
+async function dispatchPush(supabaseAdmin: SupabaseAdminClient, recipientIds: string[], title: string, body: string, template: NotificationTemplateInput = {}) {
+  await sendWebPush(supabaseAdmin, { recipientUserIds: recipientIds, kind: "competition_reminder", title, body, ...template,
     url: "/player/golf/trainings?type=competition" }).catch(() => {});
 }
 
@@ -142,7 +143,7 @@ async function processReminder(supabaseAdmin: SupabaseAdminClient, reminder: Rem
   const guardianIds = uniq(((guardiansRes.data ?? []) as GuardianRow[]).filter((row) => row.can_view !== false).map((row) => row.guardian_user_id));
   const recipientIds = uniq([...playerIds, ...guardianIds]).filter((id) => id !== reminder.created_by);
 
-  const body = renderCompetitionReminderTemplate(reminder.message_template, {
+  const reminderMessage = renderCompetitionReminderTemplate(reminder.message_template, {
     competition_name: String(event.title ?? "Compétition"),
     start_date: dateLabel(event.starts_at),
     end_date: dateLabel(event.ends_at),
@@ -150,7 +151,8 @@ async function processReminder(supabaseAdmin: SupabaseAdminClient, reminder: Rem
     category: categoryLabel(event.competition_category as CompetitionCategory | null),
     external_registration_url: String(event.external_registration_url ?? ""),
   });
-  const title = `Rappel compétition · ${String(event.title ?? "Compétition")}`;
+  const template = { templateKey: "notif.competitionReminder", templateParams: { competitionName: String(event.title ?? "Compétition"), message: reminderMessage } };
+  const { title, body } = await serverNotificationMessage(supabaseAdmin, template.templateKey, "fr", template.templateParams);
   const flags = reminderChannelFlags(reminder.channel);
   const errors: string[] = [];
 
@@ -163,6 +165,7 @@ async function processReminder(supabaseAdmin: SupabaseAdminClient, reminder: Rem
         title,
         body,
         data: {
+          ...notificationTemplateData(template),
           event_id: event.id,
           url: "/player/golf/trainings?type=competition",
           external_registration_url: event.external_registration_url ?? null,
@@ -174,7 +177,7 @@ async function processReminder(supabaseAdmin: SupabaseAdminClient, reminder: Rem
         { onConflict: "notification_id,user_id" },
       );
       if (recipientsRes.error) throw new Error(recipientsRes.error.message);
-      await dispatchPush(supabaseAdmin, recipientIds, title, body);
+      await dispatchPush(supabaseAdmin, recipientIds, title, body, template);
     } catch (error: unknown) {
       errors.push(`in_app: ${error instanceof Error ? error.message : "dispatch failed"}`);
     }

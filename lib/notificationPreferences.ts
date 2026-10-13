@@ -13,6 +13,7 @@ export const DEFAULT_NOTIFICATION_PREFERENCES: NotificationPreferences = {
 };
 
 export const NOTIFICATION_KIND_OPTIONS: Array<{ kind: string; labelFr: string; labelEn: string }> = [
+  { kind: "manager_news", labelFr: "Actualités du club", labelEn: "Club news" },
   { kind: "thread_message", labelFr: "Nouveaux messages", labelEn: "New messages" },
   { kind: "coach_event_created", labelFr: "Nouveaux entraînements/événements", labelEn: "New trainings/events" },
   { kind: "competition_reminder", labelFr: "Rappels de compétitions", labelEn: "Competition reminders" },

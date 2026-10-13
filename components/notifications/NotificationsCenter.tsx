@@ -144,7 +144,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
       const uid = uRes.data.user.id;
       setUserId(uid);
 
-      const data = await loadMyNotifications(uid);
+      const data = await loadMyNotifications(uid, { locale, role: homeHref === "/coach" ? "coach" : managerScope ? "manager" : "player" });
       setRows(data);
       const visibleUnreadCount = data.filter((r) => (!hideThreadNotifications || r.notification?.kind !== "thread_message") && !r.recipient.is_read).length;
       applyPwaBadge(visibleUnreadCount);
@@ -181,7 +181,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
       document.removeEventListener("visibilitychange", onVisibility);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hideThreadNotifications]);
+  }, [hideThreadNotifications, locale, homeHref]);
 
   useEffect(() => {
     if (!userId) return;
@@ -559,7 +559,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                   const threadTitleFromData = n && n.kind === "thread_message" ? String((n.data ?? {}).thread_title ?? "").trim() : "";
                   const threadMeta = threadId ? threadMetaById[threadId] : null;
                   const threadUnreadCount = threadId ? Number(threadUnreadById[threadId] ?? 0) : 0;
-                  const isEventThread = n?.kind === "thread_message" && threadMeta?.thread_type === "event";
+                  const isEventThread = n?.kind === "thread_message" && threadMeta?.thread_type === "event" && !n.data?.template_key;
                   const managerNewsLinkedLabel =
                     n?.kind === "manager_news"
                       ? String(((n.data ?? {}) as Record<string, unknown>).linked_content_label ?? "").trim()

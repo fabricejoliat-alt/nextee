@@ -86,7 +86,7 @@ export async function ensurePushSubscription(options?: { prompt?: boolean }) {
       "Content-Type": "application/json",
       ...headers,
     },
-    body: JSON.stringify({ subscription: sub.toJSON() }),
+    body: JSON.stringify({ subscription: sub.toJSON(), locale: typeof document !== "undefined" ? document.documentElement.lang : "fr" }),
   });
 
   if (!res.ok) return { ok: false as const, reason: "api_error" as const };

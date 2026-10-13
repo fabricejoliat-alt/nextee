@@ -1011,8 +1011,7 @@ export default function PlayerHomePage() {
           await createAppNotification({
             actorUserId: viewerUserId,
             kind: "player_marked_absent",
-            title: msg.title,
-            body: msg.body,
+            ...msg,
             data: { event_id: event.id, group_id: event.group_id, url: `/coach/groups/${event.group_id ?? ""}/planning/${event.id}` },
             recipientUserIds: coachRecipientIds,
           });
@@ -1020,11 +1019,8 @@ export default function PlayerHomePage() {
           await createAppNotification({
             actorUserId: viewerUserId,
             kind: "player_marked_present",
-            title: pickLocaleText(locale, "Présence confirmée", "Attendance confirmed"),
-            body:
-              locale === "fr"
-                ? `${playerName} présent · ${type} · ${fmtDateLabelNoTime(event.starts_at, "fr")} ${fmtHourLabel(event.starts_at, "fr")}`
-                : `${playerName} present · ${type} · ${fmtDateLabelNoTime(event.starts_at, "en")} ${fmtHourLabel(event.starts_at, "en")}`,
+            ...(await getNotificationMessage("notif.playerMarkedPresent", locale, { playerName, eventType: type,
+              dateTime: `${fmtDateLabelNoTime(event.starts_at, localeKey)} ${fmtHourLabel(event.starts_at, localeKey)}` })),
             data: { event_id: event.id, group_id: event.group_id, url: `/coach/groups/${event.group_id ?? ""}/planning/${event.id}` },
             recipientUserIds: coachRecipientIds,
           });

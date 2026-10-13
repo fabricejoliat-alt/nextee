@@ -114,12 +114,12 @@ export default function PlayerActivitiesPage(){
       invalidateClientPageCacheByPrefix("page-cache:player-trainings:");
       try{
         const recipients=await getEventCoachUserIds(e.id,e.group_id);
-        if(recipients.length&&viewerId){
+        if(!past&&recipients.length&&viewerId){
           const type=eventType(e.event_type,locale);
           if(next==="absent"){
             const msg=await getNotificationMessage("notif.playerMarkedAbsent",locale==="fr"?"fr":"en",{playerName:playerName||tr("Joueur","Player"),eventType:type,dateTime:new Intl.DateTimeFormat(dateLocale,{dateStyle:"medium",timeStyle:"short"}).format(new Date(e.starts_at))});
-            await createAppNotification({actorUserId:viewerId,kind:"player_marked_absent",title:msg.title,body:msg.body,data:{event_id:e.id,group_id:e.group_id,url:`/coach/groups/${e.group_id??""}/planning/${e.id}`},recipientUserIds:recipients});
-          }else await createAppNotification({actorUserId:viewerId,kind:"player_marked_present",title:tr("Présence confirmée","Attendance confirmed"),body:`${playerName||tr("Joueur","Player")} · ${type}`,data:{event_id:e.id,group_id:e.group_id,url:`/coach/groups/${e.group_id??""}/planning/${e.id}`},recipientUserIds:recipients});
+            await createAppNotification({actorUserId:viewerId,kind:"player_marked_absent",...msg,data:{event_id:e.id,group_id:e.group_id,url:`/coach/groups/${e.group_id??""}/planning/${e.id}`},recipientUserIds:recipients});
+          }else await createAppNotification({actorUserId:viewerId,kind:"player_marked_present",...(await getNotificationMessage("notif.playerMarkedPresent",locale,{playerName:playerName||tr("Joueur","Player"),eventType:type,dateTime:new Intl.DateTimeFormat(dateLocale,{dateStyle:"medium",timeStyle:"short"}).format(new Date(e.starts_at))})),data:{event_id:e.id,group_id:e.group_id,url:`/coach/groups/${e.group_id??""}/planning/${e.id}`},recipientUserIds:recipients});
         }
       }catch{}
     }catch(cause){setError(cause instanceof Error?cause.message:tr("Impossible de modifier la présence.","Unable to update attendance."))}

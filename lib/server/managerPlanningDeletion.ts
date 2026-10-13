@@ -1,3 +1,4 @@
+import { assignedNotificationCoaches, type StaffNotificationEvent } from "@/lib/server/notificationStaff";
 import { NextResponse } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { notifyPlanningDeletion } from "@/lib/server/coachPlanningNotifications";
@@ -16,6 +17,12 @@ export async function deleteManagerPlanning(req: Request, target: { eventId: str
   catch { return NextResponse.json({ error: "unauthorized" }, { status: 401 }); }
   const { supabaseAdmin, callerId } = caller;
   try {
+    let staffSnapshot: { event: StaffNotificationEvent; coachIds: string[] } | undefined;
+    try {
+      const query = supabaseAdmin.from("club_events").select("id,club_id,group_id");
+      const event = await ("eventId" in target ? query.eq("id", target.eventId) : query.eq("series_id", target.seriesId)).limit(1).maybeSingle();
+      if (event.data) staffSnapshot = { event: event.data, coachIds: await assignedNotificationCoaches(supabaseAdmin, event.data) };
+    } catch { /* Notification lookup cannot change the deletion transaction outcome. */ }
     const { data, error } = await supabaseAdmin.rpc("delete_manager_planning_v1", {
       p_actor_id: callerId,
       p_event_id: "eventId" in target ? target.eventId : null,
@@ -32,8 +39,8 @@ export async function deleteManagerPlanning(req: Request, target: { eventId: str
     let notificationWarning = false;
     const events = data.events as DeletedEvent[];
     try {
-      if (events?.length && data.recipient_ids?.length) await notifyPlanningDeletion(supabaseAdmin, callerId, events[0],
-        data.recipient_ids, "seriesId" in target ? data.deleted_events : undefined, "seriesId" in target ? target.seriesId : null);
+      if (events?.length && (data.recipient_ids?.length || staffSnapshot?.coachIds.length)) await notifyPlanningDeletion(supabaseAdmin, callerId, events[0],
+        data.recipient_ids, "seriesId" in target ? data.deleted_events : undefined, "seriesId" in target ? target.seriesId : null, undefined, staffSnapshot);
     } catch { notificationWarning = true; }
     // Deletion stays confirmed even if delivery fails. Never expose recipient IDs.
     return NextResponse.json({ ok: true, deleted_event_id: data.deleted_event_id,

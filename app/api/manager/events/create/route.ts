@@ -1,3 +1,5 @@
+import { notifyEventCoaches } from "@/lib/server/notificationStaff";
+import { serverNotificationMessage, notificationTemplateData, type NotificationTemplateInput } from "@/lib/server/notificationTemplates";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { sendWebPush } from "@/lib/server/webPush";
@@ -43,7 +45,7 @@ function formatDateTimeLabel(startsAtIso: string, endsAtIso: string | null) {
 
 async function dispatchPushForRecipients(
   supabaseAdmin: SupabaseClient,
-  opts: { title: string; body: string; url: string; recipientUserIds: string[] }
+  opts: { title: string; body: string; url: string; recipientUserIds: string[] } & NotificationTemplateInput
 ) {
   await sendWebPush(supabaseAdmin, { ...opts, kind: "coach_event_created" }).catch(() => {});
 }
@@ -60,26 +62,17 @@ async function createEventNotification(
   eventTitle?: string | null,
 ) {
   const recipients = uniq(recipientUserIds).filter((id) => id && id !== actorUserId);
-  if (recipients.length === 0) return;
 
   const dateTime = formatDateTimeLabel(startsAtIso, endsAtIso);
   const location = String(locationText ?? "").trim() || "Lieu à définir";
 
   const isTrainingOrInterclub = eventType === "training" || eventType === "interclub";
   const isCompetition = eventType === "competition";
-  const title =
-    isCompetition
-      ? `Nouvelle compétition · ${String(eventTitle ?? "").trim() || "Compétition"}`
-      : eventType === "interclub"
-      ? "Nouvel interclub prévu"
-      : isTrainingOrInterclub
-      ? "Nouvel entrainement prévu"
-      : "Nouvelle activité prévue";
-  const body = isCompetition
-    ? `Du ${dateTime} · ${location}\nL’inscription se fait sur une plateforme externe.`
-    : isTrainingOrInterclub
-      ? `Le ${dateTime} • ${location}`
-      : `Date Heure: ${dateTime}\nLieu: ${location}`;
+  const template = { templateKey: "notif.coachEventCreated", templateParams: {
+    eventType: eventTitle || (eventType === "training" ? "Entraînement" : eventType === "interclub" ? "Interclub" : "Activité"),
+    dateTime, locationPart: ` · ${location}`,
+  } };
+  const { title, body } = await serverNotificationMessage(supabaseAdmin, template.templateKey, "fr", template.templateParams);
   const url = isCompetition ? "/player/golf/trainings?type=competition" : `/player/golf/trainings/new?club_event_id=${eventId}`;
 
   const ins = await supabaseAdmin
@@ -91,6 +84,7 @@ async function createEventNotification(
       title,
       body,
       data: {
+        ...notificationTemplateData(template),
         event_id: eventId,
         url,
       },
@@ -101,12 +95,14 @@ async function createEventNotification(
   if (ins.error || !ins.data?.id) throw new Error(ins.error?.message ?? "Notification insert failed");
 
   const notificationId = String(ins.data.id);
-  const recIns = await supabaseAdmin
+  await notifyEventCoaches(supabaseAdmin, { id: notificationId, actor_user_id: actorUserId,
+    kind: "coach_event_created", title, body, data: { event_id: eventId, ...notificationTemplateData(template) } });
+  const recIns = recipients.length ? await supabaseAdmin
     .from("notification_recipients")
     .upsert(
       recipients.map((userId) => ({ notification_id: notificationId, user_id: userId })),
       { onConflict: "notification_id,user_id" }
-    );
+    ) : { error: null };
   if (recIns.error) throw new Error(recIns.error.message);
 
   // Best-effort web push dispatch.
@@ -115,6 +111,7 @@ async function createEventNotification(
     body,
     url,
     recipientUserIds: recipients,
+    ...template,
   });
 }
 

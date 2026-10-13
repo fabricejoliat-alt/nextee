@@ -1,3 +1,4 @@
+import { notificationTemplateData, type NotificationTemplateInput } from "@/lib/server/notificationTemplates";
 import { NextResponse, type NextRequest } from "next/server";
 import { sendWebPush } from "@/lib/server/webPush";
 import { requireCaller } from "@/app/api/messages/_lib";
@@ -29,20 +30,20 @@ function formatEventNotificationLabel(title: string, startsAt?: string | null) {
 
 async function dispatchPushForRecipients(
   supabaseAdmin: any,
-  opts: { title: string; body: string; url: string; recipientUserIds: string[]; badgeCount?: number }
+  opts: { title: string; body: string; url: string; recipientUserIds: string[]; badgeCount?: number } & NotificationTemplateInput
 ) {
   await sendWebPush(supabaseAdmin, { ...opts, kind: "thread_message" }).catch(() => {});
 }
 
 async function dispatchPushPerUser(
   supabaseAdmin: any,
-  opts: { title: string; body: string; url: string; recipientUserId: string; badgeCount?: number }
+  opts: { title: string; body: string; url: string; recipientUserId: string; badgeCount?: number } & NotificationTemplateInput
 ) {
   await dispatchPushForRecipients(supabaseAdmin, {
     title: opts.title,
     body: opts.body,
     url: opts.url,
-    badgeCount: opts.badgeCount,
+    badgeCount: opts.badgeCount, templateKey: opts.templateKey, templateParams: opts.templateParams,
     recipientUserIds: [opts.recipientUserId],
   });
 }
@@ -111,6 +112,7 @@ async function enrichAndDispatchThreadMessageNotification(
   const existingData = (notificationRes.data.data ?? {}) as Record<string, unknown>;
   const nextData = {
     ...existingData,
+    ...notificationTemplateData({ templateKey: "notif.threadMessage", templateParams: { threadName: threadSummary, count: 1 } }),
     thread_id: opts.threadId,
     thread_type: threadType || null,
     event_id: eventId || null,
@@ -210,7 +212,7 @@ async function enrichAndDispatchThreadMessageNotification(
         const unreadCount = unreadCountByUserId.get(recipientUserId) ?? 1;
         const title = unreadCount > 1 ? "Nouveaux messages" : "Nouveau message";
         const body = unreadCount > 1 ? threadSummary : `${threadSummary}\n${String(opts.body ?? "").trim()}`.trim();
-        await dispatchPushPerUser(supabaseAdmin, { title, body, url, recipientUserId, badgeCount: unreadCount });
+        await dispatchPushPerUser(supabaseAdmin, { title, body, url, recipientUserId, badgeCount: unreadCount, templateKey: "notif.threadMessage", templateParams: { threadName: threadSummary, count: unreadCount } });
       })
     );
   }

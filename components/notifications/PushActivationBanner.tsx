@@ -94,7 +94,7 @@ export default function PushActivationBanner({ settingsHref }: Props) {
       cancelled = true;
       document.removeEventListener("visibilitychange", onVisibility);
     };
-  }, []);
+  }, [locale]);
 
   async function activate() {
     setBusy(true);
