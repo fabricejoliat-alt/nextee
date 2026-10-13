@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect, useId } from "react";
 import type { EChartsOption } from "echarts";
 import { Activity, CalendarCheck2, ArrowRight, ClipboardList, MessageSquareText, Target, CheckCircle2 } from "lucide-react";
 import ActiviteeEChart from "@/components/ui/ActiviteeEChart";
+import AnimatedProgressRing from "@/components/player/AnimatedProgressRing";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { coachDateLocale } from "@/lib/i18n/coachMessages";
@@ -246,10 +247,13 @@ export default function TrainingDashboard({
 
                 <article className={`${trainingStyles.kpi} ${trainingStyles.attendanceKpi}`}>
                   <div className={trainingStyles.kpiTitle}><span><CalendarCheck2 size={17} /></span><h2>{pickLocaleText(locale, "Assiduité", "Attendance")}</h2></div>
-                  <strong>{trainingAttendanceOverview.rate == null ? "—" : `${trainingAttendanceOverview.rate}%`}</strong>
-                  <p>{trainingAttendanceOverview.present} {pickLocaleText(locale, trainingAttendanceOverview.present === 1 ? "entraînement suivi" : "entraînements suivis", trainingAttendanceOverview.present === 1 ? "training attended" : "trainings attended")} / {trainingAttendanceOverview.total}</p>
-                  {trainingAttendanceOverview.rate != null ? <div className={trainingStyles.progress}><span style={{ width: `${trainingAttendanceOverview.rate}%` }} /></div> : null}
-                  <small className={trainingAttendanceOverview.trend == null ? "" : trainingAttendanceOverview.trend >= 0 ? trainingStyles.positive : trainingStyles.caution}>{trainingAttendanceOverview.trend == null ? pickLocaleText(locale, "Pas de période comparable", "No comparable period") : `${trainingAttendanceOverview.trend > 0 ? "+" : ""}${trainingAttendanceOverview.trend} pts · ${compareLabel}`}</small>
+                  <div className={trainingStyles.attendanceKpiContent}>
+                    <div className={trainingStyles.attendanceKpiRing}><AnimatedProgressRing percent={trainingAttendanceOverview.rate} size={96} label={pickLocaleText(locale, "Assiduité", "Attendance")} /></div>
+                    <div className={trainingStyles.attendanceKpiDetails}>
+                      <p>{trainingAttendanceOverview.present} {pickLocaleText(locale, trainingAttendanceOverview.present === 1 ? "entraînement suivi" : "entraînements suivis", trainingAttendanceOverview.present === 1 ? "training attended" : "trainings attended")} / {trainingAttendanceOverview.total}</p>
+                      <small className={trainingAttendanceOverview.trend == null ? "" : trainingAttendanceOverview.trend >= 0 ? trainingStyles.positive : trainingStyles.caution}>{trainingAttendanceOverview.trend == null ? pickLocaleText(locale, "Pas de période comparable", "No comparable period") : `${trainingAttendanceOverview.trend > 0 ? "+" : ""}${trainingAttendanceOverview.trend} pts · ${compareLabel}`}</small>
+                    </div>
+                  </div>
                 </article>
               </section>
 

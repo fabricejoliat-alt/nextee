@@ -1363,16 +1363,20 @@ export default function PlayerHomePage() {
               <article className={styles.benchmark}>
                 <div className={styles.benchmarkHeading}><span className={playerUiStyles.dateBox}><CalendarCheck2 size={17} /></span><h3>{pickLocaleText(locale, "Assiduité", "Attendance")}</h3><Link className={styles.benchmarkLink} href="/player/golf?section=stats" aria-label={pickLocaleText(locale, "Voir les statistiques d’assiduité", "View attendance statistics")}><ArrowRight size={15} /></Link></div>
                 {attendanceInsight ? <>
-                  <div className={styles.attendanceRing}><AnimatedProgressRing percent={attendanceInsight.rate} size={118} label={pickLocaleText(locale, "Assiduité", "Attendance")} /></div>
-                  <span>{attendanceInsight.present} {pickLocaleText(locale, "activités sur", "activities out of")} {attendanceInsight.expected}</span>
-                  <div className={styles.benchmarkSignals}>
-                    {attendanceInsight.change != null ? attendanceInsight.change > 0
-                      ? <BenchmarkBadge icon={ArrowUp} tone="positive">+{attendanceInsight.change} {pickLocaleText(locale, "pts vs mois précédent", "pts vs previous month")}</BenchmarkBadge>
-                      : attendanceInsight.change < 0
-                        ? <BenchmarkBadge icon={ArrowDown} tone="caution">−{Math.abs(attendanceInsight.change)} {pickLocaleText(locale, "pts vs mois précédent", "pts vs previous month")}</BenchmarkBadge>
-                        : <BenchmarkBadge icon={ArrowRight} tone="neutral">{pickLocaleText(locale, "Stable vs mois précédent", "Stable vs previous month")}</BenchmarkBadge>
-                      : null}
-                    {attendanceInsight.rate === 100 ? <BenchmarkBadge icon={CheckCircle2} tone="positive">{pickLocaleText(locale, "Objectif atteint", "Goal reached")}</BenchmarkBadge> : null}
+                  <div className={styles.attendanceLayout}>
+                    <div className={styles.attendanceRing}><AnimatedProgressRing percent={attendanceInsight.rate} size={100} label={pickLocaleText(locale, "Assiduité", "Attendance")} /></div>
+                    <div className={styles.attendanceDetails}>
+                      <span>{attendanceInsight.present} {pickLocaleText(locale, "activités sur", "activities out of")} {attendanceInsight.expected}</span>
+                      <div className={styles.benchmarkSignals}>
+                        {attendanceInsight.change != null ? attendanceInsight.change > 0
+                          ? <BenchmarkBadge icon={ArrowUp} tone="positive">+{attendanceInsight.change} {pickLocaleText(locale, "pts vs mois précédent", "pts vs previous month")}</BenchmarkBadge>
+                          : attendanceInsight.change < 0
+                            ? <BenchmarkBadge icon={ArrowDown} tone="caution">−{Math.abs(attendanceInsight.change)} {pickLocaleText(locale, "pts vs mois précédent", "pts vs previous month")}</BenchmarkBadge>
+                            : <BenchmarkBadge icon={ArrowRight} tone="neutral">{pickLocaleText(locale, "Stable vs mois précédent", "Stable vs previous month")}</BenchmarkBadge>
+                          : null}
+                        {attendanceInsight.rate === 100 ? <BenchmarkBadge icon={CheckCircle2} tone="positive">{pickLocaleText(locale, "Objectif atteint", "Goal reached")}</BenchmarkBadge> : null}
+                      </div>
+                    </div>
                   </div>
                 </> : <p>{pickLocaleText(locale, "L’assiduité apparaîtra après vos premières activités confirmées.", "Attendance will appear after your first confirmed activities.")}</p>}
               </article>

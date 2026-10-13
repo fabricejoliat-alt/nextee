@@ -2352,18 +2352,26 @@ export default function GolfDashboardPage() {
               <article className={overviewStyles.kpiCard}>
                 <div className={overviewStyles.cardTitle}><span><CalendarCheck2 size={17} /></span><h2>{pickLocaleText(locale, "Assiduité du mois", "Monthly attendance")}</h2></div>
                 {overviewActivitiesLoading ? <div className={overviewStyles.kpiSkeleton} /> : <>
-                  <div className={overviewStyles.attendanceRing}><AnimatedProgressRing percent={calendarStats.month.rate} size={118} label={pickLocaleText(locale, "Assiduité du mois", "Monthly attendance")} /></div>
-                  <p>{calendarStats.month.present} {pickLocaleText(locale, "activité(s) sur", "activities out of")} {calendarStats.month.total}</p>
-                  <small>{calendarStats.month.trend == null ? pickLocaleText(locale, "Aucune comparaison disponible", "No comparison available") : calendarStats.month.trend === 0 ? pickLocaleText(locale, "Stable par rapport au mois précédent", "Stable compared with last month") : `${calendarStats.month.trend > 0 ? "+" : ""}${calendarStats.month.trend} ${pickLocaleText(locale, "points par rapport au mois précédent", "points compared with last month")}`}</small>
+                  <div className={overviewStyles.attendanceContent}>
+                    <div className={overviewStyles.attendanceRing}><AnimatedProgressRing percent={calendarStats.month.rate} size={96} label={pickLocaleText(locale, "Assiduité du mois", "Monthly attendance")} /></div>
+                    <div className={overviewStyles.attendanceDetails}>
+                      <p>{calendarStats.month.present} {pickLocaleText(locale, "activité(s) sur", "activities out of")} {calendarStats.month.total}</p>
+                      <small>{calendarStats.month.trend == null ? pickLocaleText(locale, "Aucune comparaison disponible", "No comparison available") : calendarStats.month.trend === 0 ? pickLocaleText(locale, "Stable par rapport au mois précédent", "Stable compared with last month") : `${calendarStats.month.trend > 0 ? "+" : ""}${calendarStats.month.trend} ${pickLocaleText(locale, "points par rapport au mois précédent", "points compared with last month")}`}</small>
+                    </div>
+                  </div>
                 </>}
               </article>
 
               <article className={overviewStyles.kpiCard}>
                 <div className={overviewStyles.cardTitle}><span><CalendarCheck2 size={17} /></span><h2>{pickLocaleText(locale, "Assiduité de la saison", "Season attendance")}</h2></div>
                 {overviewActivitiesLoading ? <div className={overviewStyles.kpiSkeleton} /> : <>
-                  <div className={overviewStyles.attendanceRing}><AnimatedProgressRing percent={calendarStats.season.rate} size={118} label={pickLocaleText(locale, "Assiduité de la saison", "Season attendance")} /></div>
-                  <p>{calendarStats.season.present} {pickLocaleText(locale, "activité(s) sur", "activities out of")} {calendarStats.season.total}</p>
-                  <small>{calendarStats.season.total ? pickLocaleText(locale, "Depuis le début de la saison", "Since the start of the season") : pickLocaleText(locale, "Aucune activité confirmée", "No confirmed activities")}</small>
+                  <div className={overviewStyles.attendanceContent}>
+                    <div className={overviewStyles.attendanceRing}><AnimatedProgressRing percent={calendarStats.season.rate} size={96} label={pickLocaleText(locale, "Assiduité de la saison", "Season attendance")} /></div>
+                    <div className={overviewStyles.attendanceDetails}>
+                      <p>{calendarStats.season.present} {pickLocaleText(locale, "activité(s) sur", "activities out of")} {calendarStats.season.total}</p>
+                      <small>{calendarStats.season.total ? pickLocaleText(locale, "Depuis le début de la saison", "Since the start of the season") : pickLocaleText(locale, "Aucune activité confirmée", "No confirmed activities")}</small>
+                    </div>
+                  </div>
                 </>}
               </article>
 
