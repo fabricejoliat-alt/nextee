@@ -67,7 +67,7 @@ export function managerDatabase(tables: Record<string, Row[]> = {}, options: {
         lte(key: string, value: string) { rows = rows.filter((row) => row[key] != null && String(row[key]) <= value); return query; },
         lt(key: string, value: string) { rows = rows.filter((row) => row[key] != null && String(row[key]) < value); return query; },
         gt(key: string, value: string) { rows = rows.filter((row) => row[key] != null && String(row[key]) > value); return query; },
-        contains(key: string, values: unknown[]) { rows = rows.filter((row) => values.every((v) => row[key]?.includes(v))); return query; },
+        contains(key: string, values: unknown[] | Row) { rows = rows.filter((row) => Array.isArray(values) ? values.every((v) => row[key]?.includes(v)) : Object.entries(values).every(([field, value]) => row[key]?.[field] === value)); return query; },
         order(key: string, opts?: { ascending?: boolean }) {
           ordering.push({ key, ascending: opts?.ascending !== false });
           if (options.applyOrder) rows.sort((a, b) => {

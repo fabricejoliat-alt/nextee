@@ -488,6 +488,8 @@ export default function CoachTrainingDebriefPage() {
         success: null,
       });
 
+      if (json.notification?.failed || json.notification?.push?.failed > 0) setError("coachDebrief.notificationFailed");
+
       const nextReviews = reviews.map((review) => review.player_id === currentReview.player_id ? { ...review, persisted: true } : review);
       const remainingIndex = nextReviews.findIndex((review) => !isEvaluationComplete(review, customCriteria));
       if (remainingIndex === -1) {

@@ -1,3 +1,4 @@
+import { notifyCoachPlayerEvaluation } from "@/lib/server/coachEvaluationNotifications";
 import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { requireCoachEventPlayer } from "@/lib/coachAccess";
 import { NextResponse, type NextRequest } from "next/server";
@@ -66,8 +67,21 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: st
     if (saveRes.error) throw new Error(saveRes.error.message);
 
     const result = (saveRes.data && typeof saveRes.data === "object" ? saveRes.data : {}) as Record<string, unknown>;
+    let notification;
+    if (normalized.status === "present") {
+      try {
+        notification = await notifyCoachPlayerEvaluation(supabaseAdmin, {
+          actorUserId: callerId, playerId: normalized.player_id, event, recordedAt: String(result.recorded_at ?? ""),
+        });
+      } catch {
+        // Preserve the committed evaluation and expose delivery failure without leaking its content.
+        console.warn("Coach evaluation saved; notification delivery unavailable");
+        notification = { created: false, failed: true };
+      }
+    }
     return NextResponse.json({
       ok: true,
+      notification,
       debriefId: result.debrief_id ?? null,
       reportVersion: Number(result.report_version ?? 0) || null,
       noteInserted: result.note_inserted === true,
