@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { BellRing } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { loadMyNotificationPreferences } from "@/lib/notificationPreferences";
-import { ensurePushSubscription, hasLocalPushSubscription, supportsWebPush } from "@/lib/pushClient";
+import { ensurePushSubscription, hasLocalPushSubscription, supportsWebPush, pushFailureMessage } from "@/lib/pushClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Props = {
@@ -14,7 +14,7 @@ type Props = {
 };
 
 export default function PushActivationBanner({ settingsHref }: Props) {
-  const { locale } = useI18n();
+  const { locale, t } = useI18n();
   const pathname = usePathname();
   const tr = (fr: string, en: string, de?: string, it?: string) => {
     if (locale === "fr") return fr;
@@ -76,7 +76,10 @@ export default function PushActivationBanner({ settingsHref }: Props) {
 
         const hasSubscription = await hasLocalPushSubscription().catch(() => false);
         if (cancelled) return;
-        setVisible(permission !== "granted" || !hasSubscription);
+        if (permission === "granted" && hasSubscription) {
+          const synchronized = await ensurePushSubscription({ prompt: false }).catch(() => ({ ok: false }));
+          if (!cancelled) setVisible(!synchronized.ok);
+        } else setVisible(true);
       } catch {
         if (!cancelled) setVisible(false);
       }
@@ -99,21 +102,8 @@ export default function PushActivationBanner({ settingsHref }: Props) {
     try {
       const res = await ensurePushSubscription({ prompt: true });
       if (!res.ok) {
-        if (res.reason === "denied") {
-          setDenied(true);
-          throw new Error(
-            tr(
-              "Autorise les notifications dans Android et dans le navigateur, puis réessaie.",
-              "Allow notifications in Android and in the browser, then try again."
-            )
-          );
-        }
-        throw new Error(
-          tr(
-            "Impossible d'activer le push sur cet appareil.",
-            "Could not enable push on this device."
-          )
-        );
+        if (res.reason === "denied") setDenied(true);
+        throw new Error(t(pushFailureMessage(res.reason)));
       }
       setVisible(false);
     } catch (e: unknown) {

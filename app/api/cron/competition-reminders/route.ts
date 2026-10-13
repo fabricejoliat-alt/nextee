@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import webpush from "web-push";
+import { sendWebPush } from "@/lib/server/webPush";
 import {
   reminderChannelFlags,
   renderCompetitionReminderTemplate,
@@ -21,11 +21,9 @@ type ReminderRow = {
 };
 
 type SupabaseAdminClient = any;
-type PushSubscriptionRow = { id: number; endpoint: string; p256dh: string; auth: string };
 type AttendeeRow = { player_id: string | null };
 type GuardianRow = { guardian_user_id: string | null; can_view: boolean | null };
 type ProfileRow = { id: string; first_name: string | null; last_name: string | null };
-type PreferenceRow = { user_id: string; receive_push: boolean | null; enabled_kinds: string[] | null };
 
 function mustEnv(name: string) {
   const value = process.env[name];
@@ -97,47 +95,8 @@ async function sendBrevoEmail(args: { to: string; name: string; subject: string;
 }
 
 async function dispatchPush(supabaseAdmin: SupabaseAdminClient, recipientIds: string[], title: string, body: string) {
-  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-  const privateKey = process.env.VAPID_PRIVATE_KEY;
-  if (!publicKey || !privateKey || recipientIds.length === 0) return;
-  webpush.setVapidDetails(process.env.VAPID_SUBJECT || "mailto:contact@activitee.app", publicKey, privateKey);
-
-  let pushRecipientIds = recipientIds;
-  const preferences = await supabaseAdmin
-    .from("user_notification_preferences")
-    .select("user_id,receive_push,enabled_kinds")
-    .in("user_id", recipientIds);
-  if (!preferences.error) {
-    const preferenceByUserId = new Map(
-      ((preferences.data ?? []) as PreferenceRow[]).map((row) => [row.user_id, row]),
-    );
-    pushRecipientIds = recipientIds.filter((userId) => {
-      const preference = preferenceByUserId.get(userId);
-      if (!preference) return true;
-      if (preference.receive_push !== true) return false;
-      return !preference.enabled_kinds?.length || preference.enabled_kinds.includes("competition_reminder");
-    });
-  }
-  if (pushRecipientIds.length === 0) return;
-
-  const subscriptions = await supabaseAdmin
-    .from("push_subscriptions")
-    .select("id,endpoint,p256dh,auth")
-    .in("user_id", pushRecipientIds);
-  if (subscriptions.error) return;
-  const staleIds: number[] = [];
-  await Promise.all(((subscriptions.data ?? []) as PushSubscriptionRow[]).map(async (subscription) => {
-    try {
-      await webpush.sendNotification(
-        { endpoint: subscription.endpoint, keys: { p256dh: subscription.p256dh, auth: subscription.auth } },
-        JSON.stringify({ title, body, url: "/player/golf/trainings?type=competition", icon: "/icon-192.png", badge: "/icon-192.png" }),
-      );
-    } catch (error: unknown) {
-      const status = Number((error as { statusCode?: number } | null)?.statusCode ?? 0);
-      if (status === 404 || status === 410) staleIds.push(Number(subscription.id));
-    }
-  }));
-  if (staleIds.length > 0) await supabaseAdmin.from("push_subscriptions").delete().in("id", staleIds);
+  await sendWebPush(supabaseAdmin, { recipientUserIds: recipientIds, kind: "competition_reminder", title, body,
+    url: "/player/golf/trainings?type=competition" }).catch(() => {});
 }
 
 async function loadEmails(supabaseAdmin: SupabaseAdminClient, userIds: string[]) {

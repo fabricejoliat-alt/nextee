@@ -5,6 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "ActiviTee",
     short_name: "ActiviTee",
     description: "ActiviTee - Golf app junior coach/player/admin",
+    id: "/",
     start_url: "/",
     scope: "/",
     display: "standalone",

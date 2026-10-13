@@ -5,20 +5,14 @@ self.addEventListener('install', () => {
 function normalizeNotificationUrl(url) {
   const value = String(url || '').trim();
   if (!value) return '/';
-  if (value.startsWith('/')) return value;
+  if (value.startsWith('/') && !value.startsWith('//') && !/[\u0000-\u0020\\]/.test(value)) return value;
   try {
     const parsed = new URL(value);
-    const host = String(parsed.hostname || '').trim().toLowerCase();
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]') {
-      return `${parsed.pathname}${parsed.search}${parsed.hash}` || '/';
-    }
     if (self.location && parsed.origin === self.location.origin) {
       return `${parsed.pathname}${parsed.search}${parsed.hash}` || '/';
     }
-    return parsed.toString();
-  } catch {
-    return value;
-  }
+  } catch { /* Ignore untrusted destinations. */ }
+  return '/';
 }
 
 self.addEventListener('activate', (event) => {
@@ -74,9 +68,8 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientsArr) => {
       for (const client of clientsArr) {
-        if ('focus' in client) {
-          client.navigate(targetUrl);
-          return client.focus();
+        if ('focus' in client && new URL(client.url).origin === self.location.origin) {
+          return client.navigate(targetUrl).then(() => client.focus());
         }
       }
       if (self.clients.openWindow) return self.clients.openWindow(targetUrl);

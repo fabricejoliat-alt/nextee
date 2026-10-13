@@ -1,137 +1,35 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import webpush from "web-push";
-
-function mustEnv(name: string) {
-  const v = process.env[name];
-  if (!v) throw new Error(`Missing env var: ${name}`);
-  return v;
-}
-
-async function getCaller(req: Request, supabaseAdmin: any) {
-  const accessToken = req.headers.get("authorization")?.replace("Bearer ", "");
-  if (!accessToken) return { ok: false as const, status: 401, error: "Missing token" };
-
-  const { data: userData, error: userErr } = await supabaseAdmin.auth.getUser(accessToken);
-  if (userErr || !userData.user) return { ok: false as const, status: 401, error: "Invalid token" };
-
-  return { ok: true as const, userId: userData.user.id };
-}
-
-type DispatchBody = {
-  notificationId?: string;
-  title: string;
-  body?: string;
-  url?: string;
-  recipientUserIds: string[];
-};
+import { sendWebPush, notificationPath } from "@/lib/server/webPush";
 
 export async function POST(req: Request) {
+  const headers = { "Cache-Control": "private, no-store" };
   try {
-    const supabaseAdmin = createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const caller = await getCaller(req, supabaseAdmin);
-    if (!caller.ok) return NextResponse.json({ error: caller.error }, { status: caller.status });
-
-    const vapidPublic = mustEnv("NEXT_PUBLIC_VAPID_PUBLIC_KEY");
-    const vapidPrivate = mustEnv("VAPID_PRIVATE_KEY");
-    const vapidSubject = process.env.VAPID_SUBJECT || "mailto:contact@activitee.app";
-
-    webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate);
-
-    const body = (await req.json().catch(() => ({}))) as DispatchBody;
-    const title = String(body.title ?? "").trim();
-    const textBody = String(body.body ?? "").trim();
-    const url = String(body.url ?? "").trim();
-    const recipientUserIds = Array.from(new Set((body.recipientUserIds ?? []).map((id) => String(id).trim()).filter(Boolean)));
-
-    if (!title || recipientUserIds.length === 0) {
-      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
-    }
-
-    let notificationKind = "";
-    if (body.notificationId) {
-      const check = await supabaseAdmin
-        .from("notifications")
-        .select("id,actor_user_id,kind")
-        .eq("id", body.notificationId)
-        .maybeSingle();
-      if (check.error) return NextResponse.json({ error: check.error.message }, { status: 400 });
-      if (!check.data || check.data.actor_user_id !== caller.userId) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-      }
-      notificationKind = String(check.data.kind ?? "").trim();
-    }
-
-    // Apply user push preferences (if table exists). If kind filters are configured,
-    // only dispatch matching kinds.
-    let filteredRecipientUserIds = recipientUserIds;
-    const prefRes = await supabaseAdmin
-      .from("user_notification_preferences")
-      .select("user_id,receive_push,enabled_kinds")
-      .in("user_id", recipientUserIds);
-    if (!prefRes.error) {
-      const prefByUser = new Map(
-        (prefRes.data ?? []).map((r: { user_id: string; receive_push: boolean | null; enabled_kinds: string[] | null }) => [
-          r.user_id,
-          { receivePush: r.receive_push === true, enabledKinds: Array.isArray(r.enabled_kinds) ? r.enabled_kinds : [] as string[] },
-        ])
-      );
-      filteredRecipientUserIds = recipientUserIds.filter((uid) => {
-        const pref = prefByUser.get(uid);
-        // default behavior when no row exists: allow push
-        if (!pref) return true;
-        if (!pref.receivePush) return false;
-        if (!notificationKind || pref.enabledKinds.length === 0) return true;
-        return pref.enabledKinds.includes(notificationKind);
-      });
-    }
-
-    if (filteredRecipientUserIds.length === 0) {
-      return NextResponse.json({ ok: true, sent: 0, cleaned: 0 });
-    }
-
-    const subsRes = await supabaseAdmin
-      .from("push_subscriptions")
-      .select("id,user_id,endpoint,p256dh,auth")
-      .in("user_id", filteredRecipientUserIds);
-
-    if (subsRes.error) return NextResponse.json({ error: subsRes.error.message }, { status: 400 });
-
-    const payload = JSON.stringify({
-      title,
-      body: textBody || null,
-      url: url || null,
-      icon: "/icon-192.png",
-      badge: "/icon-192.png",
-      timestamp: Date.now(),
-    });
-
-    const staleIds: number[] = [];
-
-    await Promise.all(
-      (subsRes.data ?? []).map(async (sub) => {
-        try {
-          await webpush.sendNotification(
-            {
-              endpoint: sub.endpoint,
-              keys: { p256dh: sub.p256dh, auth: sub.auth },
-            },
-            payload
-          );
-        } catch (err: unknown) {
-          const statusCode = Number((err as { statusCode?: number } | null)?.statusCode ?? 0);
-          if (statusCode === 404 || statusCode === 410) staleIds.push(sub.id);
-        }
-      })
-    );
-
-    if (staleIds.length > 0) {
-      await supabaseAdmin.from("push_subscriptions").delete().in("id", staleIds);
-    }
-
-    return NextResponse.json({ ok: true, sent: (subsRes.data ?? []).length, cleaned: staleIds.length });
-  } catch (e: unknown) {
-    const message = e instanceof Error ? e.message : "Server error";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+    const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();
+    if (!token) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers });
+    const db = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession: false } });
+    const actor = await db.auth.getUser(token);
+    if (actor.error || !actor.data.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers });
+    const input = await req.json();
+    if (!input.notificationId || !Array.isArray(input.recipientUserIds) || input.recipientUserIds.length > 500)
+      return NextResponse.json({ error: "Invalid notification" }, { status: 400, headers });
+    const notification = await db.from("notifications").select("id,actor_user_id,kind,title,body,data")
+      .eq("id", input.notificationId).maybeSingle();
+    if (notification.error) throw notification.error;
+    if (!notification.data || notification.data.actor_user_id !== actor.data.user.id)
+      return NextResponse.json({ error: "Forbidden" }, { status: 403, headers });
+    const recipients = await db.from("notification_recipients").select("user_id")
+      .eq("notification_id", notification.data.id).in("user_id", input.recipientUserIds);
+    if (recipients.error) throw recipients.error;
+    const checked = await Promise.all((recipients.data ?? []).map(async row => {
+      const access = await db.rpc("organization_notification_visible", { p_notification: notification.data!.id, p_actor: row.user_id });
+      if (access.error) throw access.error;
+      return access.data === true ? row.user_id : null;
+    }));
+    const result = await sendWebPush(db, { recipientUserIds: checked.filter((id): id is string => id !== null),
+      kind: notification.data.kind, title: notification.data.title, body: notification.data.body,
+      url: notificationPath(notification.data.data?.url) });
+    return NextResponse.json({ ok: result.configured && result.failed === 0, ...result },
+      { status: !result.configured || result.failed ? 503 : 200, headers });
+  } catch { return NextResponse.json({ error: "Push dispatch unavailable" }, { status: 503, headers }); }
 }

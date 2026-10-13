@@ -14,7 +14,7 @@ import {
   loadMyNotificationPreferences,
   upsertMyNotificationPreferences,
 } from "@/lib/notificationPreferences";
-import { disablePushSubscription, ensurePushSubscription, supportsWebPush } from "@/lib/pushClient";
+import { disablePushSubscription, ensurePushSubscription, supportsWebPush, pushFailureMessage, testPushSubscription, isNativeApp, hasLocalPushSubscription } from "@/lib/pushClient";
 import { nextNotificationKinds } from "@/lib/notificationKindSelection";
 
 type Props = {
@@ -47,6 +47,8 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [testStatus, setTestStatus] = useState<string | null>(null);
+  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -54,6 +56,7 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
   const saveLock = useRef(false);
 
   const [receiveInApp, setReceiveInApp] = useState(DEFAULT_NOTIFICATION_PREFERENCES.receiveInApp);
+  const [devicePushActive, setDevicePushActive] = useState(false);
   const [receivePush, setReceivePush] = useState(DEFAULT_NOTIFICATION_PREFERENCES.receivePush);
   const [enabledKinds, setEnabledKinds] = useState<string[]>([]);
 
@@ -76,10 +79,12 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
         if (uRes.error || !uRes.data.user) throw new Error("unauthenticated");
         const uid = uRes.data.user.id;
         const prefs = await loadMyNotificationPreferences(uid);
+        const deviceActive = prefs.receivePush && await hasLocalPushSubscription().catch(() => false);
         if (!active) return;
         setUserId(uid);
         setReceiveInApp(prefs.receiveInApp);
         setReceivePush(prefs.receivePush);
+        setDevicePushActive(deviceActive);
         setEnabledKinds(prefs.enabledKinds);
         setLoaded(true);
       } catch {
@@ -122,7 +127,7 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
         if (value) {
           const res = await ensurePushSubscription({ prompt: true });
           if (!res.ok) {
-            setError(res.reason === "denied" ? "notifications.settings.pushDenied" : "notifications.settings.pushError");
+            setError(pushFailureMessage(res.reason));
             return null;
           }
         } else {
@@ -132,6 +137,7 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
             return null;
           }
         }
+        setDevicePushActive(value);
         return { receivePush: value };
       } catch {
         setError("notifications.settings.pushError");
@@ -139,6 +145,19 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
       }
     });
   }
+
+  async function onTestPush() {
+    if (testing) return;
+    setTesting(true); setTestStatus(null);
+    try {
+      const result = await testPushSubscription(locale);
+      setTestStatus(result.ok ? "notifications.settings.testSent" : "notifications.settings.testFailed");
+    } catch { setTestStatus("notifications.settings.testFailed"); }
+    finally { setTesting(false); }
+  }
+
+  const pushHint = pushSupported ? "notifications.settings.pushHint" : isNativeApp()
+    ? "notifications.settings.nativePush" : "notifications.settings.unsupported";
 
   async function onToggleKind(kind: string, enabled: boolean) {
     if (!receiveInApp) return;
@@ -173,10 +192,14 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
               </div>
               <div className={`${styles.settingRow} ${!pushSupported ? styles.settingDisabled : ""}`}>
                 <span className={styles.settingIcon}><Smartphone size={16} /></span>
-                <div className={styles.settingText}><strong>{t("notifications.settings.push")}</strong><span>{t(pushSupported ? "notifications.settings.pushHint" : "notifications.settings.unsupported")}</span></div>
-                <Toggle checked={receivePush} disabled={saving || !pushSupported || !receiveInApp} label={t("notifications.settings.push")} onToggle={(checked) => void onTogglePush(checked)} />
+                <div className={styles.settingText}><strong>{t("notifications.settings.push")}</strong><span>{t(pushHint)}</span></div>
+                <Toggle checked={receivePush && devicePushActive} disabled={saving || !pushSupported || !receiveInApp} label={t("notifications.settings.push")} onToggle={(checked) => void onTogglePush(checked)} />
               </div>
             </div>
+            {pushSupported && receivePush && devicePushActive && receiveInApp ? <div style={{ marginTop: 16 }}>
+              <button type="button" className={campsStyles.secondary} disabled={testing || saving} onClick={() => void onTestPush()}>{t(testing ? "notifications.settings.testSending" : "notifications.settings.test")}</button>
+              {testStatus ? <p role="status">{t(testStatus)}</p> : null}
+            </div> : null}
           </section>
 
           <section className={`${campsStyles.panel} ${!receiveInApp ? styles.sectionDisabled : ""}`}>
@@ -290,17 +313,17 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
                   </div>
                   <span
                     role="switch"
-                    aria-checked={receivePush}
+                    aria-checked={receivePush && devicePushActive}
                     tabIndex={0}
                     onClick={() => {
                       if (saving || !pushSupported || !receiveInApp) return;
-                      void onTogglePush(!receivePush);
+                      void onTogglePush(!(receivePush && devicePushActive));
                     }}
                     onKeyDown={(e) => {
                       if (saving || !pushSupported || !receiveInApp) return;
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
-                        void onTogglePush(!receivePush);
+                        void onTogglePush(!(receivePush && devicePushActive));
                       }
                     }}
                     style={{
