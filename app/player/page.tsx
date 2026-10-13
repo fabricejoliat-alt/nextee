@@ -7,6 +7,7 @@ import { organizationFetch as fetch } from "@/lib/organizationFetch";
 import { useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { PlayerHomeBootstrapContext } from "@/components/player/PlayerHomeBootstrapContext";
+import AnimatedProgressRing from "@/components/player/AnimatedProgressRing";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -220,10 +221,6 @@ function truncate(s: string, max: number) {
   return t.slice(0, max - 1) + "…";
 }
 
-function clamp(n: number, a: number, b: number) {
-  return Math.max(a, Math.min(b, n));
-}
-
 function avg(values: Array<number | null>) {
   const v = values.filter((x): x is number => typeof x === "number" && Number.isFinite(x));
   if (v.length === 0) return null;
@@ -388,55 +385,6 @@ function compactMeta(it: Item, locale: string) {
   const bm = `${it.brand ?? ""} ${it.model ?? ""}`.trim();
   if (bm) parts.push(bm);
   return parts.join(" • ");
-}
-
-function Donut({ percent }: { percent: number }) {
-  const p = clamp(percent, 0, 100);
-  const r = 54;
-  const c = 2 * Math.PI * r;
-
-  const [animatedP, setAnimatedP] = useState(0);
-  useEffect(() => {
-    const t = setTimeout(() => setAnimatedP(p), 60);
-    return () => clearTimeout(t);
-  }, [p]);
-
-  const dash = (animatedP / 100) * c;
-  const done = p >= 100;
-
-  return (
-    <svg width="150" height="150" viewBox="0 0 140 140" aria-label={`Progression ${p}%`}>
-      <defs>
-        <linearGradient id="donutGrad" x1="70" y1="16" x2="124" y2="124" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="var(--green-light)" />
-          <stop offset="100%" stopColor="var(--green-dark)" />
-        </linearGradient>
-      </defs>
-
-      <circle cx="70" cy="70" r={r} strokeWidth="14" className="donut-bg" fill="rgba(255,255,255,0.22)" />
-
-      <circle
-        cx="70"
-        cy="70"
-        r={r}
-        strokeWidth="14"
-        className="donut-fg"
-        fill="none"
-        strokeLinecap="round"
-        strokeDasharray={`${dash} ${c}`}
-        transform="rotate(-90 70 70)"
-      />
-
-      <text x="70" y="79" textAnchor="middle" className="donut-label">
-        {Math.round(p)}%
-      </text>
-
-      <g className={`donut-check-wrap ${done ? "on" : ""}`}>
-        <circle className="donut-check-circle" cx="70" cy="108" r={done ? 16 : 12} />
-        <path className="donut-check" d="M64 110 l4 4 l9 -10" />
-      </g>
-    </svg>
-  );
 }
 
 /** Variation “dernière valeur vs précédente” (en ignorant les null) */
@@ -1415,7 +1363,7 @@ export default function PlayerHomePage() {
               <article className={styles.benchmark}>
                 <div className={styles.benchmarkHeading}><span className={playerUiStyles.dateBox}><CalendarCheck2 size={17} /></span><h3>{pickLocaleText(locale, "Assiduité", "Attendance")}</h3><Link className={styles.benchmarkLink} href="/player/golf?section=stats" aria-label={pickLocaleText(locale, "Voir les statistiques d’assiduité", "View attendance statistics")}><ArrowRight size={15} /></Link></div>
                 {attendanceInsight ? <>
-                  <strong className={styles.attendanceValue}>{attendanceInsight.rate} %</strong>
+                  <div className={styles.attendanceRing}><AnimatedProgressRing percent={attendanceInsight.rate} size={118} label={pickLocaleText(locale, "Assiduité", "Attendance")} /></div>
                   <span>{attendanceInsight.present} {pickLocaleText(locale, "activités sur", "activities out of")} {attendanceInsight.expected}</span>
                   <div className={styles.benchmarkSignals}>
                     {attendanceInsight.change != null ? attendanceInsight.change > 0
@@ -1450,7 +1398,7 @@ export default function PlayerHomePage() {
             <section className={playerUiStyles.panel}>
               <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume d’entraînement du mois", "Monthly training volume")}</h2><p>{thisMonthTitle}</p></div></div>
               {loading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : <div className={styles.monthVolume}>
-                {trainingsSummary.objective > 0 ? <Donut percent={trainingsSummary.percent} /> : <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Objectif FTEM indisponible.", "FTEM goal unavailable.")}</div>}
+                {trainingsSummary.objective > 0 ? <AnimatedProgressRing percent={trainingsSummary.percent} label={pickLocaleText(locale, "Volume d’entraînement", "Training volume")} /> : <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Objectif FTEM indisponible.", "FTEM goal unavailable.")}</div>}
                 <strong>{trainingsSummary.totalMinutes} {t("common.min")}</strong>
                 {trainingsSummary.objective > 0 ? <span>{pickLocaleText(locale, "sur", "of")} {trainingsSummary.objective} {t("common.min")}</span> : null}
                 {trainingVolumeMotivation ? <p>{trainingVolumeMotivation}</p> : null}

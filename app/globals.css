@@ -1521,6 +1521,9 @@ input[type="radio"]{
   stroke: url(#donutGrad);
   transition: stroke-dasharray 900ms cubic-bezier(0.2, 0.9, 0.2, 1);
 }
+@media (prefers-reduced-motion: reduce){
+  .donut-fg{transition:none}
+}
 .donut-label{
   font-size: 18px;
   font-weight: 950;

@@ -14,6 +14,8 @@ import { readPlayerPage } from "@/lib/playerPageRead";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import AnimatedProgressRing from "@/components/player/AnimatedProgressRing";
+import { playerGolfOverviewStats } from "@/lib/playerGolfOverviewStats";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
 import { PLAYER_DOCUMENT_ACCEPT } from "@/lib/playerDocumentPolicy";
 import dynamic from "next/dynamic";
@@ -31,6 +33,7 @@ import {
   ArrowRight,
   ArrowUp,
   CalendarCheck2,
+  CalendarDays,
   Flame,
   Mountain,
   Smile,
@@ -214,6 +217,7 @@ type OverviewEvent = {
   ends_at: string | null;
   status: string;
   requires_evaluation?: boolean | null;
+  duration_minutes?: number | null;
 };
 
 type GolfData = {
@@ -221,11 +225,23 @@ type GolfData = {
   sessions: TrainingSessionRow[]; items: TrainingItemRow[]; events: OverviewEvent[]; attendance: Record<string, string | null>;
   rounds: GolfRoundRow[]; holes: GolfHoleRow[]; performanceEnabled: boolean; handicap: number | null;
   handicapHistory: HandicapHistoryEntry[]; pending: Array<{ id: string }>;
+  personalActivities: Array<{ id: string; event_type: string; starts_at: string; ends_at: string; status: string }>;
   volumeConfigs: Array<{ rows: TrainingVolumeTargetRow[]; settings: { season_months?: unknown; offseason_months?: unknown } | null; seasons: ClubSeason[] }>;
 };
 
 function clamp(n: number, a: number, b: number) {
   return Math.max(a, Math.min(b, n));
+}
+
+function calendarActivityTypeLabel(type: string, locale: string) {
+  const labels: Record<string, [string, string]> = {
+    training: ["Entraînement", "Training"], interclub: ["Interclub", "Interclub"],
+    camp: ["Stage", "Camp"], event: ["Événement", "Event"], session: ["Réunion", "Session"],
+    competition: ["Compétition", "Competition"], club: ["Entraînement", "Training"],
+    individual: ["Entraînement individuel", "Individual training"], private: ["Cours privé", "Private lesson"],
+  };
+  const [fr, en] = labels[type] ?? labels.event;
+  return pickLocaleText(locale, fr, en);
 }
 
 function startOfDayISO(dateStr: string) {
@@ -1888,24 +1904,13 @@ export default function GolfDashboardPage() {
   );
   const overviewFtemPercent = overviewObjective > 0 ? Math.round((totalMinutes / overviewObjective) * 100) : null;
 
-  const attendanceOverview = useMemo(() => {
-    const calculate = (from: string, to: string) => {
-      const fromTime = new Date(`${from}T00:00:00`).getTime();
-      const toTime = new Date(`${to}T23:59:59`).getTime();
-      const now = Date.now();
-      const eligible = overviewEvents.filter((event) => {
-        const eventTime = new Date(event.starts_at).getTime();
-        const status = overviewAttendance[event.id];
-        return event.status === "scheduled" && eventTime >= fromTime && eventTime <= toTime && eventTime < now && ["training", "interclub", "camp", "event", "session"].includes(String(event.event_type)) && (status === "present" || status === "absent");
-      });
-      const present = eligible.filter((event) => overviewAttendance[event.id] === "present").length;
-      return { present, total: eligible.length, rate: eligible.length ? Math.round((present / eligible.length) * 100) : null };
-    };
-    if (!fromDate || !toDate) return { present: 0, total: 0, rate: null, trend: null };
-    const current = calculate(fromDate, toDate);
-    const previous = prevRange ? calculate(prevRange.from, prevRange.to) : null;
-    return { ...current, trend: current.rate != null && previous?.rate != null ? current.rate - previous.rate : null };
-  }, [fromDate, overviewAttendance, overviewEvents, prevRange, toDate]);
+  const calendarStats = useMemo(() => playerGolfOverviewStats({
+    events: overviewEvents,
+    attendance: overviewAttendance,
+    sessions,
+    personalActivities: golfData?.personalActivities ?? [],
+    now: new Date(),
+  }), [golfData?.personalActivities, overviewAttendance, overviewEvents, sessions]);
 
   const trainingAttendanceOverview = useMemo(() => {
     const calculate = (from: string, to: string) => {
@@ -2325,14 +2330,15 @@ export default function GolfDashboardPage() {
                 </>}
               </article>
 
-              <article className={overviewStyles.kpiCard}>
-                <div className={overviewStyles.cardTitle}><span><CalendarCheck2 size={17} /></span><h2>{pickLocaleText(locale, "Assiduité", "Attendance")}</h2></div>
+              <Link href="/player/golf/trainings?type=all" className={overviewStyles.kpiCard}>
+                <div className={overviewStyles.cardTitle}><span><CalendarDays size={17} /></span><h2>{pickLocaleText(locale, "Activités à venir", "Upcoming activities")}</h2></div>
                 {overviewActivitiesLoading ? <div className={overviewStyles.kpiSkeleton} /> : <>
-                  <strong>{attendanceOverview.rate == null ? "—" : `${attendanceOverview.rate}%`}</strong>
-                  <p>{attendanceOverview.present} {pickLocaleText(locale, attendanceOverview.present === 1 ? "présence" : "présences", attendanceOverview.present === 1 ? "attendance" : "attendances")} / {attendanceOverview.total}</p>
-                  {attendanceOverview.trend != null ? <small className={attendanceOverview.trend >= 0 ? overviewStyles.positive : overviewStyles.caution}>{attendanceOverview.trend > 0 ? <ArrowUp size={13} /> : attendanceOverview.trend < 0 ? <ArrowDown size={13} /> : <ArrowRight size={13} />}{attendanceOverview.trend > 0 ? "+" : ""}{attendanceOverview.trend} pts {compareLabel}</small> : <small>{pickLocaleText(locale, "Pas de période comparable", "No comparable period")}</small>}
+                  <strong>{calendarStats.upcoming}</strong>
+                  <div className={overviewStyles.activityTypeCounts}>{calendarStats.upcomingByType.map(([type, count]) =>
+                    <span key={type}><b>{count}</b> {calendarActivityTypeLabel(type, locale)}</span>)}</div>
+                  <small>{pickLocaleText(locale, "Voir le calendrier", "View calendar")}<ArrowRight size={13} /></small>
                 </>}
-              </article>
+              </Link>
 
               <article className={overviewStyles.kpiCard}>
                 <div className={overviewStyles.cardTitle}><span><Flag size={17} /></span><h2>{pickLocaleText(locale, "Dernier parcours", "Latest round")}</h2></div>
@@ -2341,6 +2347,24 @@ export default function GolfDashboardPage() {
                   <p>{lastRound.course_name || lastRound.location || pickLocaleText(locale, "Parcours non renseigné", "Course not specified")}</p>
                   {lastRoundDelta != null ? <small className={lastRoundDelta <= 0 ? overviewStyles.positive : overviewStyles.caution}>{lastRoundDelta < 0 ? <ArrowDown size={13} /> : lastRoundDelta > 0 ? <ArrowUp size={13} /> : <ArrowRight size={13} />}{lastRoundDelta > 0 ? "+" : ""}{lastRoundDelta} {pickLocaleText(locale, "coup(s)", "stroke(s)")}</small> : <small>{pickLocaleText(locale, "Aucune comparaison disponible", "No comparison available")}</small>}
                 </> : <div className={overviewStyles.neutralValue}>—<small>{pickLocaleText(locale, "Aucun parcours sur la période", "No round in this period")}</small></div>}
+              </article>
+
+              <article className={overviewStyles.kpiCard}>
+                <div className={overviewStyles.cardTitle}><span><CalendarCheck2 size={17} /></span><h2>{pickLocaleText(locale, "Assiduité du mois", "Monthly attendance")}</h2></div>
+                {overviewActivitiesLoading ? <div className={overviewStyles.kpiSkeleton} /> : <>
+                  <div className={overviewStyles.attendanceRing}><AnimatedProgressRing percent={calendarStats.month.rate} size={118} label={pickLocaleText(locale, "Assiduité du mois", "Monthly attendance")} /></div>
+                  <p>{calendarStats.month.present} {pickLocaleText(locale, "activité(s) sur", "activities out of")} {calendarStats.month.total}</p>
+                  <small>{calendarStats.month.trend == null ? pickLocaleText(locale, "Aucune comparaison disponible", "No comparison available") : calendarStats.month.trend === 0 ? pickLocaleText(locale, "Stable par rapport au mois précédent", "Stable compared with last month") : `${calendarStats.month.trend > 0 ? "+" : ""}${calendarStats.month.trend} ${pickLocaleText(locale, "points par rapport au mois précédent", "points compared with last month")}`}</small>
+                </>}
+              </article>
+
+              <article className={overviewStyles.kpiCard}>
+                <div className={overviewStyles.cardTitle}><span><CalendarCheck2 size={17} /></span><h2>{pickLocaleText(locale, "Assiduité de la saison", "Season attendance")}</h2></div>
+                {overviewActivitiesLoading ? <div className={overviewStyles.kpiSkeleton} /> : <>
+                  <div className={overviewStyles.attendanceRing}><AnimatedProgressRing percent={calendarStats.season.rate} size={118} label={pickLocaleText(locale, "Assiduité de la saison", "Season attendance")} /></div>
+                  <p>{calendarStats.season.present} {pickLocaleText(locale, "activité(s) sur", "activities out of")} {calendarStats.season.total}</p>
+                  <small>{calendarStats.season.total ? pickLocaleText(locale, "Depuis le début de la saison", "Since the start of the season") : pickLocaleText(locale, "Aucune activité confirmée", "No confirmed activities")}</small>
+                </>}
               </article>
 
               <Link href="/player/golf/trainings/to-complete" className={`${overviewStyles.kpiCard} ${pendingEvaluationCount > 0 ? overviewStyles.attentionCard : ""}`}>

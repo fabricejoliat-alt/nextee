@@ -15,6 +15,7 @@ type Session = HomeHistorySession & { location_text: string | null; coach_name: 
 type Event = HomeHistoryEvent & { club_id: string; group_id: string | null; location_text: string | null };
 type Round = { id: string; start_at: string };
 type Item = HomeHistoryItem & { id: string };
+type PersonalActivity = { id: string; event_type: "competition" | "camp"; starts_at: string; ends_at: string; status: string };
 
 export async function GET(req: NextRequest) {
   const timing = createRequestTiming();
@@ -107,7 +108,7 @@ export async function GET(req: NextRequest) {
         clubNameById: Object.fromEntries((clubs.data ?? []).map(row => [row.id, row.name])),
         groupNameById: Object.fromEntries((groups.data ?? []).map(row => [row.id, row.name])) }, { headers: { ...legalNoStore, ...timing.headers() } });
     }
-    const [training, roundData, profile, history, targets, settings, seasons] = await timing.measure("data", () => Promise.all([
+    const [training, roundData, profile, history, targets, settings, seasons, personalActivities] = await timing.measure("data", () => Promise.all([
       readTraining(), readRounds(),
       db.from("profiles").select("handicap").eq("id", playerId).maybeSingle(),
       personal ? readAllRows((from, to) => db.from("player_handicap_history").select("id,effective_date,value,note")
@@ -116,9 +117,12 @@ export async function GET(req: NextRequest) {
         .in("organization_id", orgIds).order("sort_order").order("ftem_code"),
       db.from("training_volume_settings").select("organization_id,season_months,offseason_months").in("organization_id", orgIds),
       db.from("club_seasons").select("id,club_id,name,starts_on,ends_on,is_current").in("club_id", orgIds).order("starts_on", { ascending: false }),
+      readAllRows<PersonalActivity>((from, to) => db.from("player_activity_events")
+        .select("id,event_type,starts_at,ends_at,status").eq("user_id", playerId)
+        .or(personalOrOrganizationFilter("organization_id", orgIds)).eq("status", "scheduled").gte("ends_at", new Date().toISOString()).order("starts_at").order("id").range(from, to)),
     ]));
     for (const result of [profile, targets, settings, seasons]) if (result.error) throw result.error;
-    return NextResponse.json({ ...identity, ...training, ...roundData, handicap: profile.data?.handicap ?? null, handicapHistory: history,
+    return NextResponse.json({ ...identity, ...training, ...roundData, personalActivities, handicap: profile.data?.handicap ?? null, handicapHistory: history,
       volumeConfigs: orgIds.map(id => ({ rows: (targets.data ?? []).filter(row => row.organization_id === id),
         settings: (settings.data ?? []).find(row => row.organization_id === id) ?? null,
         seasons: (seasons.data ?? []).filter(row => row.club_id === id) })) }, { headers: { ...legalNoStore, ...timing.headers() } });

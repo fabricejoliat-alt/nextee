@@ -51,7 +51,8 @@
 .benchmarkLink:hover{color:#35483b}
 .benchmark strong{color:#35483b;font-family:var(--font-inter-tight),sans-serif;font-size:31px;line-height:1}
 .benchmark strong sup{font-size:13px}
-.attendanceValue{margin-top:4px}
+.attendanceRing{justify-self:center;margin:3px 0;max-width:100%}
+.attendanceRing svg{display:block;max-width:100%;height:auto}
 .rankLine,.benchmarkSignals{display:flex;align-items:center;flex-wrap:wrap;gap:7px}
 .rankFlame{font-size:18px;line-height:1}
 .statusBadge{gap:5px;line-height:1.2}
