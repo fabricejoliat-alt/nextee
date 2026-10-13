@@ -1,15 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import styles from "./LoginClient.module.css";
 import { loginMessages } from "./loginMessages";
 import type { AppLocale } from "@/lib/i18n/messages";
 
+async function withLoginTimeout<T>(request: PromiseLike<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      Promise.resolve(request),
+      new Promise<T>((_, reject) => { timer = setTimeout(() => reject(new Error("Login timed out")), 15000); }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export default function LoginPage() {
-  const router = useRouter();
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
@@ -56,11 +66,11 @@ export default function LoginPage() {
     let redirected = false;
 
     try {
-      const resolveRes = await fetch("/api/auth/resolve-login", {
+      const resolveRes = await withLoginTimeout(fetch("/api/auth/resolve-login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ identifier }),
-      });
+      }));
       const resolveJson = await resolveRes.json().catch(() => ({}));
 
       if (!resolveRes.ok || !resolveJson.email) {
@@ -68,10 +78,10 @@ export default function LoginPage() {
         return;
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await withLoginTimeout(supabase.auth.signInWithPassword({
         email: resolveJson.email,
         password,
-      });
+      }));
 
       if (error || !data.session) {
         setError(copy.invalid);
@@ -79,10 +89,10 @@ export default function LoginPage() {
       }
 
       const accessToken = data.session.access_token;
-      const res = await fetch("/api/auth", {
+      const res = await withLoginTimeout(fetch("/api/auth", {
         method: "POST",
         headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
-      });
+      }));
       const json = await res.json().catch(() => ({}));
 
       if (!res.ok) {
@@ -90,8 +100,16 @@ export default function LoginPage() {
         return;
       }
 
+      const destination = typeof json?.redirectTo === "string" && json.redirectTo.startsWith("/") && !json.redirectTo.startsWith("//")
+        ? json.redirectTo : "/player";
+      window.location.replace(destination);
       redirected = true;
-      router.push(json?.redirectTo || "/player");
+      setTimeout(() => {
+        if (window.location.pathname === "/" || window.location.pathname === "/login") {
+          setLoading(false);
+          setError(copy.connectionError);
+        }
+      }, 15000);
     } catch {
       setError(copy.connectionError);
     } finally {

@@ -1,6 +1,6 @@
 import { initialPasswordRequired } from "@/lib/adminSecurity";
 import { NextResponse, type NextRequest } from "next/server";
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
 import { playerConsentAllowsAccess } from "@/lib/playerConsent";
 import { loadPlayerActorAuthorization, visibleGuardianLinks } from "@/app/api/player/access";
@@ -9,16 +9,9 @@ import { pendingEditableParentChildren } from "@/lib/server/parentConsentRequire
 
 export const runtime = "nodejs";
 
-async function resolvePlayerConsentPending(supabaseAdmin: SupabaseClient, userId: string) {
-  const membershipsRes = await supabaseAdmin
-    .from("club_members")
-    .select("player_consent_status")
-    .eq("user_id", userId)
-    .eq("role", "player")
-    .eq("is_active", true);
-  if (membershipsRes.error) throw new Error(membershipsRes.error.message);
+function resolvePlayerConsentPending(memberships: Array<{ role: string; player_consent_status: string | null }>) {
   return !playerConsentAllowsAccess(
-    ((membershipsRes.data ?? []) as Array<{ player_consent_status: string | null }>).map(
+    memberships.filter((row) => row.role === "player").map(
       (row) => row.player_consent_status
     )
   );
@@ -91,11 +84,11 @@ export async function POST(req: NextRequest) {
       auth: { persistSession: false },
     });
 
-    const { data: adminRow, error: adminErr } = await supabaseAdmin
-      .from("app_admins")
-      .select("user_id")
-      .eq("user_id", userId)
-      .maybeSingle();
+    const [adminResult, membershipsResult] = await Promise.all([
+      supabaseAdmin.from("app_admins").select("user_id").eq("user_id", userId).maybeSingle(),
+      supabaseAdmin.from("club_members").select("role,player_consent_status").eq("user_id", userId).eq("is_active", true),
+    ]);
+    const { data: adminRow, error: adminErr } = adminResult;
 
     if (adminErr) {
       return NextResponse.json(
@@ -108,13 +101,17 @@ export async function POST(req: NextRequest) {
 
     if (adminRow) return NextResponse.json({ redirectTo: "/admin" }, { headers });
 
-    const actor = await loadPlayerActorAuthorization(supabaseAdmin, userId);
-    const role = selectPrimaryApplicationRole(actor.actorRoles);
+    if (membershipsResult.error) return NextResponse.json(
+      { error: membershipsResult.error.message }, { status: 400, headers });
+    const memberships = (membershipsResult.data ?? []) as Array<{ role: string; player_consent_status: string | null }>;
+    const role = selectPrimaryApplicationRole(memberships.map((row) => row.role));
     if (!role) return NextResponse.json({ redirectTo: "/no-access" }, { headers });
 
     if (role === "manager") return NextResponse.json({ redirectTo: "/manager" }, { headers });
     if (role === "coach") return NextResponse.json({ redirectTo: "/coach" }, { headers });
+
     if (role === "parent") {
+      const actor = await loadPlayerActorAuthorization(supabaseAdmin, userId);
       const links = visibleGuardianLinks(actor.guardianLinks);
       if (links.length === 0) {
         return NextResponse.json({ redirectTo: "/no-access" }, { headers });
@@ -125,7 +122,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ redirectTo: "/player" }, { headers });
     }
     if (role === "player") {
-      const pendingConsent = await resolvePlayerConsentPending(supabaseAdmin, userId);
+      const pendingConsent = resolvePlayerConsentPending(memberships);
       if (pendingConsent) return NextResponse.json({ redirectTo: "/legal/my", consentRequired: true }, { headers });
     }
     return NextResponse.json({ redirectTo: "/player" }, { headers });

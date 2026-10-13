@@ -3101,8 +3101,31 @@ body:has([data-design-system]){
    readable. Only page-level heroes and headings placed on the photo turn white. */
 .coach-page-root .coach-scroll-area{
   background:
-    linear-gradient(90deg, rgba(12,30,20,.88) 0%, rgba(16,38,25,.74) 42%, rgba(16,38,25,.28) 100%),
+    linear-gradient(90deg, rgba(12,30,20,.82) 0%, rgba(16,38,25,.68) 34%, rgba(16,38,25,.30) 61%, rgba(16,38,25,.14) 100%),
     url("/hero-golf.jpg") center / cover fixed !important;
+}
+
+@media (max-width: 899px){
+  .coach-page-root{
+    position:relative;
+    z-index:1;
+    background:transparent;
+  }
+
+  .coach-page-root .coach-scroll-area{
+    background:transparent !important;
+  }
+
+  body:has(.coach-page-root)::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    z-index:0;
+    pointer-events:none;
+    background:
+      linear-gradient(90deg, rgba(12,30,20,.82) 0%, rgba(16,38,25,.68) 34%, rgba(16,38,25,.30) 61%, rgba(16,38,25,.14) 100%),
+      url("/hero-golf.jpg") center / cover no-repeat;
+  }
 }
 
 .coach-page-root .coach-shell h1,

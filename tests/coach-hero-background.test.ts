@@ -12,7 +12,8 @@ const learning = readFileSync(
 const coachHome = readFileSync(new URL("../app/coach/page.tsx", import.meta.url), "utf8");
 
 test("Coach workspace reuses the golf hero image with white page headings", () => {
-  assert.match(globals, /\.coach-page-root \.coach-scroll-area\{[\s\S]*?url\("\/hero-golf\.png"\) center \/ cover fixed !important/);
+  assert.match(globals, /\.coach-page-root \.coach-scroll-area\{[\s\S]*?url\("\/hero-golf\.jpg"\) center \/ cover fixed !important/);
+  assert.match(globals, /@media \(max-width: 899px\)\{[\s\S]*?\.coach-page-root \.coach-scroll-area\{\s*background:transparent !important;[\s\S]*?body:has\(\.coach-page-root\)::before\{[\s\S]*?position:fixed;[\s\S]*?url\("\/hero-golf\.jpg"\) center \/ cover no-repeat/);
   assert.match(globals, /\.coach-page-root \.coach-shell h1,[\s\S]*?color:#fff !important/);
   assert.match(globals, /\.coach-page-root \.coach-shell \[data-ui="breadcrumb"\][\s\S]*?color:#fff !important/);
   assert.match(globals, /\.coach-page-root \.coach-shell \.marketplace-page>\.glass-section:first-of-type:has\(\.marketplace-header\)[\s\S]*?background:transparent !important/);
@@ -65,10 +66,8 @@ test("Coach breadcrumb text and every descendant stay white independently of mod
   assert.ok(rules.some((rule) => rule.selector.endsWith("a:focus-visible")));
 });
 
-test("Coach access skeleton uses the hero background and a white shimmer", () => {
-  assert.match(globals, /\.coach-page-root > \.role-guard-page-loading\{[\s\S]*?url\("\/hero-golf\.png"\) center \/ cover fixed/);
-  assert.match(globals, /\.coach-page-root > \.role-guard-page-loading > \.card\{[\s\S]*?background:rgba\(255,255,255,\.1\) !important/);
-  assert.match(globals, /\.coach-page-root > \.role-guard-page-loading \.role-guard-loading-line\{[\s\S]*?rgba\(255,255,255,\.62\)/);
+test("Coach access loading uses the current golf photo", () => {
+  assert.match(globals, /\.role-guard-photo-loading\{[\s\S]*?position:fixed;[\s\S]*?url\("\/hero-golf\.jpg"\) center \/ cover/);
 });
 
 test("Coach contextual loading does not inherit the full-height Manager background", () => {
