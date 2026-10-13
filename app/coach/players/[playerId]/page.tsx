@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useRememberedPeriod } from "@/lib/useRememberedPeriod";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -726,11 +727,10 @@ export default function GolfDashboardPage() {
   const [loadingTrainLookback, setLoadingTrainLookback] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const [preset, setPreset] = useState<Preset>("season");
+  const { period: preset, setPeriod: setPreset, from: fromDate, setFrom: setFromDate, to: toDate, setTo: setToDate } = useRememberedPeriod<Preset>(`coach:player:${playerId}`, "season", ["season", "lastSeason", "week", "month", "last3", "all", "custom"]);
   const [customOpen, setCustomOpen] = useState(false);
 
-  const [fromDate, setFromDate] = useState<string>("");
-  const [toDate, setToDate] = useState<string>("");
+  useEffect(() => { setCustomOpen(preset === "custom"); }, [preset]);
 
   const [sessions, setSessions] = useState<TrainingSessionRow[]>([]);
   const [items, setItems] = useState<TrainingItemRow[]>([]);
@@ -3666,7 +3666,7 @@ function presetToSelectValue(p: Preset): Preset {
             <option value="month">{t("common.thisMonth")}</option>
             <option value="last3">3 derniers mois</option>
             <option value="all">{t("common.allActivity")}</option>
-            <option value="custom">{t("common.custom")}</option>
+            <option value="custom">{pickLocaleText(locale, "Période personnalisée", "Custom period", "Benutzerdefinierter Zeitraum", "Periodo personalizzato")}</option>
           </select>
 
           {customOpen && preset === "custom" ? (

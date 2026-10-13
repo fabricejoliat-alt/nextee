@@ -14,6 +14,7 @@ import activityStyles from "@/app/player/golf/trainings/PlayerActivities.module.
 import trainingStyles from "@/app/player/golf/PlayerGolfTraining.module.css";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { useRememberedPeriod } from "@/lib/useRememberedPeriod";
 
 export type GolfWorkspaceRound = {
   id: string; start_at: string; round_type: string; competition_name: string | null; course_name: string | null;
@@ -24,7 +25,7 @@ export type WorkspaceScorecardHole = GolfHoleInput & { round_id?: string; id?: s
 type Round = GolfWorkspaceRound;
 type Hole = WorkspaceScorecardHole;
 export type GolfRoundsDataset = { rounds: Round[]; holes: Hole[]; loading: boolean; error?: string | null };
-type Period = "3m" | "year" | "all";
+type Period = "3m" | "year" | "all" | "custom";
 
 const roundText = (locale: string, fr: string, en: string, de: string) => pickLocaleText(locale, fr, en, de);
 const scoreClass = (hole: Hole) => {
@@ -169,7 +170,7 @@ export default function GolfRoundsWorkspace({ navigation, dataset, readOnly = fa
   const dateLocale = locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-GB";
   const [ownRounds, setRounds] = useState<Round[]>([]); const [ownHoles, setHoles] = useState<Hole[]>([]);
   const [ownLoading, setLoading] = useState(true); const [ownError, setError] = useState<string | null>(null); const [openId, setOpenId] = useState<string | null>(null);
-  const [period, setPeriod] = useState<Period>("year"); const [course, setCourse] = useState("all"); const [format, setFormat] = useState("all"); const [status, setStatus] = useState("all");
+  const { period, setPeriod, from, setFrom, to, setTo } = useRememberedPeriod<Period>(readOnly ? "coach:rounds" : "player:rounds", "year", ["3m", "year", "all", "custom"]); const [course, setCourse] = useState("all"); const [format, setFormat] = useState("all"); const [status, setStatus] = useState("all");
   const rounds = dataset?.rounds ?? ownRounds;
   const holes = dataset?.holes ?? ownHoles;
   const loading = dataset?.loading ?? ownLoading;
@@ -188,13 +189,14 @@ export default function GolfRoundsWorkspace({ navigation, dataset, readOnly = fa
   }, [external, locale]);
   const holesByRound = useMemo(() => { const map: Record<string,Hole[]> = {}; holes.forEach(h => (map[h.round_id] ??= []).push(h)); return map; }, [holes]);
   const courses = useMemo(() => [...new Set(rounds.map(r => r.course_name).filter(Boolean) as string[])].sort(), [rounds]);
-  const filtered = useMemo(() => rounds.filter(round => { const hs = holesByRound[round.id] ?? []; const metrics = calculateGolfRoundMetrics(hs); const age = Date.now()-new Date(round.start_at).getTime(); if (period === "3m" && age > 1000*60*60*24*93) return false; if (period === "year" && new Date(round.start_at).getFullYear() !== new Date().getFullYear()) return false; if (course !== "all" && round.course_name !== course) return false; if (format !== "all" && String(metrics.expectedHoles) !== format) return false; if (status !== "all" && (status === "complete") !== metrics.complete) return false; return true; }), [rounds,holesByRound,period,course,format,status]);
+  const filtered = useMemo(() => rounds.filter(round => { const hs = holesByRound[round.id] ?? []; const metrics = calculateGolfRoundMetrics(hs); const age = Date.now()-new Date(round.start_at).getTime(); if (period === "3m" && age > 1000*60*60*24*93) return false; if (period === "year" && new Date(round.start_at).getFullYear() !== new Date().getFullYear()) return false; if (period === "custom" && ((from && round.start_at.slice(0,10) < from) || (to && round.start_at.slice(0,10) > to))) return false; if (course !== "all" && round.course_name !== course) return false; if (format !== "all" && String(metrics.expectedHoles) !== format) return false; if (status !== "all" && (status === "complete") !== metrics.complete) return false; return true; }), [rounds,holesByRound,period,from,to,course,format,status]);
   const aggregate = useMemo(() => { const metrics = filtered.map(r => calculateGolfRoundMetrics(holesByRound[r.id] ?? [])); const complete = metrics.filter(m => m.complete && m.score != null); const avgScore = complete.length ? Math.round(complete.reduce((s,m)=>s+(m.score ?? 0),0)/complete.length*10)/10 : null; const totalGir = metrics.reduce((s,m)=>s+m.gir.hit,0), girOpp = metrics.reduce((s,m)=>s+m.gir.opportunities,0); const totalFw = metrics.reduce((s,m)=>s+m.fairways.hit,0), fwOpp = metrics.reduce((s,m)=>s+m.fairways.opportunities,0); return { avgScore, gir: girOpp ? Math.round(totalGir/girOpp*100) : null, fairway: fwOpp ? Math.round(totalFw/fwOpp*100) : null }; }, [filtered,holesByRound]);
   const reset = () => { setPeriod("year"); setCourse("all"); setFormat("all"); setStatus("all"); };
   return <section className={styles.workspace}>
     {navigation}
     <div className={`${activityStyles.controls} ${styles.filters}`}>
-      <label className={styles.filterLabel}>{tr("Période", "Period", "Zeitraum")}<select className={styles.filter} value={period} onChange={e=>setPeriod(e.target.value as Period)}><option value="3m">{tr("3 derniers mois", "Last 3 months", "Letzte 3 Monate")}</option><option value="year">{tr("Cette année", "This year", "Dieses Jahr")}</option><option value="all">{tr("Tout l’historique", "All history", "Gesamter Verlauf")}</option></select></label>
+      <label className={styles.filterLabel}>{tr("Période", "Period", "Zeitraum")}<select className={styles.filter} value={period} onChange={e=>setPeriod(e.target.value as Period)}><option value="3m">{tr("3 derniers mois", "Last 3 months", "Letzte 3 Monate")}</option><option value="year">{tr("Cette année", "This year", "Dieses Jahr")}</option><option value="all">{tr("Tout l’historique", "All history", "Gesamter Verlauf")}</option><option value="custom">{tr("Période personnalisée", "Custom period", "Benutzerdefinierter Zeitraum")}</option></select></label>
+      {period === "custom" ? <><label className={styles.filterLabel}>{tr("Du", "From", "Von")}<input className={styles.filter} type="date" value={from} max={to || undefined} onChange={e=>setFrom(e.target.value)} /></label><label className={styles.filterLabel}>{tr("Au", "To", "Bis")}<input className={styles.filter} type="date" value={to} min={from || undefined} onChange={e=>setTo(e.target.value)} /></label></> : null}
       <label className={styles.filterLabel}>{tr("Parcours", "Course", "Golfplatz")}<select className={styles.filter} value={course} onChange={e=>setCourse(e.target.value)}><option value="all">{tr("Tous les parcours", "All courses", "Alle Golfplätze")}</option>{courses.map(value=><option key={value}>{value}</option>)}</select></label>
       <label className={styles.filterLabel}>{tr("Nombre de trous", "Number of holes", "Anzahl Löcher")}<select className={styles.filter} value={format} onChange={e=>setFormat(e.target.value)}><option value="all">{tr("9 et 18 trous", "9 and 18 holes", "9 und 18 Löcher")}</option><option value="9">{tr("9 trous", "9 holes", "9 Löcher")}</option><option value="18">{tr("18 trous", "18 holes", "18 Löcher")}</option></select></label>
       <label className={styles.filterLabel}>{tr("Statut", "Status", "Status")}<select className={styles.filter} value={status} onChange={e=>setStatus(e.target.value)}><option value="all">{tr("Tous", "All", "Alle")}</option><option value="complete">{tr("Terminés", "Completed", "Abgeschlossen")}</option><option value="progress">{tr("En cours", "In progress", "In Bearbeitung")}</option></select></label>

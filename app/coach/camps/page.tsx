@@ -7,6 +7,8 @@ import { coachCampRegistrationChanges } from "@/lib/coachCampRegistrations";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { useRememberedPeriod } from "@/lib/useRememberedPeriod";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
@@ -98,7 +100,7 @@ export default function CoachCampsPage() {
   const [coachClubCount, setCoachClubCount] = useState(0);
   const [query, setQuery] = useState("");
   const [stateFilter, setStateFilter] = useState<CampState>("all");
-  const [periodFilter, setPeriodFilter] = useState("all");
+  const { period: periodFilter, setPeriod: setPeriodFilter, from: periodFrom, setFrom: setPeriodFrom, to: periodTo, setTo: setPeriodTo } = useRememberedPeriod("coach:camps", "all", ["all", "month", "year", "custom"]);
   const [expandedCampId, setExpandedCampId] = useState<string | null>(null);
   const [participantsDay, setParticipantsDay] = useState<CampRow["days"][number] | null>(null);
   const [registrationCamp, setRegistrationCamp] = useState<CampRow | null>(null);
@@ -244,8 +246,9 @@ export default function CoachCampsPage() {
     const firstDate = camp.days.map((day) => day.starts_at ? new Date(day.starts_at) : null).filter((date): date is Date => Boolean(date)).sort((a, b) => a.getTime() - b.getTime())[0];
     if (!firstDate) return false;
     const now = new Date();
+    if (periodFilter === "custom") { const date = `${firstDate.getFullYear()}-${String(firstDate.getMonth() + 1).padStart(2, "0")}-${String(firstDate.getDate()).padStart(2, "0")}`; return (!periodFrom || date >= periodFrom) && (!periodTo || date <= periodTo); }
     return periodFilter === "month" ? firstDate.getMonth() === now.getMonth() && firstDate.getFullYear() === now.getFullYear() : firstDate.getFullYear() === now.getFullYear();
-  }), [camps, periodFilter, query, stateFilter]);
+  }), [camps, periodFilter, periodFrom, periodTo, query, stateFilter]);
 
   const noRegistrationSearchMatch = registrationCamp && registrationSearch.trim() &&
     ![...registrationCamp.available_players, ...registrationCamp.player_registrations.map((entry) => entry.player)]
@@ -261,7 +264,8 @@ export default function CoachCampsPage() {
         <div className={styles.toolbar}>
           <label className={styles.field}><span>{t("coach.directory.search")}</span><span className={coachStyles.searchField}><Search size={15} aria-hidden="true" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("coach.camps.search")} /></span></label>
           <label className={styles.field}><span>{t("coach.camps.state")}</span><select value={stateFilter} onChange={(event) => setStateFilter(event.target.value as CampState)}><option value="all">{t("coach.camps.allStates")}</option><option value="upcoming">{t("coach.camps.upcoming")}</option><option value="in_progress">{t("coach.camps.inProgress")}</option><option value="completed">{t("coach.camps.completed")}</option></select></label>
-          <label className={styles.field}><span>{t("coach.camps.period")}</span><select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)}><option value="all">{t("coach.camps.allDates")}</option><option value="month">{t("coach.camps.month")}</option><option value="year">{t("coach.camps.year")}</option></select></label>
+          <label className={styles.field}><span>{t("coach.camps.period")}</span><select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value as "all" | "month" | "year" | "custom")}><option value="all">{t("coach.camps.allDates")}</option><option value="month">{t("coach.camps.month")}</option><option value="year">{t("coach.camps.year")}</option><option value="custom">{pickLocaleText(locale, "Période personnalisée", "Custom period", "Benutzerdefinierter Zeitraum", "Periodo personalizzato")}</option></select></label>
+          {periodFilter === "custom" ? <><label className={styles.field}><span>{pickLocaleText(locale, "Du", "From", "Von", "Dal")}</span><input type="date" value={periodFrom} max={periodTo || undefined} onChange={event => setPeriodFrom(event.target.value)} /></label><label className={styles.field}><span>{pickLocaleText(locale, "Au", "To", "Bis", "Al")}</span><input type="date" value={periodTo} min={periodFrom || undefined} onChange={event => setPeriodTo(event.target.value)} /></label></> : null}
         </div>
       </section>
       <section className={campStyles.list} aria-labelledby="coach-camps-list-title" aria-busy={loading}>

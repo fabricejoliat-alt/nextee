@@ -7,6 +7,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { useRememberedPeriod } from "@/lib/useRememberedPeriod";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { coachDateLocale } from "@/lib/i18n/coachMessages";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
@@ -48,7 +50,7 @@ export default function CoachCalendarPage() {
   const [coachClubCount, setCoachClubCount] = useState(1);
   const [trainingEvaluationCompleteByEventId, setTrainingEvaluationCompleteByEventId] = useState<Record<string, boolean>>({});
   const [canPlan, setCanPlan] = useState(false);
-  const [view, setView] = useState<CoachCalendarView>(() => coachCalendarInitialPeriod(searchParams.get("view"), searchParams.get("period")));
+  const { period: view, setPeriod: setView, from: customFrom, setFrom: setCustomFrom, to: customTo, setTo: setCustomTo } = useRememberedPeriod<CoachCalendarView>("coach:calendar", coachCalendarInitialPeriod(searchParams.get("view"), searchParams.get("period")), ["year", "month", "week", "day", "custom"], searchParams.get("period") || searchParams.get("view") === "evaluations" ? coachCalendarInitialPeriod(searchParams.get("view"), searchParams.get("period")) : undefined);
   const [eventFilter, setEventFilter] = useState<EventFilter>(searchParams.get("view") === "evaluations" ? "evaluations" : "all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
@@ -60,7 +62,7 @@ export default function CoachCalendarPage() {
   const requestedPeriod = searchParams.get("period");
   useEffect(() => {
     setEventFilter(requestedView === "evaluations" ? "evaluations" : "all");
-    setView(coachCalendarInitialPeriod(requestedView, requestedPeriod));
+    if (requestedPeriod || requestedView === "evaluations") setView(coachCalendarInitialPeriod(requestedView, requestedPeriod));
   }, [requestedView, requestedPeriod]);
 
   useEffect(() => {
@@ -101,11 +103,11 @@ export default function CoachCalendarPage() {
     .sort((a, b) => a[1].localeCompare(b[1], dateLocale)), [dateLocale, groupNames]);
   const stats = useMemo(() => { const scheduled = events.filter((event) => event.status === "scheduled"); return { completed: scheduled.filter((event) => coachEventEndMs(event) <= referenceNow).length, planned: scheduled.filter((event) => coachEventEndMs(event) > referenceNow).length, total: scheduled.length }; }, [events, referenceNow]);
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(startOfWeek(anchorDate), index)), [anchorDate]);
-  const headerLabel = view === "year" ? String(anchorDate.getFullYear()) : view === "month" ? monthLabel(anchorDate, dateLocale) : view === "week" ? `${dayLabel(weekDays[0], dateLocale)} – ${dayLabel(weekDays[6], dateLocale)}` : dayLabel(anchorDate, dateLocale);
-  const displayedEvents = visibleEvents.filter((event) => coachCalendarInPeriod(event.starts_at, anchorDate, view));
+  const headerLabel = view === "custom" ? `${customFrom || "…"} – ${customTo || "…"}` : view === "year" ? String(anchorDate.getFullYear()) : view === "month" ? monthLabel(anchorDate, dateLocale) : view === "week" ? `${dayLabel(weekDays[0], dateLocale)} – ${dayLabel(weekDays[6], dateLocale)}` : dayLabel(anchorDate, dateLocale);
+  const displayedEvents = visibleEvents.filter((event) => coachCalendarInPeriod(event.starts_at, anchorDate, view, customFrom, customTo));
   const years = [...new Set([new Date().getFullYear(), anchorDate.getFullYear(), ...events.map((event) => new Date(event.starts_at).getFullYear())])].filter(Number.isFinite).sort((a, b) => b - a);
   const firstGroupId = groups[0]?.[0] ?? "";
-  function movePeriod(direction: -1 | 1) { if (view === "year") setAnchorDate((date) => new Date(date.getFullYear() + direction, 0, 1)); else if (view === "month") setAnchorDate((date) => new Date(date.getFullYear(), date.getMonth() + direction, 1)); else if (view === "week") setAnchorDate((date) => addDays(date, direction * 7)); else setAnchorDate((date) => addDays(date, direction)); }
+  function movePeriod(direction: -1 | 1) { if (view === "year") setAnchorDate((date) => new Date(date.getFullYear() + direction, 0, 1)); else if (view === "month") setAnchorDate((date) => new Date(date.getFullYear(), date.getMonth() + direction, 1)); else if (view === "week") setAnchorDate((date) => addDays(date, direction * 7)); else if (view === "day") setAnchorDate((date) => addDays(date, direction)); }
 
   return <main className={styles.page}>
     <nav data-ui="breadcrumb" className={actionStyles.breadcrumb} aria-label={t("common.breadcrumb")}>{`${t("common.coach")} / ${t("coach.nav.activities")}`}</nav>
@@ -113,9 +115,10 @@ export default function CoachCalendarPage() {
     {error ? <div className={actionStyles.errorAlert} role="alert">{t(error)} <button type="button" className={actionStyles.secondaryButton} onClick={() => setReload((value) => value + 1)}>{t("coach.retry")}</button></div> : null}
     <section className={styles.overview} aria-label={t("coach.calendar.metrics")}><div className={styles.statsGrid}><article className={styles.statCard}><span>{t("coach.calendar.completed")}</span><b>{loading || error ? "—" : stats.completed}</b><small>{t("coach.calendar.scope")}</small></article><article className={styles.statCard}><span>{t("coach.calendar.planned")}</span><b>{loading || error ? "—" : stats.planned}</b><small>{t("coach.calendar.upcoming")}</small></article><article className={styles.statCard}><span>{t("coach.calendar.total")}</span><b>{loading || error ? "—" : stats.total}</b><small>{t("coach.calendar.totalHint")}</small></article></div></section>
     <section className={styles.quickPanel}><div className={styles.sectionHeading}><div><h2>{t("coach.calendar.filter")}</h2><p>{t("coach.calendar.filterHint")}</p></div></div><div style={{ display: "grid", gap: 12 }}>
-      <div style={segmentWrapStyle}>{(["year", "month", "week", "day"] as const).map((period, index) => <button key={period} type="button" onClick={() => setView(period)} aria-pressed={view === period} style={segmentButtonStyle(view === period, index < 3)}>{t(`coach.calendar.${period}`)}</button>)}</div>
+      <div style={{...segmentWrapStyle, flexWrap: "wrap"}}>{(["year", "month", "week", "day", "custom"] as const).map((period, index) => <button key={period} type="button" onClick={() => setView(period)} aria-pressed={view === period} style={segmentButtonStyle(view === period, index < 4)}>{period === "custom" ? pickLocaleText(locale, "Période personnalisée", "Custom period", "Benutzerdefinierter Zeitraum", "Periodo personalizzato") : t(`coach.calendar.${period}`)}</button>)}</div>
+      {view === "custom" ? <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}><label style={fieldStyle}><span style={fieldLabelStyle}>{pickLocaleText(locale,"Du","From","Von","Dal")}</span><input className="input" type="date" value={customFrom} max={customTo || undefined} onChange={event=>setCustomFrom(event.target.value)}/></label><label style={fieldStyle}><span style={fieldLabelStyle}>{pickLocaleText(locale,"Au","To","Bis","Al")}</span><input className="input" type="date" value={customTo} min={customFrom || undefined} onChange={event=>setCustomTo(event.target.value)}/></label></div> : null}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 12 }}><FilterSelect label={t("coach.calendar.year")} value={String(anchorDate.getFullYear())} onChange={(value) => setAnchorDate(new Date(Number(value), 0, 1))} options={years.map((year) => [String(year), String(year)])}/><FilterSelect label={t("coach.calendar.display")} value={eventFilter} onChange={(value) => { setEventFilter(value as EventFilter); if (value === "evaluations") setView("year"); }} options={[["all", t("coach.calendar.all")], ["evaluations", t("coach.nav.evaluations")]]} /><FilterSelect label={t("coach.calendar.type")} value={typeFilter} onChange={setTypeFilter} options={[["all", t("coach.calendar.allTypes")], ["training", t("coach.activity.training")], ["interclub", t("coach.activity.interclub")], ["camp", t("coach.activity.camp")], ["session", t("coach.activity.session")], ["event", t("coach.activity.event")]]} /><FilterSelect label={t("coach.calendar.group")} value={groupFilter} onChange={setGroupFilter} options={[["all", t("coach.calendar.allGroups")], ...groups]} /></div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}><div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><button className={actionStyles.secondaryButton} type="button" onClick={() => movePeriod(-1)} aria-label={t("coach.calendar.previous")} title={t("coach.calendar.previous")}><ChevronLeft size={16} aria-hidden="true" /></button><button className={actionStyles.secondaryButton} type="button" onClick={() => setAnchorDate(new Date())}>{t("coach.calendar.today")}</button><button className={actionStyles.secondaryButton} type="button" onClick={() => movePeriod(1)} aria-label={t("coach.calendar.next")} title={t("coach.calendar.next")}><ChevronRight size={16} aria-hidden="true" /></button></div><strong style={{ color: "#35483b", fontSize: 16 }}>{headerLabel}</strong></div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>{view !== "custom" ? <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><button className={actionStyles.secondaryButton} type="button" onClick={() => movePeriod(-1)} aria-label={t("coach.calendar.previous")} title={t("coach.calendar.previous")}><ChevronLeft size={16} aria-hidden="true" /></button><button className={actionStyles.secondaryButton} type="button" onClick={() => setAnchorDate(new Date())}>{t("coach.calendar.today")}</button><button className={actionStyles.secondaryButton} type="button" onClick={() => movePeriod(1)} aria-label={t("coach.calendar.next")} title={t("coach.calendar.next")}><ChevronRight size={16} aria-hidden="true" /></button></div> : null}<strong style={{ color: "#35483b", fontSize: 16 }}>{headerLabel}</strong></div>
     </div></section>
     {loading ? <section className={styles.quickPanel}><ListLoadingBlock label={t("coach.calendar.loading")} /></section> : error ? null : <section className={activityStyles.list}>
       {displayedEvents.map((event) => {

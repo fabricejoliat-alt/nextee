@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { useRememberedPeriod } from "@/lib/useRememberedPeriod";
 import CountUpNumber from "@/components/ui/CountUpNumber";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { readPlayerPage } from "@/lib/playerPageRead";
@@ -617,11 +618,10 @@ export default function GolfDashboardPage() {
   const [currentClubSeason, setCurrentClubSeason] = useState<ClubSeason | null>(null);
   const [previousClubSeason, setPreviousClubSeason] = useState<ClubSeason | null>(null);
 
-  const [preset, setPreset] = useState<Preset>("season");
+  const { period: preset, setPeriod: setPreset, from: fromDate, setFrom: setFromDate, to: toDate, setTo: setToDate } = useRememberedPeriod<Preset>("player:golf", "season", ["week", "month", "last3", "season", "lastSeason", "all", "custom"]);
   const [customOpen, setCustomOpen] = useState(false);
 
-  const [fromDate, setFromDate] = useState<string>("");
-  const [toDate, setToDate] = useState<string>("");
+  useEffect(() => { setCustomOpen(preset === "custom"); }, [preset]);
 
   const [sessions, setSessions] = useState<TrainingSessionRow[]>([]);
   const [items, setItems] = useState<TrainingItemRow[]>([]);
@@ -1972,7 +1972,6 @@ export default function GolfDashboardPage() {
   function selectSection(section: DashboardSection) {
     setMobileGolfMenuOpen(false);
     setActiveSection(section);
-    if (section === "overview" && !["month", "last3", "season", "lastSeason"].includes(preset)) setPreset("season");
     const url = new URL(window.location.href);
     if (section === "overview") url.searchParams.delete("section");
     else url.searchParams.set("section", section);
@@ -2077,20 +2076,11 @@ export default function GolfDashboardPage() {
       >
         <option value="month">{t("common.thisMonth")}</option>
         <option value="last3">{t("common.last3Months")}</option>
-        {activeSection === "overview" || activeSection === "trainings" || activeSection === "evaluations" ? (
-          <>
-            <option value="season">{pickLocaleText(locale, "Cette saison", "This season")}</option>
-            {previousClubSeason ? <option value="lastSeason">{pickLocaleText(locale, "La saison dernière", "Last season")}</option> : null}
-          </>
-        ) : (
-          <>
-            <option value="week">{t("common.thisWeek")}</option>
-            <option value="season">{pickLocaleText(locale, "Cette saison", "This season")}</option>
-            {previousClubSeason ? <option value="lastSeason">{pickLocaleText(locale, "La saison dernière", "Last season")}</option> : null}
-            <option value="all">{t("common.allActivity")}</option>
-            <option value="custom">{t("common.custom")}</option>
-          </>
-        )}
+        <option value="week">{t("common.thisWeek")}</option>
+        <option value="season">{pickLocaleText(locale, "Cette saison", "This season")}</option>
+        {previousClubSeason ? <option value="lastSeason">{pickLocaleText(locale, "La saison dernière", "Last season")}</option> : null}
+        <option value="all">{t("common.allActivity")}</option>
+        <option value="custom">{pickLocaleText(locale, "Période personnalisée", "Custom period", "Benutzerdefinierter Zeitraum", "Periodo personalizzato")}</option>
       </select>
 
       {/* Custom dates */}
