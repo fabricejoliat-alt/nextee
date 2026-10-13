@@ -8,8 +8,9 @@ import { AlertTriangle, ArrowRight, CalendarDays, CheckCircle2, ClipboardCheck, 
 import { supabase } from "@/lib/supabaseClient";
 import CoachLearningCards from "./CoachLearningCards";
 import styles from "./CoachDashboard.module.css";
+import HomeActivityCard from "@/components/dashboard/HomeActivityCard";
 import activityStyles from "./CoachActivityList.module.css";
-import CoachActivityCard, { CoachActivityAction } from "@/components/coach/CoachActivityCard";
+import { CoachActivityAction } from "@/components/coach/CoachActivityCard";
 import { COACH_PENDING_EVALUATIONS_HREF } from "@/lib/coachCalendarPeriod";
 import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -144,15 +145,16 @@ export default function CoachHomePage() {
 }
 
 function EventList({ loading, events, groups, clubs, empty }: { loading: boolean; events: EventLite[]; groups: Record<string, string>; clubs: Record<string, string>; empty: string }) {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   if (loading) return <Skeleton />;
   if (!events.length) return <div className={styles.empty}>{empty}</div>;
   const showClub = new Set(Object.values(clubs)).size > 1;
   return <div className={activityStyles.list}>{events.map((event) => {
     const href = `/coach/groups/${event.group_id}/planning/${event.id}`;
-    return <CoachActivityCard key={event.id} variant="list" startsAt={event.starts_at} typeLabel={eventTypeLabel(event, t)}
-      groupName={groups[event.group_id]} clubName={clubs[event.group_id]} showClub={showClub} location={event.location_text} href={href}
-      actions={<CoachActivityAction state="view_activity" groupId={event.group_id} eventId={event.id} name={event.title || eventTypeLabel(event, t)}/>}/>;
+    return <HomeActivityCard key={event.id} startsAt={event.starts_at} dateLocale={coachDateLocale(locale)}
+      title={eventTypeLabel(event, t)} detail={`${groups[event.group_id] || t("coach.activity.noGroup")}${showClub && clubs[event.group_id] ? ` · ${clubs[event.group_id]}` : ""}`}
+      location={event.location_text?.trim() || t("coach.activity.noPlace")} href={href}
+      action={<CoachActivityAction state="view_activity" groupId={event.group_id} eventId={event.id} href={href} name={event.title || eventTypeLabel(event, t)} />} />;
   })}</div>;
 }
 

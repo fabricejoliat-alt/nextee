@@ -17,7 +17,7 @@ import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications
 import { getNotificationMessage } from "@/lib/notificationMessages";
 import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import type { PlayerHomeSummary } from "@/lib/playerHomeSummary";
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CalendarCheck2, CheckCircle2, ClipboardCheck, MapPin, Medal, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CalendarCheck2, CheckCircle2, ClipboardCheck, Medal, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
 import type { ValidationDashboardPayload } from "@/lib/validations";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -29,6 +29,7 @@ import RulesVisual from "@/components/rules/RulesVisual";
 import rulesVisualStyles from "@/components/rules/RulesVisual.module.css";
 import dynamic from "next/dynamic";
 import { buildManagementVolumeChartOption } from "@/lib/managementCharts";
+import HomeActivityCard from "@/components/dashboard/HomeActivityCard";
 import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import overviewStyles from "@/app/player/golf/PlayerGolfOverview.module.css";
 import styles from "./PlayerDashboard.module.css";
@@ -1263,22 +1264,12 @@ export default function PlayerHomePage() {
                     const organizer = event ? (coachNamesByEventId[event.id]?.join(", ") || clubNameById[event.club_id] || (event.group_id ? groupNameById[event.group_id] : "") || pickLocaleText(locale, "Club", "Club")) : session ? pickLocaleText(locale, "Entraînement personnel", "Personal training") : pickLocaleText(locale, "Compétition", "Competition");
                     const activityDetail = event?.event_type === "session" && event.title?.trim() ? event.title.trim() : organizer;
                     const status = event ? (attendeeStatusByEventId[event.id] ?? null) : null;
-                    const activityDate = new Date(item.dateIso);
-                    const dateDay = new Intl.DateTimeFormat(dateLocale, { weekday: "short" }).format(activityDate).replace(".", "");
-                    const dateMonth = new Intl.DateTimeFormat(dateLocale, { month: "short" }).format(activityDate).replace(".", "");
-                    const activityTime = new Intl.DateTimeFormat(dateLocale, { hour: "2-digit", minute: "2-digit" }).format(activityDate);
                     const activityType = event ? eventTypeLabel(event.event_type, locale) : session ? pickLocaleText(locale, "Entraînement", "Training") : pickLocaleText(locale, "Compétition", "Competition");
-                    return <article key={item.key} className={styles.activityItem}>
-                      <div className={styles.activityDate} aria-label={new Intl.DateTimeFormat(dateLocale, { dateStyle: "full", timeStyle: "short" }).format(activityDate)}>
-                        <span>{dateDay}</span><b>{activityDate.getDate()}</b><span>{dateMonth}</span><time dateTime={item.dateIso}>{activityTime}</time>
-                      </div>
-                      <div className={styles.activityBody}>
-                        <Link className={styles.activityTitle} href={href}>{activityType}</Link>
-                        <span className={styles.activityMeta}>{activityDetail}</span>
-                        <span className={`planning-event-location ${styles.activityLocation}`}><MapPin size={14} aria-hidden="true" /><span>{location || pickLocaleText(locale, "Lieu non renseigné", "Location not specified")}</span></span>
-                      </div>
-                      {event && isClubAttendanceEventType(event.event_type) ? <UpcomingAttendanceToggle variant={2} checked={status !== "absent" && status !== "excused"} onToggle={() => handleTrainingAttendanceToggle(event, status)} disabled={attendanceBusyEventId === event.id} absentLabel={pickLocaleText(locale, "Absent", "Absent")} presentLabel={pickLocaleText(locale, "Présent", "Present")} absentSentence={pickLocaleText(locale, "Absent", "Absent")} presentSentence={pickLocaleText(locale, "Présent", "Present")} ariaLabel={pickLocaleText(locale, `Présence pour ${title}`, `Attendance for ${title}`, `Anwesenheit für ${title}`, `Presenza per ${title}`)} /> : null}
-                    </article>;
+                    return <HomeActivityCard key={item.key} startsAt={item.dateIso} dateLocale={dateLocale}
+                      title={activityType} detail={activityDetail} href={href}
+                      location={location || pickLocaleText(locale, "Lieu non renseigné", "Location not specified")}
+                      action={event && isClubAttendanceEventType(event.event_type) ? <UpcomingAttendanceToggle variant={2} checked={status !== "absent" && status !== "excused"} onToggle={() => handleTrainingAttendanceToggle(event, status)} disabled={attendanceBusyEventId === event.id} absentLabel={pickLocaleText(locale, "Absent", "Absent")} presentLabel={pickLocaleText(locale, "Présent", "Present")} absentSentence={pickLocaleText(locale, "Absent", "Absent")} presentSentence={pickLocaleText(locale, "Présent", "Present")} ariaLabel={pickLocaleText(locale, `Présence pour ${title}`, `Attendance for ${title}`, `Anwesenheit für ${title}`, `Presenza per ${title}`)} /> : null}
+                    />;
                   })}
                 </div>
               ) : <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Aucune activité planifiée.", "No upcoming activity.")}</div>}
