@@ -100,7 +100,6 @@ export default function CoachHomePage() {
   ];
 
   return <div className={styles.page}>
-    <nav data-ui="breadcrumb" className={styles.breadcrumb} aria-label={t("common.breadcrumb")}><span>{t("common.coach")}</span><span aria-hidden="true">/</span><strong>{t("nav.dashboard")}</strong></nav>
     <header className={styles.topline}>
       <div><h1>{`${t("coach.home.hello")}${name ? ` ${name}` : ""}`}</h1><p>{t("coach.home.intro")}</p><div className={styles.context}>{data?.organizationNames?.join(" · ") || (loading ? t("coach.home.contextLoading") : t("coach.home.noClub"))}</div></div>
     </header>

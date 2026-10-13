@@ -64,7 +64,7 @@ test("every Coach breadcrumb has the stable marker, including shared rules and n
     };
     visit(source);
   }
-  assert.equal(breadcrumbs, 18, "Update this inventory when adding a Coach breadcrumb");
+  assert.equal(breadcrumbs, 17, "Update this inventory when adding or removing a Coach breadcrumb");
 });
 
 test("Coach breadcrumb text and every descendant stay white independently of module hashes and locale", () => {
