@@ -22,6 +22,22 @@ test("Coach workspace reuses the golf hero image with white page headings", () =
   assert.match(learning, /\.sectionHeading p\{[^}]*color:rgba\(255,255,255,\.82\)!important/);
 });
 
+test("Coach mobile photo is not hidden by the Manager backdrop rules", () => {
+  const rules: postcss.Rule[] = [];
+  postcss.parse(globals).walkRules((rule) => {
+    if (/(?:html|body):has\(\.manager-page/.test(rule.selector) && (
+      rule.nodes.some((node) => node.type === "decl" && node.prop === "background-image" && node.important) ||
+      rule.nodes.some((node) => node.type === "decl" && node.prop === "display" && node.important)
+    )) rules.push(rule);
+  });
+  assert.ok(rules.length >= 2);
+  for (const rule of rules) {
+    for (const selector of rule.selectors.filter((selector) => /(?:html|body):has\(\.manager-page/.test(selector))) {
+      assert.match(selector, /\.manager-page:not\(\.coach-page-root\)/);
+    }
+  }
+});
+
 test("every Coach breadcrumb has the stable marker, including shared rules and notification views", () => {
   const walk = (dir: URL): URL[] => readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const file = new URL(entry.name + (entry.isDirectory() ? "/" : ""), dir);

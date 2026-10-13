@@ -2655,8 +2655,8 @@ nav[aria-label="Fil d’Ariane"]:not([style]){
 /* Admin and manager never use the photographic background, including in PWA. */
 html:has(.admin-page),
 body:has(.admin-page),
-html:has(.manager-page),
-body:has(.manager-page),
+html:has(.manager-page:not(.coach-page-root)),
+body:has(.manager-page:not(.coach-page-root)),
 html:has(.player-page),
 body:has(.player-page){
   background: #f5f6f8 !important;
@@ -2664,7 +2664,7 @@ body:has(.player-page){
 }
 
 body:has(.admin-page)::before,
-body:has(.manager-page)::before{
+body:has(.manager-page:not(.coach-page-root))::before{
   display: none !important;
   background-image: none !important;
 }
