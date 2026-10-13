@@ -1545,6 +1545,18 @@ const deOverrides: Record<string, string> = {
   "playerProfile.zoom": "Zoom",
   "playerProfile.validate": "Bestätigen",
   "playerProfile.cropHint": "Tipp: Gesicht oder Logo innerhalb des Kreises zentrieren.",
+  "cat.warmup_mobility": "Aufwärmen / Beweglichkeit",
+  "cat.long_game": "Langes Spiel",
+  "cat.short_game_all": "Kurzes Spiel (alle Bereiche)",
+  "cat.putting": "Putten",
+  "cat.wedging": "Wedges",
+  "cat.pitching": "Pitchen",
+  "cat.chipping": "Chippen",
+  "cat.bunker": "Bunker",
+  "cat.course": "Golfplatz",
+  "cat.mental": "Mentales Training",
+  "cat.fitness": "Fitness",
+  "cat.other": "Sonstiges",
 };
 
 const itOverrides: Record<string, string> = {

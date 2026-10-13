@@ -13,6 +13,7 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { readPlayerPage } from "@/lib/playerPageRead";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { localizeTrainingVolumeMotivation } from "@/lib/i18n/trainingVolumeMotivation";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import AnimatedProgressRing from "@/components/player/AnimatedProgressRing";
 import { playerGolfOverviewStats } from "@/lib/playerGolfOverviewStats";
@@ -765,7 +766,7 @@ export default function GolfDashboardPage() {
     if (!docFile || uploadingDocument) return;
     const finalDocName = docName.trim();
     if (!finalDocName) {
-      setError("Veuillez saisir un nom de document.");
+      setError(pickLocaleText(locale, "Veuillez saisir un nom de document.", "Enter a document name.", "Bitte einen Dokumentnamen eingeben."));
       return;
     }
     setUploadingDocument(true);
@@ -774,7 +775,7 @@ export default function GolfDashboardPage() {
       const { effectiveUserId: playerId } = await resolveEffectivePlayerContext();
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token ?? "";
-      if (!token || !playerId) throw new Error("Missing context");
+      if (!token || !playerId) throw new Error(pickLocaleText(locale, "Session invalide.", "Invalid session.", "Ungültige Sitzung."));
       const prepareRes = await fetch(`/api/player/documents?player_id=${encodeURIComponent(playerId)}`, {
         method: "POST",
         headers: {
@@ -796,7 +797,7 @@ export default function GolfDashboardPage() {
         reservation_token?: unknown;
         mime_type?: unknown;
       };
-      if (!prepareRes.ok) throw new Error(String(prepareJson?.error ?? "Upload failed"));
+      if (!prepareRes.ok) throw new Error(String(prepareJson?.error ?? pickLocaleText(locale, "Téléversement impossible.", "Upload failed.", "Hochladen fehlgeschlagen.")));
 
       const uploadBucket = String(prepareJson?.bucket ?? "").trim();
       const uploadPath = String(prepareJson?.path ?? "").trim();
@@ -804,7 +805,7 @@ export default function GolfDashboardPage() {
       const reservationToken = String(prepareJson?.reservation_token ?? "").trim();
       const normalizedMimeType = String(prepareJson?.mime_type ?? "").trim();
       if (!uploadBucket || !uploadPath || !uploadToken || !reservationToken || !normalizedMimeType) {
-        throw new Error("Upload initialization failed");
+        throw new Error(pickLocaleText(locale, "Initialisation du téléversement impossible.", "Upload initialization failed.", "Hochladen konnte nicht gestartet werden."));
       }
 
       const uploadRes = await supabase.storage.from(uploadBucket).uploadToSignedUrl(
@@ -835,7 +836,7 @@ export default function GolfDashboardPage() {
         }),
       });
       const json = await finalizeRes.json().catch(() => ({})) as { error?: unknown; document?: PlayerDashboardDocument };
-      if (!finalizeRes.ok) throw new Error(String(json?.error ?? "Upload failed"));
+      if (!finalizeRes.ok) throw new Error(String(json?.error ?? pickLocaleText(locale, "Téléversement impossible.", "Upload failed.", "Hochladen fehlgeschlagen.")));
 
       const created = json?.document as PlayerDashboardDocument | undefined;
       if (created?.id) {
@@ -847,7 +848,7 @@ export default function GolfDashboardPage() {
       setDocName("");
       if (docFileInputRef.current) docFileInputRef.current.value = "";
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Upload failed");
+      setError(e instanceof Error ? e.message : pickLocaleText(locale, "Téléversement impossible.", "Upload failed.", "Hochladen fehlgeschlagen."));
     } finally {
       setUploadingDocument(false);
     }
@@ -856,13 +857,13 @@ export default function GolfDashboardPage() {
   async function renameDocument(doc: PlayerDashboardDocument) {
     if (!currentUserId || currentUserId !== String(doc.uploaded_by ?? "")) return;
     const currentName = String(doc.file_name ?? "").trim();
-    const nextName = window.prompt("Nouveau nom du document", currentName)?.trim() ?? "";
+    const nextName = window.prompt(pickLocaleText(locale, "Nouveau nom du document", "New document name", "Neuer Dokumentname"), currentName)?.trim() ?? "";
     if (!nextName || nextName === currentName) return;
     setRenamingDocumentId(doc.id);
     try {
       const { effectiveUserId: playerId } = await resolveEffectivePlayerContext();
       const token = await getAuthToken();
-      if (!token || !playerId) throw new Error("Missing context");
+      if (!token || !playerId) throw new Error(pickLocaleText(locale, "Session invalide.", "Invalid session.", "Ungültige Sitzung."));
       const res = await fetch(`/api/player/documents`, {
         method: "PATCH",
         headers: {
@@ -876,7 +877,7 @@ export default function GolfDashboardPage() {
         }),
       });
       const json = await res.json().catch(() => ({})) as { error?: unknown; document?: PlayerDashboardDocument };
-      if (!res.ok) throw new Error(String(json?.error ?? "Rename failed"));
+      if (!res.ok) throw new Error(String(json?.error ?? pickLocaleText(locale, "Renommage impossible.", "Rename failed.", "Umbenennen fehlgeschlagen.")));
       setDocuments((prev) =>
         prev.map((d) => (d.id === doc.id ? { ...d, file_name: String(json?.document?.file_name ?? nextName) } : d))
       );
@@ -884,7 +885,7 @@ export default function GolfDashboardPage() {
         setViewerDocument((prev) => (prev ? { ...prev, file_name: String(json?.document?.file_name ?? nextName) } : prev));
       }
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Rename failed");
+      setError(e instanceof Error ? e.message : pickLocaleText(locale, "Renommage impossible.", "Rename failed.", "Umbenennen fehlgeschlagen."));
     } finally {
       setRenamingDocumentId("");
     }
@@ -892,7 +893,7 @@ export default function GolfDashboardPage() {
 
   async function deleteDocument(doc: PlayerDashboardDocument) {
     if (!currentUserId || currentUserId !== String(doc.uploaded_by ?? "")) return;
-    const ok = window.confirm(`Supprimer le document "${doc.file_name}" ?`);
+    const ok = window.confirm(pickLocaleText(locale, `Supprimer le document « ${doc.file_name} » ?`, `Delete document “${doc.file_name}”?`, `Dokument «${doc.file_name}» löschen?`));
     if (!ok) return;
     setDeletingDocumentId(doc.id);
     try {
@@ -1264,8 +1265,8 @@ export default function GolfDashboardPage() {
   }, [preset, trainingVolumeObjective]);
   const trainingVolumeMotivation = useMemo(() => {
     const text = String(trainingVolumeTarget?.motivation_text ?? "").trim();
-    return text || null;
-  }, [trainingVolumeTarget]);
+    return localizeTrainingVolumeMotivation(locale, trainingVolumeTarget?.ftem_code, text);
+  }, [locale, trainingVolumeTarget]);
   const trainingVolumePercent = useMemo(
     () => (displayedTrainingVolumeObjective > 0 ? (totalMinutes / displayedTrainingVolumeObjective) * 100 : 0),
     [displayedTrainingVolumeObjective, totalMinutes]
@@ -2177,7 +2178,7 @@ export default function GolfDashboardPage() {
         {activeSection === "documents" ? (
         <div className="glass-section">
           <div className="glass-card" style={{ display: "grid", gap: 10 }}>
-            <div className="card-title" style={{ marginBottom: 0 }}>Documents joueur</div>
+            <div className="card-title" style={{ marginBottom: 0 }}>{pickLocaleText(locale, "Documents joueur", "Player documents", "Spielerdokumente")}</div>
             <div style={{ display: "grid", gap: 8 }}>
               <input
                 ref={docFileInputRef}
@@ -2200,7 +2201,7 @@ export default function GolfDashboardPage() {
                   onClick={openDocumentPicker}
                   disabled={uploadingDocument}
                 >
-                  Choisir un fichier
+                  {pickLocaleText(locale, "Choisir un fichier", "Choose a file", "Datei auswählen")}
                 </button>
                   <span
                     style={{
@@ -2209,16 +2210,16 @@ export default function GolfDashboardPage() {
                       color: docFile ? "rgba(0,0,0,0.76)" : "rgba(0,0,0,0.5)",
                     }}
                   >
-                    {docFile ? docFile.name : "Aucun fichier sélectionné"}
+                    {docFile ? docFile.name : pickLocaleText(locale, "Aucun fichier sélectionné", "No file selected", "Keine Datei ausgewählt")}
                   </span>
                 </div>
               <label style={{ display: "grid", gap: 6, maxWidth: 520 }}>
-                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>Nom du document</span>
+                <span style={{ fontSize: 12, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>{pickLocaleText(locale, "Nom du document", "Document name", "Dokumentname")}</span>
                 <input
                   className="input"
                   value={docName}
                   onChange={(e) => setDocName(e.target.value)}
-                  placeholder="Nom du document"
+                  placeholder={pickLocaleText(locale, "Nom du document", "Document name", "Dokumentname")}
                   maxLength={180}
                 />
               </label>
@@ -2233,7 +2234,7 @@ export default function GolfDashboardPage() {
                   }}
                 >
                   <Upload size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                  Upload
+                  {pickLocaleText(locale, "Téléverser", "Upload", "Hochladen")}
                 </button>
               </div>
             </div>
@@ -2242,7 +2243,7 @@ export default function GolfDashboardPage() {
                 <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
               </div>
             ) : documents.length === 0 ? (
-              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>Aucun document.</div>
+              <div style={{ color: "rgba(0,0,0,0.55)", fontWeight: 800 }}>{pickLocaleText(locale, "Aucun document.", "No documents.", "Keine Dokumente.")}</div>
             ) : (
               <div style={{ display: "grid", gap: 10 }}>
                 {documents.map((d) => {
@@ -2274,13 +2275,13 @@ export default function GolfDashboardPage() {
                             {ext} · {shortDate(d.created_at, dateLocale)}
                           </div>
                           <div style={{ fontSize: 11, fontWeight: 750, color: "rgba(0,0,0,0.62)", lineHeight: 1.35 }} className="truncate">
-                            Uploadé par {uploader}
+                            {pickLocaleText(locale, "Téléversé par", "Uploaded by", "Hochgeladen von")} {uploader}
                           </div>
                         </div>
                       </div>
 
                       <div className={documentStyles.actions}>
-                        <button className={documentStyles.iconButton} type="button" onClick={() => setViewerDocument(d)} aria-label={`Voir ${fileName}`} title="Voir">
+                        <button className={documentStyles.iconButton} type="button" onClick={() => setViewerDocument(d)} aria-label={`${pickLocaleText(locale, "Voir", "View", "Ansehen")} ${fileName}`} title={pickLocaleText(locale, "Voir", "View", "Ansehen")}>
                           <Eye size={15} aria-hidden="true" />
                         </button>
                         {String(d.uploaded_by ?? "") === currentUserId ? (
@@ -2290,8 +2291,8 @@ export default function GolfDashboardPage() {
                               type="button"
                               onClick={() => void renameDocument(d)}
                               disabled={renamingDocumentId === d.id || deletingDocumentId === d.id}
-                              aria-label={`Renommer ${fileName}`}
-                              title="Renommer"
+                              aria-label={`${pickLocaleText(locale, "Renommer", "Rename", "Umbenennen")} ${fileName}`}
+                              title={pickLocaleText(locale, "Renommer", "Rename", "Umbenennen")}
                             >
                               <Pencil size={15} aria-hidden="true" />
                             </button>
@@ -2300,8 +2301,8 @@ export default function GolfDashboardPage() {
                               type="button"
                               onClick={() => void deleteDocument(d)}
                               disabled={deletingDocumentId === d.id || renamingDocumentId === d.id}
-                              aria-label={`Supprimer ${fileName}`}
-                              title="Supprimer"
+                              aria-label={`${pickLocaleText(locale, "Supprimer", "Delete", "Löschen")} ${fileName}`}
+                              title={pickLocaleText(locale, "Supprimer", "Delete", "Löschen")}
                             >
                               <Trash2 size={15} aria-hidden="true" />
                             </button>

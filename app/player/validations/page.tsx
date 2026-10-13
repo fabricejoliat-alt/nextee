@@ -8,13 +8,25 @@ import { CheckCircle2, ChevronDown, ChevronUp, ClipboardList, Clock3, Flag, Lock
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import ManagerStatisticsTabs from "@/components/manager/ManagerStatisticsTabs";
 import type { ValidationDashboardPayload, ValidationExerciseItem } from "@/lib/validations";
 import styles from "./PlayerValidations.module.css";
 
-function labelByLocale(locale: string, fr: string, en: string) {
-  return locale === "fr" ? fr : en;
+function labelByLocale(locale: string, fr: string, en: string, de?: string) {
+  return pickLocaleText(locale, fr, en, de);
+}
+
+function sectionLabel(locale: string, slug: string, fallback: string) {
+  const names: Record<string, [string, string, string]> = {
+    putting: ["Putting", "Putting", "Putten"],
+    petit_jeu: ["Petit jeu", "Short game", "Kurzes Spiel"],
+    scrambling: ["Scrambling", "Scrambling", "Scrambling"],
+    wedging: ["Wedging", "Wedging", "Wedges"],
+  };
+  const name = names[slug];
+  return name ? pickLocaleText(locale, name[0], name[1], name[2]) : fallback;
 }
 
 function progressRatio(value: number, total: number) {
@@ -29,7 +41,7 @@ function toDateLocalValue(value: Date) {
 function formatAttemptDate(locale: string, value: string) {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
-  return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : "en-GB", {
+  return new Intl.DateTimeFormat(locale === "fr" ? "fr-CH" : locale === "de" ? "de-CH" : locale === "it" ? "it-CH" : "en-GB", {
     timeZone: "Europe/Zurich", day: "2-digit", month: "2-digit", year: "numeric",
   }).format(parsed);
 }
@@ -91,7 +103,7 @@ export default function PlayerValidationsPage() {
     deleteAttemptConfirm: labelByLocale(locale,
       "Supprimer cette tentative ? Si c'était la dernière réussite de cet exercice, les défis suivants seront à nouveau verrouillés.",
       "Delete this attempt? If it was the last successful attempt for this exercise, the following challenges will be locked again."),
-    start: labelByLocale(locale, "Commencer", "Start"),
+    start: labelByLocale(locale, "Commencer", "Start", "Starten"),
     continue: labelByLocale(locale, "Continuer", "Continue"),
     view: labelByLocale(locale, "Voir la validation", "View validation"),
     close: labelByLocale(locale, "Réduire", "Collapse"),
@@ -247,7 +259,7 @@ export default function PlayerValidationsPage() {
           <ProgressBar value={dashboard.overall_validated_count} total={dashboard.overall_total_count} />
         </div>
 
-        <ManagerStatisticsTabs<string> items={dashboard.sections.map((section) => ({ value: section.id, label: `${section.name} (${section.validated_count}/${section.total_count})` }))}
+        <ManagerStatisticsTabs<string> items={dashboard.sections.map((section) => ({ value: section.id, label: `${sectionLabel(locale, section.slug, section.name)} (${section.validated_count}/${section.total_count})` }))}
           value={selectedSection?.id ?? ""} onChange={setSelectedSectionId} ariaLabel={txt.sections}/>
 
         {selectedSection ? <section className={styles.sectorSection} aria-labelledby="validation-sector-title">
@@ -255,7 +267,7 @@ export default function PlayerValidationsPage() {
             <div className={styles.sectorTitleLine}>
               <span className={styles.sectorIcon}><Flag size={18} strokeWidth={1.8} aria-hidden="true" /></span>
               <div>
-                <h2 id="validation-sector-title">{selectedSection.name}</h2>
+                <h2 id="validation-sector-title">{sectionLabel(locale, selectedSection.slug, selectedSection.name)}</h2>
                 <p>{selectedSection.validated_count} / {selectedSection.total_count} {txt.sectionProgress}</p>
               </div>
             </div>

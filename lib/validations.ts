@@ -57,11 +57,11 @@ export function getValidationBadge(validatedCount: number, totalCount: number): 
 }
 
 export function getValidationBadgeLabel(locale: string, badge: ValidationBadge) {
-  if (badge === "elite") return locale === "fr" ? "Elite" : "Elite";
-  if (badge === "gold") return locale === "fr" ? "Or" : "Gold";
-  if (badge === "silver") return locale === "fr" ? "Argent" : "Silver";
-  if (badge === "bronze") return locale === "fr" ? "Bronze" : "Bronze";
-  return locale === "fr" ? "Aucun badge" : "No badge";
+  if (badge === "elite") return "Elite";
+  if (badge === "gold") return locale === "fr" ? "Or" : locale === "de" ? "Gold" : locale === "it" ? "Oro" : "Gold";
+  if (badge === "silver") return locale === "fr" ? "Argent" : locale === "de" ? "Silber" : locale === "it" ? "Argento" : "Silver";
+  if (badge === "bronze") return "Bronze";
+  return locale === "fr" ? "Aucun badge" : locale === "de" ? "Kein Abzeichen" : locale === "it" ? "Nessun distintivo" : "No badge";
 }
 
 export function getValidationBadgeColors(badge: ValidationBadge) {

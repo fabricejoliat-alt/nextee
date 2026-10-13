@@ -21,6 +21,7 @@ import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CalendarCheck2, CheckCir
 import type { ValidationDashboardPayload } from "@/lib/validations";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import { localizeTrainingVolumeMotivation } from "@/lib/i18n/trainingVolumeMotivation";
 import { etiquetteText } from "@/lib/etiquetteLabels";
 import EtiquetteVisual from "@/components/etiquette/EtiquetteVisual";
 import etiquetteVisualStyles from "@/components/etiquette/EtiquetteVisual.module.css";
@@ -668,8 +669,8 @@ export default function PlayerHomePage() {
   const trainingVolumeMotivation = useMemo(() => {
     const target = pickTrainingVolumeTarget(profile?.handicap ?? null, trainingVolumeRows);
     const text = String(target?.motivation_text ?? "").trim();
-    return text || null;
-  }, [profile?.handicap, trainingVolumeRows]);
+    return localizeTrainingVolumeMotivation(locale, target?.ftem_code, text);
+  }, [locale, profile?.handicap, trainingVolumeRows]);
 
   const displayedTrainingVolumeObjective = useMemo(() => {
     if (trainingVolumeObjective <= 0) return 0;
