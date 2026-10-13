@@ -3,6 +3,8 @@ import { createInFlightRead } from "./inFlightRead.ts";
 const readOnlyRpcs = new Set(["organization_access_summary_checked", "legal_version_matches_document"]);
 
 /** Coalesce identical concurrent reads, including their complete credential set.
+ * Instantiate per request/client: a serverless request must not await a fetch
+ * owned by a different invocation, which can be suspended after responding.
  * No response is cached after headers arrive; writes and cancellable calls stay independent.
  */
 export function createReadOnceFetch(transport: typeof fetch): typeof fetch {
@@ -21,5 +23,3 @@ export function createReadOnceFetch(transport: typeof fetch): typeof fetch {
     return response.clone();
   };
 }
-
-export const readOnceFetch = createReadOnceFetch((input, init) => globalThis.fetch(input, init));

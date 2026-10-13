@@ -1,5 +1,5 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { readOnceFetch } from "@/lib/readOnceFetch";
+import { createReadOnceFetch } from "@/lib/readOnceFetch";
 import { loadOrganizationAccessSummary } from "@/lib/server/organizationSummary";
 import {
   guardianCanEdit,
@@ -57,7 +57,7 @@ function mapGuardianLink(row: GuardianRow): GuardianAccessLink {
 export function createPlayerAccessAdminClient() {
   return createClient(mustEnv("NEXT_PUBLIC_SUPABASE_URL"), mustEnv("SUPABASE_SERVICE_ROLE_KEY"), {
     auth: { persistSession: false },
-    global: { fetch: readOnceFetch },
+    global: { fetch: createReadOnceFetch((input, init) => fetch(input, init)) },
   });
 }
 

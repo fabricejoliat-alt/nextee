@@ -5,12 +5,22 @@ import { loadOrganizationAccessSummary } from "@/lib/server/organizationSummary"
 import { organizationGateBlocks, requestedOrganizationId } from "@/lib/organizationPolicy";
 import { loadLegalGateStatus } from "@/lib/server/legalRequirements";
 import { legalRouteKind } from "@/lib/legalRouteCoverage";
-import { readOnceFetch } from "@/lib/readOnceFetch";
+import { createReadOnceFetch } from "@/lib/readOnceFetch";
 import { initialPasswordRequired, isLegacyManagerAdminRoute } from "@/lib/adminSecurity";
 import { verifiedAdminAssurance, adminNoStore } from "@/lib/server/adminSecurity";
 import { adminContentSecurityPolicy } from "@/lib/securityHeaders";
+import { createRequestTiming } from "@/lib/server/requestTiming";
 
 export async function proxy(req: NextRequest) {
+  const timing = createRequestTiming();
+  const response = await checkedProxy(req, timing);
+  // Constant names and durations only; never log credentials or user data.
+  const measurements = timing.headers()["Server-Timing"].replace(/(^|, )([\w-]+);/g, "$1gate_$2;");
+  response.headers.append("Server-Timing", measurements);
+  return response;
+}
+
+async function checkedProxy(req: NextRequest, timing: ReturnType<typeof createRequestTiming>) {
   const path = req.nextUrl.pathname;
   const adminPage = path === "/admin" || path.startsWith("/admin/");
   const adminApi = path.startsWith("/api/admin/");
@@ -52,12 +62,13 @@ export async function proxy(req: NextRequest) {
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const database = serviceRoleKey && supabaseUrl
-    ? createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false }, global: { fetch: readOnceFetch } }) : null;
+    ? createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false },
+      global: { fetch: createReadOnceFetch((input, init) => fetch(input, init)) } }) : null;
   // Verify the credential actually used by this request once. Cookie-based page
   // requests still refresh their session; bearer API calls remain server-verified.
-  const { data } = bearerToken && database
-    ? await database.auth.getUser(bearerToken)
-    : await supabase.auth.getUser();
+  const { data } = await timing.measure("auth", () => bearerToken && database
+    ? database.auth.getUser(bearerToken)
+    : supabase.auth.getUser());
 
   // Enforce the initial-password flag from trusted app_metadata, before business reads.
   if (data.user && initialPasswordRequired(data.user)) {
@@ -96,7 +107,7 @@ export async function proxy(req: NextRequest) {
   const legalRoute = legalRouteKind(path);
   // Independent reads overlap; neither gate can release business data alone.
   const legalCheck = legalRoute && database && data.user
-    ? loadLegalGateStatus(database, data.user.id, requestedOrganizationId(req.url))
+    ? timing.measure("legal", () => loadLegalGateStatus(database, data.user!.id, requestedOrganizationId(req.url)))
       .then(value => ({ value, error: null }), error => ({ value: null, error })) : null;
   // A platform admin must not bypass MFA through legacy Manager/Coach APIs.
   // This role lookup overlaps the existing legal checks for ordinary users.
@@ -140,11 +151,11 @@ export async function proxy(req: NextRequest) {
 
     if (userId) {
       try {
-        const memberships = await supabaseAdmin.from("organization_members").select("role")
-          .eq("user_id", userId).eq("is_active", true);
+        const memberships = await timing.measure("memberships", () => supabaseAdmin.from("organization_members").select("role")
+          .eq("user_id", userId).eq("is_active", true));
         if (memberships.error) throw memberships.error;
         if ((memberships.data ?? []).some(row => ["player", "parent"].includes(row.role))) {
-          const organizations = await loadOrganizationAccessSummary(supabaseAdmin, userId);
+          const organizations = await timing.measure("organizations", () => loadOrganizationAccessSummary(supabaseAdmin, userId));
           if (organizationGateBlocks(organizations, requestedOrganizationId(req.url))) {
             if (isPlayerPage) {
               const destination = req.nextUrl.clone(); destination.pathname = "/legal/my"; destination.search = "";

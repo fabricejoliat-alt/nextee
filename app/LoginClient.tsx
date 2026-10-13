@@ -25,6 +25,8 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [destination, setDestination] = useState<string | null>(null);
+  const [openingSlowly, setOpeningSlowly] = useState(false);
   const [isLocalDev, setIsLocalDev] = useState(false);
   const [recoverOpen, setRecoverOpen] = useState(false);
   const [recoverIdentifier, setRecoverIdentifier] = useState("");
@@ -57,6 +59,12 @@ export default function LoginPage() {
     const hostname = window.location.hostname;
     setIsLocalDev(hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1");
   }, []);
+
+  useEffect(() => {
+    if (!destination) return;
+    const timer = setTimeout(() => setOpeningSlowly(true), 15000);
+    return () => clearTimeout(timer);
+  }, [destination]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -102,14 +110,9 @@ export default function LoginPage() {
 
       const destination = typeof json?.redirectTo === "string" && json.redirectTo.startsWith("/") && !json.redirectTo.startsWith("//")
         ? json.redirectTo : "/player";
+      setDestination(destination);
       window.location.replace(destination);
       redirected = true;
-      setTimeout(() => {
-        if (window.location.pathname === "/" || window.location.pathname === "/login") {
-          setLoading(false);
-          setError(copy.connectionError);
-        }
-      }, 15000);
     } catch {
       setError(copy.connectionError);
     } finally {
@@ -195,7 +198,8 @@ export default function LoginPage() {
                 <input id="login-password" type="password" required value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" />
               </div>
               {error ? <div className={styles.error} role="alert">{error}</div> : null}
-              <button className={styles.submit} type="submit" disabled={loading}>{loading ? copy.loggingIn : copy.login}</button>
+              {destination && openingSlowly ? <div className={styles.message} role="status">{copy.openingSlowly} <a className={styles.textAction} href={destination}>{copy.openSpace}</a></div> : null}
+              <button className={styles.submit} type="submit" disabled={loading}>{destination ? copy.opening : loading ? copy.loggingIn : copy.login}</button>
               <button type="button" className={`${styles.secondary} ${styles.forgot}`} onClick={() => { setRecoverOpen((current) => !current); setRecoverMessage(null); setContactOpen(false); setContactMessage(null); }}>{copy.forgot}</button>
 
               {recoverOpen ? (
