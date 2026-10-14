@@ -14,7 +14,7 @@ import {
   loadMyNotificationPreferences,
   upsertMyNotificationPreferences,
 } from "@/lib/notificationPreferences";
-import { disablePushSubscription, ensurePushSubscription, supportsWebPush, pushFailureMessage, testPushSubscription, isNativeApp, hasLocalPushSubscription } from "@/lib/pushClient";
+import { disablePushSubscription, ensurePushSubscription, supportsWebPush, pushFailureMessage, isNativeApp, hasLocalPushSubscription } from "@/lib/pushClient";
 import { notificationKindsForRole } from "@/lib/notificationCatalog";
 import { nextNotificationKinds } from "@/lib/notificationKindSelection";
 
@@ -48,8 +48,6 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [testStatus, setTestStatus] = useState<string | null>(null);
-  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState("");
   const [loaded, setLoaded] = useState(false);
@@ -147,16 +145,6 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
     });
   }
 
-  async function onTestPush() {
-    if (testing) return;
-    setTesting(true); setTestStatus(null);
-    try {
-      const result = await testPushSubscription(locale);
-      setTestStatus(result.ok ? "notifications.settings.testSent" : "notifications.settings.testFailed");
-    } catch { setTestStatus("notifications.settings.testFailed"); }
-    finally { setTesting(false); }
-  }
-
   const pushHint = pushSupported ? "notifications.settings.pushHint" : isNativeApp()
     ? "notifications.settings.nativePush" : "notifications.settings.unsupported";
 
@@ -197,10 +185,6 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
                 <Toggle checked={receivePush && devicePushActive} disabled={saving || !pushSupported || !receiveInApp} label={t("notifications.settings.push")} onToggle={(checked) => void onTogglePush(checked)} />
               </div>
             </div>
-            {pushSupported && receivePush && devicePushActive && receiveInApp ? <div style={{ marginTop: 16 }}>
-              <button type="button" className={campsStyles.secondary} disabled={testing || saving} onClick={() => void onTestPush()}>{t(testing ? "notifications.settings.testSending" : "notifications.settings.test")}</button>
-              {testStatus ? <p role="status">{t(testStatus)}</p> : null}
-            </div> : null}
           </section>
 
           <section className={`${campsStyles.panel} ${!receiveInApp ? styles.sectionDisabled : ""}`}>
