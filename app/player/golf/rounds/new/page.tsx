@@ -368,7 +368,7 @@ export default function NewRoundPage() {
       om_competition_level: roundType === "competition" ? (isMatchPlayCompetition ? null : omCompetitionLevel) : null,
       om_competition_format: roundType === "competition" ? omCompetitionFormat : null,
       om_rounds_18_count: roundType === "competition" ? (isMatchPlayCompetition ? null : omRounds18Count) : null,
-      score_entry_mode: roundType === "competition" ? (isMatchPlayCompetition ? "full" : omScoreEntryMode) : "full",
+      score_entry_mode: isMatchPlayCompetition ? "full" : omScoreEntryMode,
       om_match_play_wins:
         roundType === "competition"
           ? isMatchPlayCompetition
@@ -584,16 +584,6 @@ export default function NewRoundPage() {
                       </label>
                     )}
 
-                    {roundType === "competition" && !isMatchPlayCompetition ? (
-                      <label style={{ display: "grid", gap: 6 }}>
-                        <span style={fieldLabelStyle}>Saisie des résultats</span>
-                        <select value={omScoreEntryMode} onChange={(e) => setOmScoreEntryMode(e.target.value as "full" | "hole_only")} disabled={busy}>
-                          <option value="full">Score du trou et statistiques</option>
-                          <option value="hole_only">Score du trou uniquement</option>
-                        </select>
-                      </label>
-                    ) : null}
-
                     {isMultiRoundStrokePlay ? (
                       <div style={{ display: "grid", gap: 8 }}>
                         <div style={fieldLabelStyle}>{pickLocaleText(locale, "Dates des parties suivantes", "Next round dates")}</div>
@@ -683,6 +673,16 @@ export default function NewRoundPage() {
                   </div>
                 )}
               </div>
+
+              {!isMatchPlayCompetition ? (
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={fieldLabelStyle}>{pickLocaleText(locale, "Saisie des résultats", "Result entry", "Ergebniseingabe", "Inserimento dei risultati")}</span>
+                  <select value={omScoreEntryMode} onChange={(e) => setOmScoreEntryMode(e.target.value as "full" | "hole_only")} disabled={busy}>
+                    <option value="full">{pickLocaleText(locale, "Score du trou et statistiques", "Hole score and statistics", "Lochscore und Statistiken", "Punteggio della buca e statistiche")}</option>
+                    <option value="hole_only">{pickLocaleText(locale, "Score du trou uniquement", "Hole score only", "Nur Lochscore", "Solo punteggio della buca")}</option>
+                  </select>
+                </label>
+              ) : null}
 
               <div className="hr-soft" />
 
