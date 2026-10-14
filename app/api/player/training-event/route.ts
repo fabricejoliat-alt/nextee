@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
 
     const campId = String((campDayRes.data as { camp_id?: string | null } | null)?.camp_id ?? "").trim();
 
-    const [groupRes, clubRes, feedbackRes, legacyDebriefRes, playerStructureRes, campRes, eventCoachLinksRes] = await Promise.all([
+    const [groupRes, clubRes, feedbackRes, legacyDebriefRes, playerStructureRes, campRes, eventCoachLinksRes, allCustomCriteriaRes, commonStructureRes] = await Promise.all([
       event.group_id
         ? supabaseAdmin.from("coach_groups").select("name").eq("id", event.group_id).maybeSingle()
         : ({ data: null, error: null } as const),
@@ -109,6 +109,9 @@ export async function GET(req: NextRequest) {
         ? supabaseAdmin.from("club_camps").select("id,title,head_coach_user_id").eq("id", campId).maybeSingle()
         : ({ data: null, error: null } as const),
       supabaseAdmin.from("club_event_coaches").select("coach_id").eq("event_id", eventId),
+      supabaseAdmin.from("club_event_evaluation_criteria").select("*").eq("event_id", eventId).eq("is_enabled", true).order("position"),
+      supabaseAdmin.from("club_event_structure_items").select("category,minutes,note,position").eq("event_id", eventId)
+        .order("position", { ascending: true }).order("created_at", { ascending: true }),
     ]);
 
     if (groupRes.error) return NextResponse.json({ error: groupRes.error.message }, { status: 400 });
@@ -119,12 +122,6 @@ export async function GET(req: NextRequest) {
     if (campRes.error) return NextResponse.json({ error: campRes.error.message }, { status: 400 });
     if (eventCoachLinksRes.error) return NextResponse.json({ error: eventCoachLinksRes.error.message }, { status: 400 });
 
-    const allCustomCriteriaRes = await supabaseAdmin
-      .from("club_event_evaluation_criteria")
-      .select("*")
-      .eq("event_id", eventId)
-      .eq("is_enabled", true)
-      .order("position");
     if (allCustomCriteriaRes.error) return NextResponse.json({ error: allCustomCriteriaRes.error.message }, { status: 400 });
     const allCustomCriteria = (allCustomCriteriaRes.data ?? []) as CustomCriterionRow[];
     const playerCustomCriteria = allCustomCriteria.filter((row) => ["player", "both"].includes(String(row.snapshot_respondent)));
@@ -157,16 +154,7 @@ export async function GET(req: NextRequest) {
         : ({ data: [], error: null } as const);
     if (groupRoleRowsRes.error) return NextResponse.json({ error: groupRoleRowsRes.error.message }, { status: 400 });
 
-    const commonStructureRes =
-      (playerStructureRes.data ?? []).length > 0
-        ? ({ data: [], error: null } as const)
-        : await supabaseAdmin
-            .from("club_event_structure_items")
-            .select("category,minutes,note,position")
-            .eq("event_id", eventId)
-            .order("position", { ascending: true })
-            .order("created_at", { ascending: true });
-    if (commonStructureRes.error) return NextResponse.json({ error: commonStructureRes.error.message }, { status: 400 });
+    if (!(playerStructureRes.data ?? []).length && commonStructureRes.error) return NextResponse.json({ error: commonStructureRes.error.message }, { status: 400 });
 
     const coachProfileById = new Map<string, { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null; staff_function: string | null }>();
     ((coachProfilesRes.data ?? []) as CoachProfileRow[]).forEach((profile) => {
