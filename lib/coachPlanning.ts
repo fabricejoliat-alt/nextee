@@ -6,6 +6,7 @@ export type CoachPlanningAttendee = CoachPlanningPerson & {
 };
 export type CoachPlanningEvent = {
   preparation_pending?: boolean;
+  evaluation_eligible_count?: number;
   id: string; group_id: string; club_id: string; event_type: string; title: string | null;
   starts_at: string; ends_at: string | null; duration_minutes: number | null;
   location_text: string | null; series_id: string | null; status: string; requires_evaluation: boolean;

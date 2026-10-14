@@ -13,9 +13,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
-import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
-import { getNotificationMessage } from "@/lib/notificationMessages";
-import { invalidateClientPageCacheByPrefix, readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
+import { savePlayerAttendance } from "@/lib/playerAttendanceWrite";
+import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import type { PlayerHomeSummary } from "@/lib/playerHomeSummary";
 import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CalendarCheck2, CheckCircle2, ClipboardCheck, Medal, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
 import type { ValidationDashboardPayload } from "@/lib/validations";
@@ -279,30 +278,6 @@ function monthRangeLocal(now = new Date()) {
 
 function monthTitle(now = new Date(), locale = "fr-CH") {
   return new Intl.DateTimeFormat(locale, { month: "long", year: "numeric" }).format(now).toUpperCase();
-}
-
-function fmtDateLabelNoTime(iso: string, locale: string) {
-  const d = new Date(iso);
-  if (locale === "en") {
-    return new Intl.DateTimeFormat("en-US", {
-      weekday: "long",
-      day: "numeric",
-      month: "long",
-    }).format(d);
-  }
-  const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(d);
-  const dayMonth = new Intl.DateTimeFormat("fr-CH", { day: "numeric", month: "long" }).format(d);
-  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${dayMonth}`;
-}
-
-function fmtHourLabel(iso: string, locale: string) {
-  const d = new Date(iso);
-  if (locale === "en") {
-    return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(d);
-  }
-  const h = d.getHours();
-  const m = d.getMinutes();
-  return m === 0 ? `${h}h` : `${h}h${String(m).padStart(2, "0")}`;
 }
 
 function formatNewsPublishedLabel(iso: string | null, locale: string) {
@@ -969,68 +944,19 @@ export default function PlayerHomePage() {
     setAttendanceBusyEventId(event.id);
     setError(null);
 
-    const upd = await supabase
-      .from("club_event_attendees")
-      .update({ status: nextStatus })
-      .eq("event_id", event.id)
-      .eq("player_id", effectiveUserId);
-
-    if (upd.error) {
-      setError(upd.error.message);
-      setAttendanceBusyEventId("");
-      return;
-    }
-
-    setAttendeeStatusByEventId((prev) => ({ ...prev, [event.id]: nextStatus }));
-    invalidateClientPageCacheByPrefix("page-cache:player-home:");
-    invalidateClientPageCacheByPrefix("page-cache:player-trainings:");
-
     try {
-      const coachRecipientIds = await getEventCoachUserIds(event.id, event.group_id);
-      if (coachRecipientIds.length > 0 && viewerUserId) {
-        const localeKey: "fr" | "en" = locale === "fr" ? "fr" : "en";
-        const type = eventTypeLabel(event.event_type, localeKey);
-        const eventEnd =
-          event.ends_at ??
-          new Date(new Date(event.starts_at).getTime() + Math.max(1, event.duration_minutes) * 60_000).toISOString();
-        const profRes = await supabase
-          .from("profiles")
-          .select("first_name,last_name")
-          .eq("id", effectiveUserId)
-          .maybeSingle();
-        const playerName =
-          `${String(profRes.data?.first_name ?? "").trim()} ${String(profRes.data?.last_name ?? "").trim()}`.trim() ||
-          (pickLocaleText(locale, "Joueur", "Player"));
-
-        if (nextStatus === "absent") {
-          const msg = await getNotificationMessage("notif.playerMarkedAbsent", localeKey, {
-            playerName,
-            eventType: type,
-            dateTime: `${fmtDateLabelNoTime(event.starts_at, localeKey)} • ${fmtHourLabel(event.starts_at, localeKey)} → ${fmtHourLabel(eventEnd, localeKey)}`,
-          });
-          await createAppNotification({
-            actorUserId: viewerUserId,
-            kind: "player_marked_absent",
-            ...msg,
-            data: { event_id: event.id, group_id: event.group_id, url: `/coach/groups/${event.group_id ?? ""}/planning/${event.id}` },
-            recipientUserIds: coachRecipientIds,
-          });
-        } else {
-          await createAppNotification({
-            actorUserId: viewerUserId,
-            kind: "player_marked_present",
-            ...(await getNotificationMessage("notif.playerMarkedPresent", locale, { playerName, eventType: type,
-              dateTime: `${fmtDateLabelNoTime(event.starts_at, localeKey)} ${fmtHourLabel(event.starts_at, localeKey)}` })),
-            data: { event_id: event.id, group_id: event.group_id, url: `/coach/groups/${event.group_id ?? ""}/planning/${event.id}` },
-            recipientUserIds: coachRecipientIds,
-          });
-        }
-      }
-    } catch {
-      // keep attendance update resilient
+      const result = await savePlayerAttendance(effectiveUserId, event.id, nextStatus, locale);
+      setAttendeeStatusByEventId((prev) => ({ ...prev, [event.id]: result.status }));
+      if (result.notificationWarning) setError(pickLocaleText(locale,
+        "Présence enregistrée, mais la notification au coach n’a pas pu être envoyée.",
+        "Attendance saved, but the coach notification could not be sent.",
+        "Anwesenheit gespeichert, aber die Benachrichtigung an den Trainer konnte nicht gesendet werden.",
+        "Presenza salvata, ma non è stato possibile inviare la notifica all’allenatore."));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : pickLocaleText(locale, "Impossible de modifier la présence.", "Unable to update attendance."));
+    } finally {
+      setAttendanceBusyEventId("");
     }
-
-    setAttendanceBusyEventId("");
   }
 
   function handleTrainingAttendanceToggle(

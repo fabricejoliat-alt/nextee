@@ -18,7 +18,7 @@ export async function PATCH(req: NextRequest) {
       requestedOrganizationId: requestedOrganizationId(req.url),
       mode: "edit",
     });
-    const state = await readPastTrainingAttendanceState(access, eventId);
+    const state = await readPastTrainingAttendanceState(access, eventId, { allowUpcoming: true });
     if (!state) return NextResponse.json({ error: "Not found" }, { status: 404, headers: legalNoStore });
     if (!state.canChange) return NextResponse.json({ error: "Attendance can no longer be changed" }, { status: 409, headers: legalNoStore });
     const status = await changePastTrainingAttendance(access, state, nextStatus);

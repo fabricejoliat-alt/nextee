@@ -24,10 +24,10 @@ export async function notifyPlayerAttendance(db: SupabaseClient, input: { actorI
   const kind = input.status === "absent" ? "player_marked_absent" : "player_marked_present";
   const template = { templateKey: input.status === "absent" ? "notif.playerMarkedAbsent" : "notif.playerMarkedPresent", templateParams: {
     playerName: [profile.data?.first_name, profile.data?.last_name].filter(Boolean).join(" ") || "Joueur",
-    eventType: "Entraînement", dateTime: new Intl.DateTimeFormat("fr-CH", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Zurich" }).format(new Date(event.data.starts_at)),
+    eventType: ({ training: "Entraînement", interclub: "Interclub", camp: "Stage", session: "Réunion", event: "Événement" } as Record<string, string>)[event.data.event_type] ?? "Activité", dateTime: new Intl.DateTimeFormat("fr-CH", { dateStyle: "medium", timeStyle: "short", timeZone: "Europe/Zurich" }).format(new Date(event.data.starts_at)),
   } };
   const { title, body } = await serverNotificationMessage(db, template.templateKey, "fr", template.templateParams);
-  const url = `/coach/groups/${event.data.group_id}/planning/${input.eventId}`;
+  const url = event.data.group_id ? `/coach/groups/${event.data.group_id}/planning/${input.eventId}` : "/coach/calendar";
   const notification = await db.from("notifications").insert({ actor_user_id: input.actorId, club_id: event.data.club_id,
     kind, type: kind, title, body, data: { ...notificationTemplateData(template), event_id: input.eventId, player_id: input.playerId, group_id: event.data.group_id, url },
   }).select("id").single();

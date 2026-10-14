@@ -39,7 +39,7 @@ function fixture() {
       bearerTokenFromRequest: (req: Request) => req.headers.get("Authorization"),
       resolveAuthenticatedPlayerAccess: async ({ accessToken }: { accessToken: string }) => {
         if (accessToken !== "permitted") throw Object.assign(new Error("Forbidden"), { status: 403 });
-        return { supabaseAdmin: db, actorUserId: "player", subjectPlayerId: "player", organizationIds: ["10000000-0000-4000-8000-000000000001"] };
+        return { permissions: { view: true, edit: true }, supabaseAdmin: db, actorUserId: "player", subjectPlayerId: "player", organizationIds: ["10000000-0000-4000-8000-000000000001"] };
       },
       playerAccessErrorStatus: (error: { status?: number }) => error.status ?? 500,
     },

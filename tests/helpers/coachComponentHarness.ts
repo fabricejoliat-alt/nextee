@@ -60,6 +60,7 @@ export function coachComponentHarness(path: string, options: {
   const jsx = (type: string | ((props: Props) => unknown), props: Props) => typeof type === "function" && (inlineComponents.has(type) || options.inlineComponentNames?.includes(type.name)) ? type(props) : ({ type, props });
   const mocks: Record<string, unknown> = {
     react,
+    "@/lib/organizationFetch": { organizationFetch: options.fetch },
     "react/jsx-runtime": { jsx, jsxs: jsx, Fragment: "fragment" },
     "next/link": { __esModule: true, default: "a" },
     "next/navigation": { useSearchParams: () => new URLSearchParams(options.searchParams ?? ""), useParams: () => options.params ?? {}, useRouter: () => ({ push: options.navigate ?? (() => {}) }) },

@@ -1,4 +1,4 @@
-import { loadCoachEvaluationState } from "@/lib/server/coachEvaluation";
+import { loadCoachEvaluationWorkload } from "@/lib/server/coachEvaluation";
 import { coachRows } from "@/lib/server/coachRows";
 import { additionalManagerCampCounts } from "@/lib/managerCampCounts";
 import { NextResponse, type NextRequest } from "next/server";
@@ -333,8 +333,8 @@ export async function GET(req: NextRequest) {
 
         const evaluationEventIds = uniq(assiduityEvents.filter((event) => event.requires_evaluation).map((event) => event.id));
         if (evaluationEventIds.length > 0) {
-          const evaluationState = await loadCoachEvaluationState(supabaseAdmin, evaluationEventIds);
-          activitiesAwaitingCoachEvaluationCount = evaluationEventIds.filter((id) => !evaluationState.completeByEvent[id]).length;
+          const evaluationState = await loadCoachEvaluationWorkload(supabaseAdmin, evaluationEventIds);
+          activitiesAwaitingCoachEvaluationCount = evaluationEventIds.filter((id) => evaluationState.progressByEvent[id].remainingPlayers > 0).length;
         }
 
         topAttendance = Array.from(counters.entries())

@@ -10,8 +10,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { useRememberedPeriod } from "@/lib/useRememberedPeriod";
 import { loadPlayerCalendar } from "@/lib/playerCalendarRead";
 import dynamic from "next/dynamic";
-import { createAppNotification, getEventCoachUserIds } from "@/lib/notifications";
-import { getNotificationMessage } from "@/lib/notificationMessages";
+import { savePlayerAttendance } from "@/lib/playerAttendanceWrite";
 import { invalidateClientPageCacheByPrefix } from "@/lib/clientPageCache";
 import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -57,7 +56,7 @@ export default function PlayerActivitiesPage(){
   const [attendanceChangeableEventIds,setAttendanceChangeableEventIds]=useState<Set<string>>(new Set());
   const [attendance,setAttendance]=useState<Record<string,AttendanceStatus>>({}); const [clubs,setClubs]=useState<Record<string,string>>({}); const [groups,setGroups]=useState<Record<string,string>>({});
   const [activeClubCount,setActiveClubCount]=useState(0);
-  const [completeIds,setCompleteIds]=useState<Set<string>>(new Set()); const [performance,setPerformance]=useState(false); const [viewerId,setViewerId]=useState(""); const [playerId,setPlayerId]=useState(""); const [playerName,setPlayerName]=useState("");
+  const [completeIds,setCompleteIds]=useState<Set<string>>(new Set()); const [performance,setPerformance]=useState(false); const [playerId,setPlayerId]=useState("");
   const [busyId,setBusyId]=useState(""); const {period:view,setPeriod:setView,from:customFrom,setFrom:setCustomFrom,to:customTo,setTo:setCustomTo}=useRememberedPeriod<CalendarView>("player:calendar","month",["season","month","week","day","custom"]); const [typeFilter,setTypeFilter]=useState("all"); const [statusFilter,setStatusFilter]=useState<StatusFilter>(searchParams.get("view")==="evaluations"?"evaluation":"all"); const [participationFilter,setParticipationFilter]=useState<ParticipationFilter>("all"); const [anchor,setAnchor]=useState(()=>new Date()); const [expanded,setExpanded]=useState<string|null>(null);
   const [plannerType,setPlannerType]=useState<PlannerType|null>(()=>{const plan=searchParams.get("plan");return plan==="training"||plan==="competition"||plan==="camp"?plan:null});const [plannerTitle,setPlannerTitle]=useState("");const [plannerLocation,setPlannerLocation]=useState("");const [plannerNotes,setPlannerNotes]=useState("");const [plannerStart,setPlannerStart]=useState(defaultPlannerStart);const [plannerEnd,setPlannerEnd]=useState(()=>{const date=new Date(defaultPlannerStart());date.setHours(date.getHours()+2);return localDateTimeValue(date)});const [plannerBusy,setPlannerBusy]=useState(false);const [reloadKey,setReloadKey]=useState(0);
 
@@ -73,7 +72,7 @@ export default function PlayerActivitiesPage(){
     if(json.viewerUserId!==json.effectiveUserId)window.localStorage.setItem("parent:selected_child_id",json.effectiveUserId);
     else if(!selectedChildId)window.localStorage.removeItem("parent:selected_child_id");
     const loaded=json.sessions??[];const done=new Set(json.completedSessionIds??[]);
-    setSessions(loaded);setEvents(json.attendeeEvents??[]);setPersonal(json.competitionEvents??[]);setAttendance(json.attendeeStatusByEventId??{});setAttendanceChangeableEventIds(new Set(json.attendanceChangeableEventIds??[]));setClubs(json.clubNameById??{});setGroups(json.groupNameById??{});setActiveClubCount(Number(json.activeClubCount??0));setCompleteIds(done);setPerformance(Boolean(json.performanceEnabled));setViewerId(json.viewerUserId??"");setPlayerId(json.effectiveUserId??"");setPlayerName(json.effectivePlayerName??"");
+    setSessions(loaded);setEvents(json.attendeeEvents??[]);setPersonal(json.competitionEvents??[]);setAttendance(json.attendeeStatusByEventId??{});setAttendanceChangeableEventIds(new Set(json.attendanceChangeableEventIds??[]));setClubs(json.clubNameById??{});setGroups(json.groupNameById??{});setActiveClubCount(Number(json.activeClubCount??0));setCompleteIds(done);setPerformance(Boolean(json.performanceEnabled));setPlayerId(json.effectiveUserId??"");
   }catch(e){if(!cancelled)setError(e instanceof Error?e.message:"Unable to load calendar")}finally{if(!cancelled)setLoading(false)}})();return()=>{cancelled=true}},[reloadKey,selectedChildId]);
 
   const activities=useMemo<Activity[]>(()=>{
@@ -90,45 +89,22 @@ export default function PlayerActivitiesPage(){
   const periodLabel=useMemo(()=>{if(view==="custom")return `${customFrom || "…"} – ${customTo || "…"}`;if(view==="season")return String(anchor.getFullYear());if(view==="month")return cap(new Intl.DateTimeFormat(dateLocale,{month:"long",year:"numeric"}).format(anchor));if(view==="week"){const s=startWeek(anchor),e=addDays(s,6);return `${new Intl.DateTimeFormat(dateLocale,{day:"numeric",month:"short"}).format(s)} – ${new Intl.DateTimeFormat(dateLocale,{day:"numeric",month:"short",year:"numeric"}).format(e)}`}return cap(new Intl.DateTimeFormat(dateLocale,{weekday:"long",day:"numeric",month:"long",year:"numeric"}).format(anchor))},[anchor,dateLocale,view,customFrom,customTo]);
   function move(n:-1|1){if(view==="season")setAnchor(d=>new Date(d.getFullYear()+n,0,1));else if(view==="month")setAnchor(d=>new Date(d.getFullYear(),d.getMonth()+n,1));else if(view!=="custom")setAnchor(d=>addDays(d,n*(view==="week"?7:1)))}
   function changeView(next:CalendarView){setView(next);if(next==="season")setStatusFilter("all")}
-  async function updateAttendance(e:PlannedEventRow,next:"present"|"absent",past:boolean){
+  async function updateAttendance(e:PlannedEventRow,next:"present"|"absent"){
     if(!playerId||busyId)return;
     setBusyId(e.id);setError(null);
     try{
-      if(past){
-        const {data:auth}=await supabase.auth.getSession();
-        const response=await fetch(`/api/player/training-attendance?child_id=${encodeURIComponent(playerId)}`,{
-          method:"PATCH",headers:{"Content-Type":"application/json",...(auth.session?.access_token?{Authorization:`Bearer ${auth.session.access_token}`}:{})},
-          body:JSON.stringify({eventId:e.id,status:next}),
-        });
-        const result=await response.json().catch(()=>({}));
-        if(!response.ok){
-          if(response.status===409)setAttendanceChangeableEventIds(current=>{const nextIds=new Set(current);nextIds.delete(e.id);return nextIds});
-          throw new Error(response.status===409?tr("La présence a changé ou une évaluation a été enregistrée. Actualisez la page.","Attendance changed or an evaluation was recorded. Refresh the page."):String(result.error??tr("Impossible de modifier la présence.","Unable to update attendance.")));
-        }
-      }else{
-        const result=await supabase.from("club_event_attendees").update({status:next}).eq("event_id",e.id).eq("player_id",playerId);
-        if(result.error)throw result.error;
-      }
-      setAttendance(current=>({...current,[e.id]:next}));
-      invalidateClientPageCacheByPrefix("page-cache:player-home:");
-      invalidateClientPageCacheByPrefix("page-cache:player-trainings:");
-      try{
-        const recipients=await getEventCoachUserIds(e.id,e.group_id);
-        if(!past&&recipients.length&&viewerId){
-          const type=eventType(e.event_type,locale);
-          if(next==="absent"){
-            const msg=await getNotificationMessage("notif.playerMarkedAbsent",locale==="fr"?"fr":"en",{playerName:playerName||tr("Joueur","Player"),eventType:type,dateTime:new Intl.DateTimeFormat(dateLocale,{dateStyle:"medium",timeStyle:"short"}).format(new Date(e.starts_at))});
-            await createAppNotification({actorUserId:viewerId,kind:"player_marked_absent",...msg,data:{event_id:e.id,group_id:e.group_id,url:`/coach/groups/${e.group_id??""}/planning/${e.id}`},recipientUserIds:recipients});
-          }else await createAppNotification({actorUserId:viewerId,kind:"player_marked_present",...(await getNotificationMessage("notif.playerMarkedPresent",locale,{playerName:playerName||tr("Joueur","Player"),eventType:type,dateTime:new Intl.DateTimeFormat(dateLocale,{dateStyle:"medium",timeStyle:"short"}).format(new Date(e.starts_at))})),data:{event_id:e.id,group_id:e.group_id,url:`/coach/groups/${e.group_id??""}/planning/${e.id}`},recipientUserIds:recipients});
-        }
-      }catch{}
-    }catch(cause){setError(cause instanceof Error?cause.message:tr("Impossible de modifier la présence.","Unable to update attendance."))}
-    finally{setBusyId("")}
+      const result=await savePlayerAttendance(playerId,e.id,next, locale);
+      setAttendance(current=>({...current,[e.id]:result.status}));
+      if(result.notificationWarning)setError(tr("Présence enregistrée, mais la notification au coach n’a pas pu être envoyée.","Attendance saved, but the coach notification could not be sent."));
+    }catch(cause){
+      if(cause instanceof Error && "status" in cause && cause.status===409)setAttendanceChangeableEventIds(current=>{const nextIds=new Set(current);nextIds.delete(e.id);return nextIds});
+      setError(cause instanceof Error?cause.message:tr("Impossible de modifier la présence.","Unable to update attendance."));
+    }finally{setBusyId("")}
   }
   function toggle(a:Activity){
     if(!a.event)return;
     const next=participation(a.attendance)==="absent"?"present":"absent";
-    if(window.confirm(next==="absent"?tr("Confirmer votre absence ?","Confirm your absence?"):tr("Confirmer votre présence ?","Confirm your attendance?")))void updateAttendance(a.event,next,!a.isFuture);
+    if(window.confirm(next==="absent"?tr("Confirmer votre absence ?","Confirm your absence?"):tr("Confirmer votre présence ?","Confirm your attendance?")))void updateAttendance(a.event,next);
   }
   function openPlanner(type:PlannerType){const start=defaultPlannerStart();const end=new Date(start);end.setHours(end.getHours()+2);setPlannerType(current=>current===type?null:type);setPlannerTitle("");setPlannerLocation("");setPlannerNotes("");setPlannerStart(start);setPlannerEnd(localDateTimeValue(end));setError(null)}
   async function savePersonalActivity(event:React.FormEvent<HTMLFormElement>){event.preventDefault();if(!plannerType||plannerType==="training"||plannerBusy)return;if(!playerId){setError(tr("Session invalide.","Invalid session."));return}const startsAt=new Date(plannerStart);const endsAt=new Date(plannerEnd);const title=plannerTitle.trim();if(Number.isNaN(startsAt.getTime())){setError(tr("Date et heure invalides.","Invalid date and time."));return}if(!title){setError(plannerType==="camp"?tr("Le nom du stage est requis.","Camp title is required."):tr("Le nom de la compétition est requis.","Competition title is required."));return}if(Number.isNaN(endsAt.getTime())||endsAt<=startsAt){setError(tr("La fin doit être postérieure au début.","The end must be after the start."));return}setPlannerBusy(true);setError(null);const result=await supabase.from("player_activity_events").insert({organization_id:null,user_id:playerId,event_type:plannerType,title,starts_at:startsAt.toISOString(),ends_at:endsAt.toISOString(),location_text:plannerLocation.trim()||null,notes:plannerNotes.trim()||null,status:"scheduled"}).select("id,event_type,title,starts_at,ends_at,location_text,notes,status").single();if(result.error){setError(result.error.message);setPlannerBusy(false);return}setPersonal(current=>[result.data as PersonalEventRow,...current]);invalidateClientPageCacheByPrefix("page-cache:player-home:");invalidateClientPageCacheByPrefix("page-cache:player-trainings:");setAnchor(startsAt);setStatusFilter(startsAt.getTime()>=Date.now()?"upcoming":"all");setPlannerType(null);setPlannerBusy(false)}

@@ -3,7 +3,7 @@ import { canChangePastTrainingAttendance } from "@/lib/playerTrainingAttendanceC
 
 type Access = Awaited<ReturnType<typeof resolveAuthenticatedPlayerAccess>>;
 
-export async function readPastTrainingAttendanceState(access: Access, eventId: string) {
+export async function readPastTrainingAttendanceState(access: Access, eventId: string, options: { allowUpcoming?: boolean } = {}) {
   const db = access.supabaseAdmin;
   const eventResult = await db.from("club_events")
     .select("id,club_id,event_type,status,starts_at,ends_at,duration_minutes")
@@ -27,7 +27,12 @@ export async function readPastTrainingAttendanceState(access: Access, eventId: s
   const event = eventResult.data;
   const attendee = attendeeResult.data;
   const roles = new Set((responsesResult.data ?? []).map((row) => row.respondent_role));
-  const canChange = canChangePastTrainingAttendance({
+  const endTime = event.ends_at ? Date.parse(event.ends_at) : Date.parse(event.starts_at) + Math.max(1, Number(event.duration_minutes ?? 0)) * 60_000;
+  const upcoming = Number.isFinite(endTime) && endTime >= Date.now();
+  const canChange = options.allowUpcoming && upcoming
+    ? event.status === "scheduled" && ["training", "interclub", "camp", "session", "event"].includes(event.event_type ?? "")
+      && !attendee.coach_recorded_status && !feedbackResult.data?.length && !roles.has("coach")
+    : canChangePastTrainingAttendance({
     eventType: event.event_type,
     eventStatus: event.status,
     eventStartsAt: event.starts_at,

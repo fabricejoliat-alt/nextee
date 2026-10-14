@@ -10,6 +10,7 @@ export type CoachCalendarEventTiming = {
   preparation_pending?: boolean;
   status?: string;
   requires_evaluation?: boolean;
+  evaluation_eligible_count?: number;
   event_type: string | null;
   starts_at: string;
   ends_at: string | null;
@@ -142,7 +143,7 @@ export function coachCalendarActionState(
 ): CoachCalendarActionState {
   if (event.event_type !== "training" || event.status === "cancelled") return "view_activity";
   if (coachEventEndMs(event) > nowMs) return event.preparation_pending === false ? "view_activity" : "prepare_training";
-  if (event.requires_evaluation === false) return "view_activity";
+  if (event.requires_evaluation === false || event.evaluation_eligible_count === 0) return "view_activity";
   return evaluationComplete ? "evaluation_complete" : "needs_evaluation";
 }
 

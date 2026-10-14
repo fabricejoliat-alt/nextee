@@ -26,6 +26,7 @@ type EventRow = {
   title: string | null; camp_day_index: number | null; starts_at: string; ends_at: string | null;
   duration_minutes: number | null; location_text: string | null; coach_note: string | null;
   series_id: string | null; status: string; requires_evaluation?: boolean; preparation_pending?: boolean;
+  evaluation_eligible_count?: number;
 };
 
 function startOfDay(date: Date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate()); }

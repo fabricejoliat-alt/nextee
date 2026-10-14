@@ -4,7 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import { resolveCoachAssignments } from "@/lib/coachAccess";
 import { coachRows } from "@/lib/server/coachRows";
 import { loadCoachPreparationStatus } from "@/lib/server/coachPreparationStatus";
-import { loadCoachEvaluationState } from "@/lib/server/coachEvaluation";
+import { loadCoachEvaluationWorkload } from "@/lib/server/coachEvaluation";
 
 function mustEnv(name: string) {
   const v = process.env[name];
@@ -73,7 +73,7 @@ export async function GET(req: NextRequest) {
     const trainingEventIds = events
       .filter((event) => event.event_type === "training")
       .map((event) => event.id);
-    const { completeByEvent: trainingEvaluationCompleteByEventId } = await loadCoachEvaluationState(supabaseAdmin, trainingEventIds);
+    const { completeByEvent: trainingEvaluationCompleteByEventId, progressByEvent } = await loadCoachEvaluationWorkload(supabaseAdmin, trainingEventIds);
     const gIds = Array.from(new Set(events.map((e) => String(e.group_id ?? "").trim()).filter(Boolean)));
     const cIds = Array.from(new Set(events.map((e) => String(e.club_id ?? "").trim()).filter(Boolean)));
     const campEventIds = events
@@ -150,6 +150,7 @@ export async function GET(req: NextRequest) {
       coachClubCount: scope.clubIds.length,
       events: events.map((event) => ({
         ...event,
+        evaluation_eligible_count: progressByEvent[event.id]?.totalPlayers,
         preparation_pending: preparation[event.id] ?? false,
         camp_day_index:
           event.event_type === "camp" ? (campDayIndexByEventId[String(event.id ?? "").trim()] ?? null) : null,

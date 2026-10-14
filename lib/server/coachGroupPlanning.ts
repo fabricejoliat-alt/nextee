@@ -3,7 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CoachPlanningData, CoachPlanningEvent, CoachPlanningPerson } from "../coachPlanning.ts";
 import { loadCoachPreparationStatus } from "./coachPreparationStatus";
 import { coachClubCount } from "./coachClubCount";
-import { loadCoachEvaluationState } from "@/lib/server/coachEvaluation";
+import { loadCoachEvaluationWorkload } from "@/lib/server/coachEvaluation";
 
 export class CoachPlanningAccessError extends Error {
   constructor(public status: number) { super(status === 404 ? "group_not_found" : "forbidden"); }
@@ -54,18 +54,15 @@ export async function loadCoachGroupPlanning(db: SupabaseClient, callerId: strin
   if (clubResult.error) throw new Error("planning_load_failed");
   const attendees: Attendee[] = [];
   const coaches: Coach[] = [];
-  const completion: Record<string, boolean> = {};
+  const evaluation = await loadCoachEvaluationWorkload(db, events.filter(event => event.event_type === "training").map(event => event.id));
   for (const batch of chunks(events.map((event) => event.id))) {
-    const trainingIds = events.filter((event) => batch.includes(event.id) && event.event_type === "training").map((event) => event.id);
-    const [batchAttendees, batchCoaches, evaluation] = await Promise.all([
+    const [batchAttendees, batchCoaches] = await Promise.all([
       allRows<Attendee>((from, to) => db.from("club_event_attendees").select("event_id,player_id,status,coach_recorded_status")
         .in("event_id", batch).order("event_id").order("player_id").range(from, to)),
       allRows<Coach>((from, to) => db.from("club_event_coaches").select("event_id,coach_id")
         .in("event_id", batch).order("event_id").order("coach_id").range(from, to)),
-      loadCoachEvaluationState(db, trainingIds),
     ]);
     attendees.push(...batchAttendees); coaches.push(...batchCoaches);
-    Object.assign(completion, evaluation.completeByEvent);
   }
   // Fetch only people actually attached to authorized events, not the whole club directory.
   const allowedPlayers=await authorizedCoachPlayers(db,callerId,group.club_id,attendees.map(row=>row.player_id));
@@ -95,7 +92,8 @@ export async function loadCoachGroupPlanning(db: SupabaseClient, callerId: strin
       id: event.id, group_id: event.group_id, club_id: event.club_id, event_type: event.event_type,
       title: event.title, starts_at: event.starts_at, ends_at: event.ends_at, duration_minutes: event.duration_minutes,
       location_text: event.location_text, series_id: event.series_id, status: event.status, requires_evaluation: event.requires_evaluation,
-      evaluation_complete: completion[event.id] ?? false,
+      evaluation_complete: evaluation.completeByEvent[event.id] ?? false,
+      evaluation_eligible_count: evaluation.progressByEvent[event.id]?.totalPlayers,
       preparation_pending: preparation[event.id] ?? false,
       coaches: [...new Set(coaches.filter((row) => row.event_id === event.id).map((row) => row.coach_id))].map(person),
       attendees: [...new Map(visibleAttendees.filter((row) => row.event_id === event.id).map((row) => [row.player_id, row])).values()]

@@ -1,4 +1,4 @@
-import { loadCoachEvaluationState } from "@/lib/server/coachEvaluation";
+import { loadCoachEvaluationWorkload } from "@/lib/server/coachEvaluation";
 import { managerEvaluationProgress } from "@/lib/managerEvaluationProgress";
 import { coachEventEndMs } from "@/lib/coachCalendar";
 import { NextResponse, type NextRequest } from "next/server";
@@ -46,7 +46,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     const validCurrentEvents = events.filter((event) => dateKey(event.starts_at) >= range.from && dateKey(event.starts_at) <= range.to && event.status !== "cancelled" && coachEventEndMs(event) <= periodEnd);
     const futureEvents = events.filter((event) => new Date(event.starts_at).getTime() > new Date(today).getTime() && new Date(event.starts_at).getTime() <= new Date(futureTo).getTime() && event.status !== "cancelled");
     const expectedOwner = (event: EventRow) => { const assigned = eventAssignments.get(event.id) ?? []; if (assigned.length === 1) return assigned[0]; const head = event.group_id ? groupMap.get(event.group_id)?.head_coach_user_id : null; return head && assigned.includes(head) ? head : null; };
-    const evaluationState = await loadCoachEvaluationState(auth.db, validCurrentEvents.filter((event) => event.requires_evaluation).map((event) => event.id));
+    const evaluationState = await loadCoachEvaluationWorkload(auth.db, validCurrentEvents.filter((event) => event.requires_evaluation).map((event) => event.id));
     const coachRows = members.map((coach) => {
       const active = coach.is_active && (seasonRecordMap.get(coach.id)?.registration_status ?? "active") === "active"; const memberships = groupCoaches.filter((item) => item.coach_user_id === coach.user_id); const ownedGroups = groups.filter((group) => group.head_coach_user_id === coach.user_id || memberships.some((item) => item.group_id === group.id));
       const assignments = eventCoaches.filter((item) => item.coach_id === coach.user_id); const assignedIds = new Set(assignments.map((item) => item.event_id)); const currentEvents = validCurrentEvents.filter((event) => assignedIds.has(event.id)); const previousEvents = events.filter((event) => assignedIds.has(event.id) && dateKey(event.starts_at) >= previous.from && dateKey(event.starts_at) <= previous.to && event.status !== "cancelled");

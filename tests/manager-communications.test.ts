@@ -5,6 +5,14 @@ import { renderAccessInvitationBody, defaultFamilyMailConfig } from "../lib/fami
 import { additionalManagerCampCounts } from "../lib/managerCampCounts.ts";
 import { loadManagerModule, managerDatabase, managerFixture, managerRequest, type Row } from "./helpers/managerRouteHarness.ts";
 
+function allowEvaluationPlayers(h: ReturnType<typeof managerDatabase>, tables: Record<string, Row[]>) {
+  const rpc = h.db.rpc;
+  Object.assign(h.db, { rpc: async (name: string, args: Row) => name === "organization_player_authorized"
+    ? { data: tables.club_members.some(row => row.club_id === args.p_org && row.user_id === args.p_player
+      && row.role === "player" && row.is_active && ["granted", "adult"].includes(row.player_consent_status)), error: null }
+    : rpc(name, args) });
+}
+
 const ctx = { params: Promise.resolve({ clubId: "A" }) };
 const membersPath = "app/api/manager/clubs/[clubId]/members/route.ts";
 const fields = () => ["text", "short_text", "long_text", "number", "date", "select", "radio", "checkbox", "boolean"].map((type) => ({ id: type, club_id: "A", label: type, field_type: type, is_active: true, applies_to_roles: ["player", "coach"], options_json: ["A, B", "C"], visible_to_player: true, editable_by_player: true, visible_in_profile: true, editable_in_profile: true }));
@@ -137,7 +145,7 @@ test("performance API does not count a partial evaluation as completed or lose i
  tables.club_event_coaches=[{event_id:'past',coach_id:'target'},{event_id:'future',coach_id:'target'}];
  tables.club_event_attendees=[{event_id:'past',player_id:'player',status:'present',coach_recorded_status:'present'},{event_id:'future',player_id:'player',status:'present',coach_recorded_status:'present'}];
  tables.club_event_coach_feedback=[{event_id:'past',player_id:'player',coach_id:'target',engagement:4,attitude:null,performance:null,visible_to_player:false},{event_id:'future',player_id:'player',coach_id:'target',engagement:4,attitude:4,performance:4}];
- const h=managerDatabase(tables);const route=loadManagerModule('app/api/manager/clubs/[clubId]/performance/coaches/route.ts',{...h.mocks,'../_lib':{
+ const h=managerDatabase(tables);allowEvaluationPlayers(h,tables);const route=loadManagerModule('app/api/manager/clubs/[clubId]/performance/coaches/route.ts',{...h.mocks,'../_lib':{
   performanceContext:async()=>({ok:true,db:h.db}),resolveRange:async()=>({range:{from:past.slice(0,10),to:future.slice(0,10)},previous:{from:'2020-01-01',to:'2020-01-02'},season:{id:'season-A'},seasons:[]}),queryRows:async(q:PromiseLike<Row>)=>(await q).data,dateKey:(v:string)=>v.slice(0,10),startIso:(v:string)=>`${v}T00:00:00Z`,
  }});
  const request=Object.assign(managerRequest('GET'),{nextUrl:new URL('http://localhost/')});
@@ -147,6 +155,9 @@ test("performance API does not count a partial evaluation as completed or lose i
  response=await route.GET(request,ctx);body=await response.json();assert.equal(body.rows[0].evaluationsCompleted,0);
  tables.club_event_evaluation_responses=[{event_id:'past',player_id:'player',event_criterion_id:'criterion',respondent_role:'coach',value_json:'Reviewed'}];
  response=await route.GET(request,ctx);body=await response.json();assert.equal(body.rows[0].evaluationsCompleted,1);assert.equal(body.rows[0].evaluationsInProgress,0);assert.equal(body.rows[0].evaluationsOverdue,0);
+ tables.club_members.find(row=>row.user_id==='player'&&row.club_id==='A')!.player_consent_status='pending';
+ response=await route.GET(request,ctx);body=await response.json();assert.equal(body.rows[0].evaluationsExpected,0);assert.equal(body.rows[0].evaluationsOverdue,0);
+ assert.equal(tables.club_event_coach_feedback[0].performance,4,"Saved historical feedback is preserved");
 });
 
 test("dashboard API counts camp days consistently with its upcoming list and incomplete debriefs",async()=>{
@@ -157,8 +168,11 @@ test("dashboard API counts camp days consistently with its upcoming list and inc
  tables.club_events=[{id:'standalone',club_id:'A',group_id:null,event_type:'camp',starts_at:future,status:'scheduled'},{id:'group',club_id:'A',group_id:'group-A',event_type:'camp',starts_at:future,status:'scheduled'},{id:'past',club_id:'A',group_id:'group-A',event_type:'training',starts_at:past,status:'scheduled',requires_evaluation:true}];
  tables.club_event_attendees=[{event_id:'past',player_id:'player',status:'present',coach_recorded_status:'present'}];
  tables.club_event_coach_feedback=[{event_id:'past',player_id:'player',engagement:4,attitude:null,performance:null}];
- const h=managerDatabase(tables);const response=await loadManagerModule('app/api/manager/dashboard/home/route.ts',h.mocks).GET(managerRequest('GET'));const body=await response.json();
+ const h=managerDatabase(tables);allowEvaluationPlayers(h,tables);const response=await loadManagerModule('app/api/manager/dashboard/home/route.ts',h.mocks).GET(managerRequest('GET'));const body=await response.json();
  assert.equal(response.status,200,JSON.stringify(body));assert.equal(body.stats.plannedEventsCount,2);assert.equal(body.upcomingEvents.length,2);assert.equal(body.stats.pastEventsCount,1);assert.equal(body.stats.activitiesAwaitingCoachEvaluationCount,1);
+ tables.club_members.find(row=>row.user_id==='player'&&row.club_id==='A')!.is_active=false;
+ const next=await loadManagerModule('app/api/manager/dashboard/home/route.ts',h.mocks).GET(managerRequest('GET'));
+ assert.equal((await next.json()).stats.activitiesAwaitingCoachEvaluationCount,0);
 });
 
 test("news dispatch keeps the completion timestamp empty until all retryable deliveries succeed",async()=>{

@@ -3,8 +3,8 @@ import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveCoachAssignments } from "@/lib/coachAccess";
-import { coachEventEndMs, coachTrainingEvaluationComplete } from "@/lib/coachCalendar";
-import { loadCoachEvaluationState } from "@/lib/server/coachEvaluation";
+import { coachEventEndMs } from "@/lib/coachCalendar";
+import { loadCoachEvaluationWorkload } from "@/lib/server/coachEvaluation";
 import { coachRows } from "@/lib/server/coachRows";
 
 function mustEnv(name: string) {
@@ -213,17 +213,12 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const evaluationState = await loadCoachEvaluationState(supabaseAdmin, evaluationEvents.map((event) => event.id));
-    const pendingEvalEvents = evaluationEvents.map(event => {
-      const attendees = evaluationState.attendees.filter(row => row.event_id === event.id);
-      const completedPlayers = attendees.filter(attendee => coachTrainingEvaluationComplete([attendee],
-        evaluationState.feedback.filter(row => row.event_id === event.id), evaluationState.criteria, evaluationState.responses)).length;
-      return { ...event, totalPlayers: attendees.length, completedPlayers, remainingPlayers: attendees.length - completedPlayers };
-    }).filter(event => event.remainingPlayers > 0);
+    const evaluationState = await loadCoachEvaluationWorkload(supabaseAdmin, evaluationEvents.map((event) => event.id));
+    const pendingEvalEvents = evaluationEvents.map(event => ({ ...event, ...evaluationState.progressByEvent[event.id] }))
+      .filter(event => event.remainingPlayers > 0);
     const pendingAttendanceCount = evaluationState.attendees.filter((row) => row.coach_recorded_status == null).length;
-    const pendingEvaluationCount = evaluationState.attendees.filter((attendee) =>
-      !coachTrainingEvaluationComplete([attendee], evaluationState.feedback.filter((row) => row.event_id === attendee.event_id),
-        evaluationState.criteria, evaluationState.responses)).length;
+    const pendingEvaluationCount = Object.values(evaluationState.progressByEvent)
+      .reduce((sum, event) => sum + event.remainingPlayers, 0);
 
     return NextResponse.json({
       me,

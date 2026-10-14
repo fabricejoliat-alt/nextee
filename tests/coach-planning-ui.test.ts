@@ -45,14 +45,15 @@ test("planning and detail titles prefer the saved name and keep localized unname
 
 test("planning counts use guided completion, real end time, cancellation and the same type filter", () => {
   const events = [event("pending"), event("complete", { evaluation_complete: true }),
+    event("blocked", { evaluation_eligible_count: 0 }),
     event("ongoing", { starts_at: "2026-10-01T11:30:00Z", ends_at: null, duration_minutes: 90 }),
     event("cancelled", { status: "cancelled" }), event("disabled", { requires_evaluation: false }),
     event("camp", { event_type: "camp" }), event("future", { starts_at: "2026-10-02T08:00:00Z", ends_at: "2026-10-02T09:00:00Z" })];
   const view = coachPlanningView(events, "all", "pending", now);
   assert.deepEqual(view.events.map((row) => row.id), ["pending"]);
-  assert.deepEqual(view.counts, { all: 7, upcoming: 2, past: 5, pending: 1 });
+  assert.deepEqual(view.counts, { all: 8, upcoming: 2, past: 6, pending: 1 });
   assert.deepEqual(coachPlanningView(events, "camp", "all", now).counts, { all: 1, upcoming: 0, past: 1, pending: 0 });
-  assert.equal(coachPlanningView(events, "training", "all", now).counts.all, 6);
+  assert.equal(coachPlanningView(events, "training", "all", now).counts.all, 7);
 });
 
 test("planning never mistakes an invitation or an unrecorded presence for manual attendance", () => {
