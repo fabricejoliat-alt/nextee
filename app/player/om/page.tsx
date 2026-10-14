@@ -236,7 +236,7 @@ export default function PlayerOrderOfMeritPage() {
     const rangeFrom = fromDate <= toDate ? fromDate : toDate;
     const rangeTo = fromDate <= toDate ? toDate : fromDate;
     setRankingLoading(true);
-    const rows = await playerMeritRead<OMRankingRow>(orgId, rangeFrom, rangeTo);
+    const rows = await playerMeritRead<OMRankingRow>(orgId, rangeFrom, rangeTo).catch(error => { setRankingLoading(false); throw error; });
     setRankingLoading(false);
     setRankingRows(rows);
 
