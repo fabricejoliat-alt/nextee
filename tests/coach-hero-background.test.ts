@@ -13,7 +13,7 @@ const coachHome = readFileSync(new URL("../app/coach/page.tsx", import.meta.url)
 
 test("Coach workspace reuses the golf hero image with white page headings", () => {
   assert.match(globals, /\.coach-page-root \.coach-scroll-area\{[\s\S]*?url\("\/hero-golf\.jpg"\) center \/ cover fixed !important/);
-  assert.match(globals, /@media \(max-width: 899px\)\{[\s\S]*?\.coach-page-root \.coach-scroll-area\{\s*background:transparent !important;[\s\S]*?body:has\(\.coach-page-root\)::before\{[\s\S]*?position:fixed;[\s\S]*?url\("\/hero-golf\.jpg"\) center \/ cover no-repeat/);
+  assert.match(globals, /@media \(max-width: 899px\)\{[\s\S]*?\.coach-page-root \.coach-scroll-area\{[^}]*background:transparent !important;[\s\S]*?body:has\(\.coach-page-root\)::before\{[\s\S]*?position:fixed;[\s\S]*?url\("\/hero-golf\.jpg"\) center \/ cover no-repeat/);
   assert.match(globals, /\.coach-page-root \.coach-shell h1,[\s\S]*?color:#fff !important/);
   assert.match(globals, /\.coach-page-root \.coach-shell \[data-ui="breadcrumb"\][\s\S]*?color:#fff !important/);
   assert.match(globals, /\.coach-page-root \.coach-shell \.marketplace-page>\.glass-section:first-of-type:has\(\.marketplace-header\)[\s\S]*?background:transparent !important/);

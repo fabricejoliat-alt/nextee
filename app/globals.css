@@ -3106,20 +3106,43 @@ body:has([data-design-system]){
 }
 
 @media (max-width: 899px){
+  /* Keep the Coach header in the document's scrolling coordinate system.
+     iOS browser toolbar changes can offset a separately composited fixed header.
+     Only html scrolls: overflow:auto on body would trap the sticky header. */
+  html:has(.coach-page-root){
+    overflow-x:clip;
+    background:#35483b !important;
+  }
+
+  body:has(.coach-page-root){
+    overflow:visible;
+    background:#35483b !important;
+  }
+
   .coach-page-root{
     position:relative;
     z-index:1;
+    display:flow-root;
     background:transparent;
   }
 
+  .coach-page-root .app-header{
+    position:sticky;
+    top:0;
+    transform:none;
+    transition:none;
+  }
+
   .coach-page-root .coach-scroll-area{
+    margin-top:0;
     background:transparent !important;
   }
 
   body:has(.coach-page-root)::before{
     content:"";
     position:fixed;
-    inset:0;
+    inset:calc(var(--header-h) + var(--safe-top)) 0 auto;
+    height:calc(100lvh - var(--header-h) - var(--safe-top));
     z-index:0;
     pointer-events:none;
     background:
