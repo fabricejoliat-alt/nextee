@@ -1301,7 +1301,7 @@ export default function PlayerHomePage() {
                     <strong className={styles.rankValue}>{locale === "fr" ? <>{meritInsight.rank}<sup>{meritInsight.rank === 1 ? "er" : "e"}</sup></> : `#${meritInsight.rank}`}</strong>
                     {meritInsight.rank >= 1 && meritInsight.rank <= 3 ? <span className={styles.rankFlame} role="img" aria-label={pickLocaleText(locale, "Podium", "Podium")}>🔥</span> : null}
                   </div>
-                  <span>{pickLocaleText(locale, "sur", "of")} {meritInsight.total} {pickLocaleText(locale, "joueurs", "players")}</span>
+                  <span>{pickLocaleText(locale, "sur", "of")} {meritInsight.total} {meritInsight.total === 1 ? pickLocaleText(locale, "joueur actif", "active player", "aktiver Spieler", "giocatore attivo") : pickLocaleText(locale, "joueurs actifs", "active players", "aktive Spieler", "giocatori attivi")}</span>
                   {meritInsight.change != null ? <div className={styles.benchmarkSignals}>
                     {meritInsight.change > 0 ? <BenchmarkBadge icon={ArrowUp} tone="positive">{meritInsight.change} {pickLocaleText(locale, meritInsight.change === 1 ? "place gagnée" : "places gagnées", meritInsight.change === 1 ? "place gained" : "places gained")}</BenchmarkBadge>
                       : meritInsight.change < 0 ? <BenchmarkBadge icon={ArrowDown} tone="caution">{Math.abs(meritInsight.change)} {pickLocaleText(locale, Math.abs(meritInsight.change) === 1 ? "place de moins" : "places de moins", Math.abs(meritInsight.change) === 1 ? "place lower" : "places lower")}</BenchmarkBadge>
