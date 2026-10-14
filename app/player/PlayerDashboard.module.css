@@ -55,7 +55,7 @@
 .attendanceRing{width:100px;height:100px}
 .attendanceRing svg{display:block;max-width:100%;height:auto}
 .attendanceDetails{display:grid;align-content:center;gap:9px;min-width:0}
-.attendanceDetails>span{color:#526056;font-size:12px;font-weight:700;line-height:1.4}
+.attendanceDetails>span{overflow-wrap:anywhere;color:#526056;font-size:12px;font-weight:700;line-height:1.4}
 .rankLine,.benchmarkSignals{display:flex;align-items:center;flex-wrap:wrap;gap:7px}
 .rankFlame{font-size:18px;line-height:1}
 .statusBadge{gap:5px;line-height:1.2}
@@ -71,7 +71,7 @@
 .monthVolume p{margin:4px 0 0;color:#526056;font-size:12px;font-weight:700;line-height:1.45}
 .monthVolume :global(.donut-bg){stroke:#e9eee7}
 @media(max-width:1080px){.firstRow,.learningGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.attentionCard,.homeValidationCard{grid-column:1/-1}.rulesCard{grid-column:1}.etiquetteCard{grid-column:2}}
-@media(max-width:760px){.firstRow,.learningGrid,.marketplaceGrid,.volumeRow{grid-template-columns:1fr}.attentionCard,.homeValidationCard,.rulesCard,.etiquetteCard{grid-column:1/-1}.rulesVisual,.etiquetteVisual{aspect-ratio:16/9}.benchmarks{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.benchmark{min-height:168px;padding:13px}.benchmarkHeading{align-items:center;gap:7px}.benchmarkHeading>span:first-child{width:30px;height:30px;flex:0 0 30px}.benchmark h3{font-size:12px}.benchmark strong{font-size:26px}.benchmark>span:not(.statusBadge){font-size:10px}.benchmark small,.benchmark p{font-size:9px}.benchmarkSignals{gap:4px}.statusBadge{font-size:8px}.benchmarksHeader{align-items:flex-start}}
+@media(max-width:760px){.firstRow,.learningGrid,.marketplaceGrid,.volumeRow{grid-template-columns:1fr}.attentionCard,.homeValidationCard,.rulesCard,.etiquetteCard{grid-column:1/-1}.rulesVisual,.etiquetteVisual{aspect-ratio:16/9}.benchmarks{grid-template-columns:1fr;gap:9px}.benchmark{min-height:168px;padding:13px}.benchmarkHeading{align-items:center;gap:7px}.benchmarkHeading>span:first-child{width:30px;height:30px;flex:0 0 30px}.benchmark h3{font-size:12px}.benchmark strong{font-size:26px}.benchmark>span:not(.statusBadge){font-size:10px}.benchmark small,.benchmark p{font-size:9px}.benchmarkSignals{gap:4px}.statusBadge{font-size:8px}.benchmarksHeader{align-items:flex-start}}
 
 .photoPromptOverlay{--player-primary:#35483b;--player-accent:#899d7d;position:fixed;z-index:4000;inset:0;display:grid;place-items:center;overflow-y:auto;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px));background:rgba(15,23,42,.52)}
 .photoPrompt{box-sizing:border-box;display:grid;width:min(520px,100%);max-height:calc(100dvh - 32px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));gap:16px;overflow-y:auto;margin:auto;padding:22px;border:1px solid rgba(0,0,0,.1);border-radius:16px;background:#fff;box-shadow:0 28px 80px rgba(15,23,42,.22)}
@@ -87,3 +87,5 @@
 .photoPromptCheck{display:flex;align-items:center;gap:10px;color:#475569;font-size:14px}
 .photoPromptActions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 @media(max-width:520px){.photoPrompt{padding:18px}.photoPromptActions{display:grid;grid-template-columns:1fr}.photoPromptActions button{width:100%}}
+
+.attendanceDetails .statusBadge{max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere}

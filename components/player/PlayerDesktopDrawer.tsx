@@ -6,7 +6,6 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
-import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { etiquetteText } from "@/lib/etiquetteLabels";
 import {
@@ -73,28 +72,6 @@ type ParentChildLite = {
   first_name: string | null;
   last_name: string | null;
   is_primary: boolean;
-};
-
-type TrainingSessionLite = {
-  id: string;
-  start_at: string;
-  club_event_id: string | null;
-  motivation: number | null;
-  difficulty: number | null;
-  satisfaction: number | null;
-};
-
-type AttendanceLite = {
-  event_id: string;
-  status: "expected" | "present" | "absent" | "excused" | null;
-};
-
-type EvaluationEventLite = {
-  id: string;
-  event_type: string | null;
-  starts_at: string;
-  status: string | null;
-  requires_evaluation: boolean | null;
 };
 
 type DrawerFooterCache = {
@@ -311,150 +288,30 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-
     (async () => {
       const { data: auth } = await supabase.auth.getSession();
-      if (cancelled) return;
-      let uid = auth.session?.user.id ?? "";
+      const token = auth.session?.access_token;
+      if (!token || cancelled) return;
       const cached = readDrawerFooterCache();
-      const effectiveViewerRole = viewerRole === "parent" ? viewerRole : cached?.viewerRole ?? viewerRole;
-      const effectiveChildId = selectedChildId || cached?.selectedChildId || "";
-      if (effectiveViewerRole === "parent" && effectiveChildId) uid = effectiveChildId;
-      if (!uid) {
-        if (!cancelled) {
-          setPerformanceEnabled(false);
-          setPendingEvalCount(0);
-        }
-        return;
-      }
-
-      const enabled = await isEffectivePlayerPerformanceEnabled(uid);
-      if (!cancelled) {
-        setPerformanceEnabled(enabled);
-        if (!enabled) setPendingEvalCount(0);
+      const role = viewerRole === "parent" ? viewerRole : cached?.viewerRole ?? viewerRole;
+      const child = selectedChildIdForView || cached?.selectedChildId || "";
+      const query = new URLSearchParams({ view: "pending" });
+      if (role === "parent" && child) query.set("child_id", child);
+      try {
+        const response = await fetch(`/api/player/golf-data?${query}`, {
+          headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+        });
+        if (!response.ok || cancelled) return;
+        const data = await response.json();
+        if (cancelled) return;
+        setPerformanceEnabled(data.performanceEnabled === true);
+        setPendingEvalCount(Array.isArray(data.rows) ? data.rows.length : 0);
+      } catch {
+        // Preserve the last confirmed count while a transient read is unavailable.
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [viewerRole, selectedChildId]);
-
-  useEffect(() => {
-    if (!open || !performanceEnabled) return;
-
-    (async () => {
-      const { data: auth } = await supabase.auth.getSession();
-      let uid = auth.session?.user.id ?? "";
-      if (viewerRole === "parent" && selectedChildId) uid = selectedChildId;
-      if (!uid) {
-        setPendingEvalCount(0);
-        return;
-      }
-
-      const sRes = await supabase
-        .from("training_sessions")
-        .select("id,start_at,club_event_id,motivation,difficulty,satisfaction")
-        .eq("user_id", uid);
-      if (sRes.error) {
-        setPendingEvalCount(0);
-        return;
-      }
-      const sessions = (sRes.data ?? []) as TrainingSessionLite[];
-      const sessionIds = sessions.map((session) => session.id);
-
-      const sessionItemsById: Record<string, { minutes: number }[]> = {};
-      if (sessionIds.length > 0) {
-        const itemsRes = await supabase
-          .from("training_session_items")
-          .select("session_id,minutes")
-          .in("session_id", sessionIds);
-        if (!itemsRes.error) {
-          for (const row of itemsRes.data ?? []) {
-            const sid = row.session_id as string;
-            if (!sessionItemsById[sid]) sessionItemsById[sid] = [];
-            sessionItemsById[sid].push({ minutes: Number(row.minutes ?? 0) });
-          }
-        }
-      }
-
-      const completeSessionIds = new Set<string>();
-      for (const s of sessions) {
-        const items = sessionItemsById[s.id] ?? [];
-        const hasPoste = items.some((it) => (it.minutes ?? 0) > 0);
-        const hasSensations =
-          typeof s.motivation === "number" &&
-          typeof s.difficulty === "number" &&
-          typeof s.satisfaction === "number";
-        if (hasPoste && hasSensations) completeSessionIds.add(s.id);
-      }
-
-      const nowTs = Date.now();
-      const aRes = await supabase
-        .from("club_event_attendees")
-        .select("event_id,status")
-        .eq("player_id", uid);
-      if (aRes.error) {
-        setPendingEvalCount(0);
-        return;
-      }
-      const attendanceMap: Record<string, "expected" | "present" | "absent" | "excused" | null> = {};
-      const attendanceRows = (aRes.data ?? []) as AttendanceLite[];
-      attendanceRows.forEach((row) => {
-        const eventId = String(row.event_id ?? "").trim();
-        if (!eventId) return;
-        attendanceMap[eventId] = (row.status ?? null) as "expected" | "present" | "absent" | "excused" | null;
-      });
-
-      const incompletePastSessionsCount = sessions
-        .filter((s) => new Date(String(s.start_at)).getTime() < nowTs)
-        .filter((s) => {
-          const eventId = s.club_event_id ? String(s.club_event_id) : "";
-          if (!eventId) return true;
-          const status = attendanceMap[eventId] ?? null;
-          return status !== "absent" && status !== "excused";
-        })
-        .filter((s) => !completeSessionIds.has(String(s.id))).length;
-
-      const completedEventIds = new Set(
-        sessions
-          .filter((s) => completeSessionIds.has(String(s.id)))
-          .map((s) => (s.club_event_id ? String(s.club_event_id) : null))
-          .filter((x): x is string => !!x)
-      );
-      const eventIdsWithAnySession = new Set(
-        sessions
-          .map((s) => (s.club_event_id ? String(s.club_event_id) : null))
-          .filter((x): x is string => !!x)
-      );
-
-      const eventIds = Array.from(new Set(attendanceRows.map((row) => String(row.event_id))));
-
-      let incompleteEventsCount = 0;
-      if (eventIds.length > 0) {
-        const eRes = await supabase
-          .from("club_events")
-          .select("id,event_type,starts_at,status,requires_evaluation")
-          .in("id", eventIds);
-        if (!eRes.error) {
-          const events = (eRes.data ?? []) as EvaluationEventLite[];
-          incompleteEventsCount = events
-            .filter((event) => event.status === "scheduled")
-            .filter((event) => event.requires_evaluation === true)
-            .filter((event) => event.event_type === "training")
-            .filter((event) => new Date(String(event.starts_at)).getTime() < nowTs)
-            .filter((event) => {
-              const status = attendanceMap[String(event.id)] ?? null;
-              return status !== "absent" && status !== "excused";
-            })
-            .filter((event) => !completedEventIds.has(String(event.id)))
-            .filter((event) => !eventIdsWithAnySession.has(String(event.id))).length;
-        }
-      }
-
-      setPendingEvalCount(incompletePastSessionsCount + incompleteEventsCount);
-    })();
-  }, [open, viewerRole, selectedChildId, performanceEnabled]);
+    return () => { cancelled = true; };
+  }, [open, viewerRole, selectedChildIdForView, pathname]);
 
   const navSections = useMemo(
     () => [
@@ -574,33 +431,12 @@ export default function PlayerDesktopDrawer({ open, onClose }: Props) {
                     >
                       <span className="drawer-item-left">
                         <Icon size={16} strokeWidth={1.8} />
-                        <span>
-                          {item.label}
-                          {badgeCount > 0 ? (
-                            <span
-                              style={{
-                                display: "inline-flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                minWidth: 18,
-                                height: 18,
-                                marginLeft: 8,
-                                padding: "0 6px",
-                                borderRadius: 999,
-                                background: "#ef4444",
-                                color: "#fff",
-                                fontSize: 11,
-                                fontWeight: 900,
-                                lineHeight: 1,
-                                verticalAlign: "middle",
-                              }}
-                            >
-                              {badgeCount > 99 ? "99+" : badgeCount}
-                            </span>
-                          ) : null}
-                        </span>
+                        <span>{item.label}</span>
                       </span>
-                      <ChevronRight className="drawer-chevron" size={14} strokeWidth={1.8} aria-hidden="true" />
+                      <span className="drawer-item-right">
+                        {badgeCount > 0 ? <span className="drawer-count-badge">{badgeCount > 99 ? "99+" : badgeCount}</span> : null}
+                        <ChevronRight className="drawer-chevron" size={14} strokeWidth={1.8} aria-hidden="true" />
+                      </span>
                     </Link>
                   );
                 })}
