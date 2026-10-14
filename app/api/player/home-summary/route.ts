@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
     const personalChecks = await timing.measure("personal_access", () => Promise.all(orgIds.map(id => canReadPlayerHistory(db, access.actorUserId, playerId, id))));
     const canReadPersonal = personalChecks.some(Boolean);
     const sessionScope = canReadPersonal ? personalOrOrganizationFilter("club_id", orgIds) : `club_id.in.(${orgIds.join(",")})`;
-    const [sessions, attendees, targets, settings, performance] = await timing.measure("history", () => Promise.all([
+    const [sessions, attendees, targets, settings, performance, seasons] = await timing.measure("history", () => Promise.all([
       readRows<HomeHistorySession>((from, to) => db.from("training_sessions")
         .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id")
         .eq("user_id", playerId).or(sessionScope).order("id").range(from, to)),
@@ -58,19 +58,26 @@ export async function GET(req: NextRequest) {
       db.from("training_volume_settings").select("organization_id,season_months,offseason_months").in("organization_id", orgIds),
       db.from("club_members").select("id").eq("user_id", playerId).eq("role", "player")
         .eq("is_active", true).eq("is_performance", true).in("club_id", orgIds).limit(1),
+      db.from("club_seasons").select("club_id,starts_on,ends_on,is_current").in("club_id",orgIds).order("starts_on",{ascending:false}),
     ]));
-    for (const result of [targets, settings, performance]) if (result.error) throw result.error;
+    for (const result of [targets, settings, performance, seasons]) if (result.error) throw result.error;
     const sessionIds = sessions.map(session => session.id);
     const eventIds = [...new Set([...attendees.map(row => row.event_id), ...sessions.map(session => session.club_event_id)].filter((id): id is string => Boolean(id)))];
     const [items, events] = await timing.measure("details", () => Promise.all([
       readRelated<HomeHistoryItem>(sessionIds, (ids, from, to) => db.from("training_session_items")
         .select("id,session_id,category,minutes").in("session_id", ids).order("id").range(from, to)),
       readRelated<HomeHistoryEvent>(eventIds, (ids, from, to) => db.from("club_events")
-        .select("id,event_type,title,starts_at,ends_at,duration_minutes,status,requires_evaluation")
+        .select("id,club_id,event_type,title,starts_at,ends_at,duration_minutes,status,requires_evaluation")
         .in("id", ids).in("club_id", orgIds).order("id").range(from, to)),
     ]));
+    const today=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Zurich"}).format(new Date());
+    const seasonRanges=orgIds.map(organizationId=>{
+      const rows=(seasons.data??[]).filter(row=>row.club_id===organizationId);
+      const current=rows.find(row=>row.is_current)??rows[0];
+      return {organizationId,startsOn:current?.starts_on??`${today.slice(0,4)}-01-01`,endsOn:current?.ends_on??`${today.slice(0,4)}-12-31`};
+    });
     const summary = summarizePlayerHome({ sessions, attendees, items, events,
-      performanceEnabled: Boolean(performance.data?.length), monthStart, monthEnd, previousMonthStart, now: new Date().toISOString() });
+      performanceEnabled: Boolean(performance.data?.length), seasonRanges, monthStart, monthEnd, previousMonthStart, now: new Date().toISOString() });
     const volumeConfigs = orgIds.map(organizationId => ({ organizationId,
       rows: (targets.data ?? []).filter(row => row.organization_id === organizationId),
       settings: (settings.data ?? []).find(row => row.organization_id === organizationId) ?? null }));

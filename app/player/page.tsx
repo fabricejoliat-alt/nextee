@@ -1,4 +1,5 @@
 "use client";
+import { playerMeritRead } from "@/lib/playerMeritRead";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
@@ -584,15 +585,14 @@ export default function PlayerHomePage() {
           const yearStart = `${today.slice(0, 4)}-01-01`;
           const previousMonthEnd = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 0)).toISOString().slice(0, 10);
           const [ranking, previousRanking] = await Promise.all([
-            supabase.rpc("om_ranking_snapshot", { p_org_id: organizationId, p_from: yearStart, p_as_of: today }).abortSignal(signal),
-            previousMonthEnd >= yearStart ? supabase.rpc("om_ranking_snapshot", { p_org_id: organizationId, p_from: yearStart, p_as_of: previousMonthEnd }).abortSignal(signal) : Promise.resolve({ data: [], error: null }),
+            playerMeritRead<{player_id:string;rank_net:number}>(organizationId,yearStart,today,signal),
+            previousMonthEnd >= yearStart ? playerMeritRead<{player_id:string;rank_net:number}>(organizationId,yearStart,previousMonthEnd,signal).catch(()=>[]) : Promise.resolve([]),
           ]);
           if (signal.aborted) return;
-          if (ranking.error) throw ranking.error;
-          const rows = (ranking.data ?? []) as Array<{ player_id: string; rank_net: number }>;
+          const rows = ranking;
           const mine = rows.find(row => row.player_id === homeContext.userId);
           if (mine && Number.isFinite(Number(mine.rank_net))) {
-            const previousMine = !previousRanking.error ? ((previousRanking.data ?? []) as Array<{ player_id: string; rank_net: number }>).find(row => row.player_id === homeContext.userId) : null;
+            const previousMine = previousRanking.find(row => row.player_id === homeContext.userId);
             setMeritInsight({ rank: Number(mine.rank_net), total: rows.length,
               change: previousMine && Number.isFinite(Number(previousMine.rank_net)) ? Number(previousMine.rank_net) - Number(mine.rank_net) : null });
           }
@@ -1275,7 +1275,7 @@ export default function PlayerHomePage() {
             <div className={styles.benchmarksHeader}><div><h2>{pickLocaleText(locale, "Mes repères", "My benchmarks")}</h2><p>{pickLocaleText(locale, "Quelques indices en un coup d'oeil", "Your progress at a glance.")}</p></div></div>
             {insightsLoading || meritLoading ? <div className={styles.benchmarks}>{Array.from({ length: 2 }, (_, index) => <div className={`${styles.benchmark} ${styles.benchmarkSkeleton}`} key={index}><span /><span /><span /></div>)}</div> : <div className={styles.benchmarks}>
               <article className={styles.benchmark}>
-                <div className={styles.benchmarkHeading}><span className={playerUiStyles.dateBox}><CalendarCheck2 size={17} /></span><h3>{pickLocaleText(locale, "Assiduité", "Attendance")}</h3><Link className={styles.benchmarkLink} href="/player/golf?section=stats" aria-label={pickLocaleText(locale, "Voir les statistiques d’assiduité", "View attendance statistics")}><ArrowRight size={15} /></Link></div>
+                <div className={styles.benchmarkHeading}><span className={playerUiStyles.dateBox}><CalendarCheck2 size={17} /></span><h3>{pickLocaleText(locale, "Assiduité de la saison", "Season attendance", "Anwesenheit in dieser Saison", "Presenze della stagione")}</h3><Link className={styles.benchmarkLink} href="/player/golf?section=stats" aria-label={pickLocaleText(locale, "Voir les statistiques d’assiduité", "View attendance statistics")}><ArrowRight size={15} /></Link></div>
                 {attendanceInsight ? <>
                   <div className={styles.attendanceLayout}>
                     <div className={styles.attendanceRing}><AnimatedProgressRing percent={attendanceInsight.rate} size={100} label={pickLocaleText(locale, "Assiduité", "Attendance")} /></div>

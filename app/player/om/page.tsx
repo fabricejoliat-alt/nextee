@@ -1,4 +1,5 @@
 "use client";
+import { playerMeritRead } from "@/lib/playerMeritRead";
 
 import Image from "next/image";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
@@ -235,10 +236,8 @@ export default function PlayerOrderOfMeritPage() {
     const rangeFrom = fromDate <= toDate ? fromDate : toDate;
     const rangeTo = fromDate <= toDate ? toDate : fromDate;
     setRankingLoading(true);
-    const r = await supabase.rpc("om_ranking_snapshot", { p_org_id: orgId, p_from: rangeFrom, p_as_of: rangeTo });
+    const rows = await playerMeritRead<OMRankingRow>(orgId, rangeFrom, rangeTo);
     setRankingLoading(false);
-    if (r.error) throw new Error(r.error.message);
-    const rows = (r.data ?? []) as OMRankingRow[];
     setRankingRows(rows);
 
     const playerIds = Array.from(new Set(rows.map((row) => row.player_id).filter(Boolean)));

@@ -5,7 +5,7 @@ export type HomeHistorySession = {
 };
 export type HomeHistoryItem = { session_id: string; category: string; minutes: number };
 export type HomeHistoryEvent = {
-  id: string; event_type: string; title: string | null; starts_at: string;
+  id: string; club_id?: string; event_type: string; title: string | null; starts_at: string;
   ends_at: string | null; duration_minutes: number | null; status: string; requires_evaluation: boolean;
 };
 export type HomeHistoryAttendance = { event_id: string; status: string | null };
@@ -14,6 +14,7 @@ export function summarizePlayerHome(input: {
   sessions: HomeHistorySession[]; items: HomeHistoryItem[]; events: HomeHistoryEvent[];
   attendees: HomeHistoryAttendance[]; performanceEnabled: boolean;
   monthStart: string; monthEnd: string; previousMonthStart: string; now: string;
+  seasonRanges?: Array<{organizationId:string;startsOn:string;endsOn:string}>;
 }) {
   const now = Date.parse(input.now);
   const currentStart = Date.parse(input.monthStart);
@@ -44,19 +45,25 @@ export function summarizePlayerHome(input: {
     }
   }
   pendingTrainings.sort((a, b) => Date.parse(b.dateIso) - Date.parse(a.dateIso));
-  const attendanceFor = (from: number, to: number) => {
+  const attendanceFor = (from: number, to: number, season = false) => {
     let present = 0, expected = 0;
     for (const event of input.events) {
       const date = Date.parse(event.starts_at), status = statusById.get(event.id);
       if (date < from || date >= to || date >= now || event.status !== "scheduled"
         || !["training", "interclub", "camp", "event", "session"].includes(event.event_type)
         || !["present", "absent"].includes(status ?? "")) continue;
+      if(season && input.seasonRanges){
+        const range=input.seasonRanges.find(row=>row.organizationId===event.club_id);
+        if(!range)continue;
+        const day=new Intl.DateTimeFormat("en-CA",{timeZone:"Europe/Zurich"}).format(new Date(date));
+        if(day<range.startsOn || day>range.endsOn)continue;
+      }
       expected += 1;
       if (status === "present") present += 1;
     }
     return { present, expected, rate: expected ? Math.round(present / expected * 100) : 0 };
   };
-  const current = attendanceFor(currentStart, now), previous = attendanceFor(previousStart, currentStart);
+  const current = input.seasonRanges ? attendanceFor(-Infinity, now, true) : attendanceFor(currentStart, now), previous = attendanceFor(previousStart, currentStart);
   const duration = (event: HomeHistoryEvent) => {
     const minutes = Number(event.duration_minutes ?? 0);
     if (Number.isFinite(minutes) && minutes > 0) return minutes;
@@ -80,7 +87,7 @@ export function summarizePlayerHome(input: {
   });
   return {
     pendingTrainings,
-    attendanceInsight: current.expected ? { ...current, change: previous.expected ? current.rate - previous.rate : null } : null,
+    attendanceInsight: current.expected ? { ...current, change: !input.seasonRanges && previous.expected ? current.rate - previous.rate : null } : null,
     monthSessions, monthItems: input.items.filter(item => monthIds.has(item.session_id)),
     monthClubEventDurationById, monthPlannedClubEvents,
     monthPlannedClubMinutes: monthPlannedClubEvents.reduce((sum, event) => sum + duration(event), 0),
