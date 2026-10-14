@@ -81,6 +81,11 @@ type ClubCampStatusRow = {
   status: string | null;
 };
 
+type ClubCampPlayerRow = {
+  camp_id: string | null;
+  registration_status: string | null;
+};
+
 type SessionCampMeta = {
   player_camp_id: string;
   player_camp_title: string | null;
@@ -201,10 +206,17 @@ export async function GET(req: NextRequest) {
 
     const clubCampDayLinks = (clubCampDaysRes.data ?? []) as ClubCampDayLinkRow[];
     const linkedClubCampIds = uniq(clubCampDayLinks.map((row) => row.camp_id));
-    const clubCampStatusesRes = linkedClubCampIds.length
-      ? await supabaseAdmin.from("club_camps").select("id,status").in("id", linkedClubCampIds)
-      : { data: [] as ClubCampStatusRow[], error: null };
+    const [clubCampStatusesRes, clubCampPlayersRes] = await Promise.all([
+      linkedClubCampIds.length
+        ? supabaseAdmin.from("club_camps").select("id,status").in("id", linkedClubCampIds)
+        : { data: [] as ClubCampStatusRow[], error: null },
+      linkedClubCampIds.length
+        ? supabaseAdmin.from("club_camp_players").select("camp_id,registration_status")
+            .eq("player_id", effectiveUserId).in("camp_id", linkedClubCampIds)
+        : { data: [] as ClubCampPlayerRow[], error: null },
+    ]);
     if (clubCampStatusesRes.error) return NextResponse.json({ error: clubCampStatusesRes.error.message }, { status: 400 });
+    if (clubCampPlayersRes.error) return NextResponse.json({ error: clubCampPlayersRes.error.message }, { status: 400 });
 
     const visibleClubCampIds = new Set(
       ((clubCampStatusesRes.data ?? []) as ClubCampStatusRow[])
@@ -221,6 +233,20 @@ export async function GET(req: NextRequest) {
     const attendeeEvents = rawAttendeeEvents.filter(
       (event) => event.event_type !== "camp" || !hiddenCampEventIds.has(String(event.id ?? "").trim()),
     );
+    const registrationByCampId = new Map(
+      ((clubCampPlayersRes.data ?? []) as ClubCampPlayerRow[]).map((row) => [String(row.camp_id ?? ""), row.registration_status]),
+    );
+    const campByEventId = new Map(
+      clubCampDayLinks.map((row) => [String(row.event_id ?? ""), String(row.camp_id ?? "")]),
+    );
+    const campRegistrationByEventId: Record<string, { campId: string; registered: boolean }> = {};
+    attendeeEvents.filter((event) => event.event_type === "camp").forEach((event) => {
+      const eventId = String(event.id ?? "").trim();
+      const campId = campByEventId.get(eventId);
+      if (campId && visibleClubCampIds.has(campId)) {
+        campRegistrationByEventId[eventId] = { campId, registered: registrationByCampId.get(campId) === "registered" };
+      }
+    });
 
     const now = new Date();
     const pastTrainingEvents = attendeeEvents.filter((event) => event.id && event.starts_at && event.event_type === "training"
@@ -312,6 +338,7 @@ export async function GET(req: NextRequest) {
       sessions: enrichedSessions,
       attendeeEvents,
       attendeeStatusByEventId,
+      campRegistrationByEventId,
       attendanceChangeableEventIds,
       competitionEvents: competitionRes.data ?? [],
       activeClubCount: access.organizationIds.length,
