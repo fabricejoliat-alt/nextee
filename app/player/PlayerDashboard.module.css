@@ -1,4 +1,5 @@
 .firstRow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:stretch}
+.firstRowWithoutAttention{grid-template-columns:repeat(2,minmax(0,1fr))}
 .firstRow>*{min-width:0}
 .attentionCard{grid-column:3}
 .attentionListCompact{padding-top:0!important}
@@ -24,6 +25,7 @@
 .activityItem{display:grid;grid-template-columns:72px minmax(0,1fr) auto;align-items:center;gap:10px;padding:8px 3px;border-bottom:1px solid #edf1eb;color:#2f4135}
 .alignedCardContent>.activityItem,.alignedCardContent>a{padding-inline:0}
 .newsHomeItem{grid-template-columns:auto minmax(0,1fr) auto!important}.newsThumbnail{display:block!important;width:92px;aspect-ratio:16/9;overflow:hidden;margin-top:0!important;border-radius:9px;background:#e9efe8}.newsThumbnail img{display:block;width:100%;height:100%;object-fit:cover}
+.newsFeatured{grid-template-columns:minmax(0,1fr)!important;gap:12px!important;align-content:start;align-items:start!important}.newsFeatured .newsFeaturedVisual{display:grid;place-items:center;width:100%;aspect-ratio:1/1;overflow:hidden;margin:0;border-radius:11px;background:#e9efe8;color:#587057}.newsFeaturedVisual img{display:block;width:100%;height:100%;object-fit:cover}.newsFeaturedInfo{display:grid;gap:5px;min-width:0}.newsFeaturedHeading{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.newsFeatured .newsFeaturedHeading b{font-size:15px;line-height:1.35}.newsFeaturedHeading svg{flex:none;margin-top:2px;color:#718173}
 .newsHomeContent{display:grid;gap:3px;min-width:0}.newsHomeDate{display:block;overflow:hidden;margin:0!important;color:#65815f!important;font-size:9px!important;font-weight:850;letter-spacing:.06em;line-height:1.35;text-overflow:ellipsis;text-transform:uppercase;white-space:nowrap}.newsHomeClub{display:block;margin:0!important;color:#657368!important;font-size:9px!important;font-weight:750;line-height:1.35}.newsHomeSummary{overflow:hidden;display:-webkit-box;margin:1px 0 0;color:#526056;font-size:10px;line-height:1.4;-webkit-box-orient:vertical;-webkit-line-clamp:2}
 .activityItem:last-child{border-bottom:0}
 .activityDate{display:grid;align-content:center;justify-items:center;align-self:stretch;width:72px;min-height:72px;padding:7px 5px;border-radius:10px;background:linear-gradient(180deg,#edf4ea 0%,#e6efe3 100%);color:#35483b;text-align:center}

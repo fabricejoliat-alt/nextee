@@ -1108,6 +1108,8 @@ export default function PlayerHomePage() {
     }
     return "/player/news";
   }, [viewerRole, effectiveUserId]);
+  const volumeNeedsAttention = trainingsSummary.objective > 0 && trainingsSummary.percent < 100 && new Date().getDate() >= 20;
+  const showAttentionCard = upcomingLoading || insightsLoading || insightsError || pendingTrainings.length > 0 || attentionEvents.length > 0 || volumeNeedsAttention;
 
   return (
     <div className="player-dashboard-bg player-home-page">
@@ -1158,7 +1160,7 @@ export default function PlayerHomePage() {
         {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
 
         <div className={playerUiStyles.page}>
-          <div className={styles.firstRow}>
+          <div className={`${styles.firstRow} ${!showAttentionCard ? styles.firstRowWithoutAttention : ""}`}>
             <section id="player-upcoming-activities" className={playerUiStyles.panel}>
               <div className={playerUiStyles.panelHeader}>
                 <div><h2>{pickLocaleText(locale, "Prochaines activités", "Upcoming activities")}</h2><p>{pickLocaleText(locale, "Les trois prochains rendez-vous.", "Your next three activities.")}</p></div>
@@ -1201,7 +1203,17 @@ export default function PlayerHomePage() {
               <div className={playerUiStyles.panelHeader}><div><h2>{t("organization.newsTitle")}</h2><p>{t("organization.newsLead")}</p></div><Link className={playerUiStyles.textLink} href={allNewsHref} aria-label={pickLocaleText(locale, "Toutes les actualités", "All news")}><ArrowRight size={16} /></Link></div>
               {newsLoading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : latestNews.length ? (
                 <div className={`${playerUiStyles.eventList} ${styles.alignedCardContent}`}>
-                  {latestNews.map((news) => <Link key={news.id} href={allNewsHref} className={styles.newsHomeItem}>
+                  <Link href={allNewsHref} className={styles.newsFeatured}>
+                    <span className={styles.newsFeaturedVisual}>
+                      {latestNews[0].image_url ? <img src={latestNews[0].image_url} alt="" /> : <Newspaper size={42} aria-hidden="true" />}
+                    </span>
+                    <div className={styles.newsFeaturedInfo}>
+                      <span className={styles.newsHomeDate}>{formatNewsPublishedLabel(latestNews[0].published_at ?? latestNews[0].scheduled_for ?? latestNews[0].created_at, locale)}</span>
+                      <div className={styles.newsFeaturedHeading}><b>{latestNews[0].title}</b><ArrowRight size={17} aria-hidden="true" /></div>
+                      <span className={styles.newsHomeClub}>{latestNews[0].club_name || clubNameById[latestNews[0].club_id] || pickLocaleText(locale, "Club", "Club")}</span>
+                    </div>
+                  </Link>
+                  {latestNews.slice(1).map((news) => <Link key={news.id} href={allNewsHref} className={styles.newsHomeItem}>
                     {news.image_url ? <span className={styles.newsThumbnail}><img src={news.image_url} alt="" /></span> : <span className={playerUiStyles.dateBox}><Newspaper size={16} /></span>}
                     <div className={styles.newsHomeContent}>
                       <span className={styles.newsHomeDate}>{formatNewsPublishedLabel(news.published_at ?? news.scheduled_for ?? news.created_at, locale)}</span>
@@ -1215,7 +1227,7 @@ export default function PlayerHomePage() {
               ) : <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Aucune actualité pour le moment.", "No news at the moment.")}</div>}
             </section>
 
-            <section className={`${playerUiStyles.panel} ${styles.attentionCard}`}>
+            {showAttentionCard ? <section className={`${playerUiStyles.panel} ${styles.attentionCard}`}>
               <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Les éléments à vérifier prochainement.", "Things to review soon.")}</p></div></div>
               {upcomingLoading || insightsLoading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : (
                 <div className={`${overviewStyles.attentionList} ${styles.attentionListCompact}`}>
@@ -1229,14 +1241,13 @@ export default function PlayerHomePage() {
                     <div><b>{pickLocaleText(locale, "Présence à confirmer", "Attendance to confirm")}</b><small>{event.title?.trim() || eventTypeLabel(event.event_type, locale)}</small></div>
                     <ArrowRight size={15} />
                   </Link>)}
-                  {trainingsSummary.objective > 0 && trainingsSummary.percent < 100 && new Date().getDate() >= 20 ? (
+                  {volumeNeedsAttention ? (
                     <Link href="#player-training-volume"><span><Target size={17} /></span><div><b>{pickLocaleText(locale, "Objectif FTEM à poursuivre", "Keep working toward FTEM goal")}</b><small>{Math.round(trainingsSummary.percent)}% {pickLocaleText(locale, "réalisé", "completed")}</small></div><ArrowRight size={15} /></Link>
                   ) : null}
-                  {!insightsError && !pendingTrainings.length && !attentionEvents.length && !(trainingsSummary.objective > 0 && trainingsSummary.percent < 100 && new Date().getDate() >= 20) ? <div className={overviewStyles.positiveState}><CalendarCheck2 size={20} /><b>{pickLocaleText(locale, "Tout est à jour", "Everything is up to date")}</b><small>{pickLocaleText(locale, "Aucune action nécessaire pour le moment.", "No action is needed right now.")}</small></div> : null}
                   {insightsError ? <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Certaines données sont momentanément indisponibles.", "Some data is temporarily unavailable.")}</div> : null}
                 </div>
               )}
-            </section>
+            </section> : null}
 
           </div>
 
