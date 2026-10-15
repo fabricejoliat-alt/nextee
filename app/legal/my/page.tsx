@@ -105,6 +105,10 @@ export default function MyLegalPage() {
   const personalDocs = docs.filter((doc) => (organizationFilter === "all" || doc.scope === "platform" || doc.club_id === organizationFilter) && !(doc.kind === "parent_authorization" && doc.purpose_key === "service.parent_authorization"));
   const requiredDocs = personalDocs.filter((doc) => doc.required);
   const optionalDocs = personalDocs.filter((doc) => !doc.required);
+  const optionalDecisions = optionalDocs.filter(doc => {
+    const choice = doc.purpose_key === "coaching.rewrite" ? doc.own_choice : doc.state;
+    return doc.eligible_role && doc.version && (doc.state?.conflict || choice?.version_id !== doc.version.id);
+  });
   const verifiedChildren = children.filter((child) => child.representation_verified);
   const accessMissing = access.state === "ready" && access.enforcementEnabled ? access.missing : [];
   const destination = access.state === "ready" ? access.destination : "";
@@ -178,6 +182,14 @@ export default function MyLegalPage() {
           return <li key={item.document_id}><div><strong>{title}</strong><span>{requiredActionLabels[doc?.action_kind ?? ""] ?? "Décision requise"} · {doc?.club_name ?? "ActiviTee"} · {doc?.version ? `Version ${doc.version.version_number}` : "Version à vérifier"}</span></div>
             {doc?.version && <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => open(doc)}>Lire et décider <ArrowRight size={15} aria-hidden="true" /></button>}</li>;
         })}</ul>}
+        {optionalDecisions.length > 0 && <div className={styles.optionalAccess}>
+          <div><h3>Documents facultatifs</h3><p>Ces choix sont facultatifs et ne bloquent pas l’accès à votre espace.</p></div>
+          <ul className={styles.accessMissing}>{optionalDecisions.map(doc => <li key={doc.id}>
+            <div><strong>{displayTitle(doc.version?.snapshot.translations?.[locale]?.title ?? doc.version?.snapshot.translations?.fr?.title ?? doc.document_key, doc)}</strong>
+              <span>Facultatif · {doc.club_name ?? "ActiviTee"} · Version {doc.version?.version_number}</span></div>
+            <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => open(doc)}>Lire et décider <ArrowRight size={15} aria-hidden="true" /></button>
+          </li>)}</ul>
+        </div>}
         {playerProfileMissing && <div className={styles.parentConsentNotice}>
           <LockKeyhole size={19} aria-hidden="true" /><div><strong>Date de naissance et statut à vérifier</strong>
             <p>Votre compte est indiqué comme majeur, mais sa date de naissance ne permet pas de confirmer ce statut. Demandez à votre club de vérifier et corriger votre fiche.</p>
