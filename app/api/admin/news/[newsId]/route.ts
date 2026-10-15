@@ -1,6 +1,8 @@
 import { withAdminMutationAudit } from "@/lib/server/adminAudit";
+import { dispatchPlatformNewsNotifications } from "@/lib/server/platformNewsNotifications";
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient, normalizePlatformTargets, normalizeStatus, normalizeTranslations, requirePlatformAdmin } from "../_lib";
+export const maxDuration = 60;
 
 export const PATCH = withAdminMutationAudit(async function PATCH(req: NextRequest, context: { params: Promise<{ newsId: string }> }) {
   try {
@@ -28,7 +30,8 @@ export const PATCH = withAdminMutationAudit(async function PATCH(req: NextReques
       p_targets: targets, p_translations: translationMap,
     });
     if (saved.error) return NextResponse.json({ error: saved.error.message }, { status: 400 });
-    return NextResponse.json({ ok: true });
+    const dispatch = status === "published" ? await dispatchPlatformNewsNotifications(database, newsId) : null;
+    return NextResponse.json({ ok: true, dispatch });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Erreur serveur." }, { status: 500 }); }
 });
 

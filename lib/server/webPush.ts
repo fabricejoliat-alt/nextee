@@ -50,7 +50,7 @@ export async function sendWebPush(db: SupabaseClient, input: {
   if (input.templateKey) {
     const locales = [...new Set((subscriptions.data ?? []).map(sub => (["fr", "en", "de", "it"].includes(sub.locale) ? sub.locale : "fr") as NotificationLocale))];
     await Promise.all(locales.map(async locale => localized.set(locale,
-      await serverNotificationMessage(db, input.templateKey!, locale, input.templateParams ?? {}))));
+      await serverNotificationMessage(db, input.templateKey!, locale, input.templateParamsByLocale?.[locale] ?? input.templateParams ?? {}))));
   }
   const stale: number[] = [];
   await Promise.all((subscriptions.data ?? []).map(async sub => {

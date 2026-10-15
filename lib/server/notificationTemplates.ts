@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { renderNotificationTemplate, notificationTemplateDefaults, type NotificationLocale, type NotificationParams } from "@/lib/notificationCatalog";
-export type NotificationTemplateInput = { templateKey?: string; templateParams?: NotificationParams };
+export type NotificationTemplateInput = { templateKey?: string; templateParams?: NotificationParams; templateParamsByLocale?: Partial<Record<NotificationLocale, NotificationParams>> };
 /** No process-wide cache: a saved Admin edit applies to the next delivery. */
 export async function serverNotificationMessage(db: SupabaseClient, key: string, locale: NotificationLocale, params: NotificationParams) {
   if (!Object.hasOwn(notificationTemplateDefaults, key)) throw new Error("Unknown notification template");
@@ -10,5 +10,5 @@ export async function serverNotificationMessage(db: SupabaseClient, key: string,
   return renderNotificationTemplate(key, locale, params, overrides);
 }
 export function notificationTemplateData(input: NotificationTemplateInput) {
-  return input.templateKey ? { template_key: input.templateKey, template_params: input.templateParams ?? {} } : {};
+  return input.templateKey ? { template_key: input.templateKey, template_params: input.templateParams ?? {}, ...(input.templateParamsByLocale ? { template_params_by_locale: input.templateParamsByLocale } : {}) } : {};
 }

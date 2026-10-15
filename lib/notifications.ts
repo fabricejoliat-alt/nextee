@@ -260,7 +260,8 @@ export async function loadMyNotifications(userId: string, options?: { locale?: N
     const key = notification.data?.template_key;
     if (options?.locale && typeof key === "string") {
       try {
-        const message = await getNotificationMessage(key, options.locale, notification.data.template_params as NotificationParams ?? {});
+        const localizedParams = notification.data.template_params_by_locale as Partial<Record<NotificationLocale, NotificationParams>> | undefined;
+        const message = await getNotificationMessage(key, options.locale, localizedParams?.[options.locale] ?? notification.data.template_params as NotificationParams ?? {});
         return { ...row, notification: { ...notification, title: message.title, body: message.body } };
       } catch { /* Older notifications keep their stored text. */ }
     }

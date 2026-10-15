@@ -17,7 +17,7 @@ test("junior performance uses the selected season's actual roster and filters ev
   });
   const from=db.from.bind(db);
   db.from=((table:string)=>{const q=from(table); return Object.assign(q,{or:()=>q});}) as typeof db.from;
-  const {GET}=loadManagerModule<{GET:Function}>("app/api/manager/clubs/[clubId]/performance/juniors/route.ts",{
+  const {GET}=loadManagerModule<{GET:(req:{nextUrl:URL},ctx:{params:Promise<{clubId:string}>})=>Promise<Response>}>("app/api/manager/clubs/[clubId]/performance/juniors/route.ts",{
     "next/server":{NextResponse:{json:Response.json}},
     "@/lib/server/personalHistoryAccess":{readablePlayerHistoryIds:async()=>["lea"]},
     "@/lib/personalHistoryScope":{personalOrOrganizationFilter:()=>"club_id.is.null"},

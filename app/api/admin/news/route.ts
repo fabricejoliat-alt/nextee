@@ -1,6 +1,8 @@
 import { withAdminMutationAudit } from "@/lib/server/adminAudit";
+import { dispatchPlatformNewsNotifications } from "@/lib/server/platformNewsNotifications";
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient, fetchPlatformNews, normalizePlatformTargets, normalizeStatus, normalizeTranslations, requirePlatformAdmin } from "./_lib";
+export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
   try {
@@ -35,6 +37,7 @@ export const POST = withAdminMutationAudit(async function POST(req: NextRequest)
       p_targets: targets, p_translations: translationMap,
     });
     if (saved.error) return NextResponse.json({ error: saved.error.message }, { status: 400 });
-    return NextResponse.json({ ok: true, id: String(saved.data) });
+    const dispatch = status === "published" ? await dispatchPlatformNewsNotifications(database, String(saved.data)) : null;
+    return NextResponse.json({ ok: true, id: String(saved.data), dispatch });
   } catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "Erreur serveur." }, { status: 500 }); }
 });
