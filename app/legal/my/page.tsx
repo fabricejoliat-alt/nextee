@@ -17,7 +17,7 @@ type Presentation = { id: string; rendered_snapshot: { title: string; body: stri
 type Decision = { id: string; actor_id: string; beneficiary_id: string; decision: string; rendered_snapshot: { title: string; body: string; locale: string }; decided_at: string };
 type Child = LegalChild;
 type MissingAction = { document_id: string; document_key: string; kind: string; club_id: string | null; role: string; version_id: string | null };
-type AccessState = { state: "loading" | "error" } | { state: "ready"; enforcementEnabled: boolean; missing: MissingAction[]; destination: string; consentRequired: boolean; parentConsentRequired: boolean; pendingClubNames: string[] };
+type AccessState = { state: "loading" | "error" } | { state: "ready"; enforcementEnabled: boolean; missing: MissingAction[]; destination: string; consentRequired: boolean; parentConsentRequired: boolean; playerProfileRequired: boolean; pendingClubNames: string[] };
 const homeDestinations = new Set(["/admin", "/manager", "/coach", "/player"]);
 const languages = [{ code: "fr", label: "Français" }, { code: "en", label: "English" }, { code: "de", label: "Deutsch" }, { code: "it", label: "Italiano" }];
 const decisionLabels: Record<string, string> = { accepted: "Accepté", acknowledged: "Lu et confirmé", authorized: "Autorisé", consented: "Consentement donné", refused: "Refusé", withdrawn: "Retiré" };
@@ -63,7 +63,7 @@ export default function MyLegalPage() {
       setDocs(d.documents); setHistory(h.decisions); setChildren(c.children); setParentConfirmation(c.parent_confirmation ?? { email_ready: false, delivery_ready: false, code_required: true });
       setAccess({ state: "ready", enforcementEnabled: gate.enforcement_enabled,
         missing: gate.missing, destination: redirect.redirectTo, consentRequired: redirect.consentRequired === true,
-        parentConsentRequired: redirect.parentConsentRequired === true,
+        parentConsentRequired: redirect.parentConsentRequired === true, playerProfileRequired: redirect.playerProfileRequired === true,
         pendingClubNames: Array.isArray(redirect.pendingClubNames) ? redirect.pendingClubNames.filter((name: unknown): name is string => typeof name === "string") : [] });
       setLoading(false);
     } catch (error) { setAccess({ state: "error" }); setLoading(false); throw error; }
@@ -111,8 +111,9 @@ export default function MyLegalPage() {
   const juniorConsentMissing = access.state === "ready" && access.consentRequired;
   const pendingClubNames = access.state === "ready" ? access.pendingClubNames ?? [] : [];
   const parentConsentMissing = access.state === "ready" && (access.parentConsentRequired);
+  const playerProfileMissing = access.state === "ready" && access.playerProfileRequired;
   const parentCodeRequired = requiresParentCode(subject === "self", selected, parentConfirmation.code_required);
-  const canEnter = access.state === "ready" && accessMissing.length === 0 && !juniorConsentMissing && !parentConsentMissing && homeDestinations.has(destination);
+  const canEnter = access.state === "ready" && accessMissing.length === 0 && !juniorConsentMissing && !parentConsentMissing && !playerProfileMissing && homeDestinations.has(destination);
   const currentHistoryChild = children.find((child) => `${child.child_id}:${child.club_id}` === historyChild);
   const subjectName = children.find((child) => child.child_id === subject)?.child_name ?? "votre enfant";
   function renderDoc(doc: Doc) {
@@ -168,7 +169,7 @@ export default function MyLegalPage() {
             : "Vous pouvez rejoindre votre espace ActiviTee."}</p>
             : access.state === "loading" ? <p>Vérification de vos documents et de votre accès…</p>
             : access.state === "error" ? <p>Impossible de vérifier votre accès pour le moment. Réessayez en actualisant la page.</p>
-            : accessMissing.length || juniorConsentMissing || parentConsentMissing ? <p>Voici les conditions à remplir avant d’accéder à votre espace.</p>
+            : accessMissing.length || juniorConsentMissing || parentConsentMissing || playerProfileMissing ? <p>Voici les conditions à remplir avant d’accéder à votre espace.</p>
             : <p>Aucun espace ActiviTee n’est associé à ce compte. Contactez votre club.</p>}</div></div>
         {accessMissing.length > 0 && <ul className={styles.accessMissing}>{accessMissing.map((item) => {
           const doc = docs.find((entry) => entry.id === item.document_id);
@@ -177,13 +178,18 @@ export default function MyLegalPage() {
           return <li key={item.document_id}><div><strong>{title}</strong><span>{requiredActionLabels[doc?.action_kind ?? ""] ?? "Décision requise"} · {doc?.club_name ?? "ActiviTee"} · {doc?.version ? `Version ${doc.version.version_number}` : "Version à vérifier"}</span></div>
             {doc?.version && <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => open(doc)}>Lire et décider <ArrowRight size={15} aria-hidden="true" /></button>}</li>;
         })}</ul>}
+        {playerProfileMissing && <div className={styles.parentConsentNotice}>
+          <LockKeyhole size={19} aria-hidden="true" /><div><strong>Date de naissance et statut à vérifier</strong>
+            <p>Votre compte est indiqué comme majeur, mais sa date de naissance ne permet pas de confirmer ce statut. Demandez à votre club de vérifier et corriger votre fiche.</p>
+            <p>Vous pourrez ensuite valider vos propres documents et accéder à votre espace.</p></div>
+        </div>}
         {juniorConsentMissing && <div className={styles.parentConsentNotice}>
           <LockKeyhole size={19} aria-hidden="true" /><div><strong>Autorisation parentale d’utilisation d’ActiviTee</strong>
             {pendingClubNames.length > 0 && <p>Autorisation encore nécessaire pour {pendingClubNames.join(", ")}.</p>}
             <p>Un de tes parents doit se connecter avec son propre compte et autoriser ton utilisation auprès de {pendingClubNames.length === 1 ? "ce club" : "chaque club concerné"}. Tu ne peux pas donner cet accord depuis ton compte Junior.</p>
             <p>Si tu es majeur, demande à ton club de vérifier ta date de naissance et ton statut.</p></div>
         </div>}
-        {juniorConsentMissing && <button type="button" className={styles.secondaryButton}
+        {(juniorConsentMissing || playerProfileMissing) && <button type="button" className={styles.secondaryButton}
           onClick={() => refresh().catch((error) => setStatus(error instanceof Error ? error.message : "Vérification indisponible."))}>
           Vérifier à nouveau
         </button>}

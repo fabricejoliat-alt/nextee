@@ -14,13 +14,22 @@ async function resolvePlayerConsentPending(supabaseAdmin: SupabaseClient, userId
     .eq("is_active", true);
   if (membershipsRes.error) throw new Error(membershipsRes.error.message);
   const memberships = (membershipsRes.data ?? []) as Array<{ club_id: string; player_consent_status: string | null }>;
-  const pending = !(await loadOrganizationAccessSummary(supabaseAdmin, userId)).some(row => row.accessible);
-  const pendingClubIds = [...new Set(memberships.filter((row) => !["granted", "adult"].includes(row.player_consent_status ?? ""))
-    .map((row) => row.club_id).filter(Boolean))];
-  if (!pending || !pendingClubIds.length) return { pending, pendingClubNames: [] as string[] };
-  const clubs = await supabaseAdmin.from("organizations").select("id,name").in("id", pendingClubIds);
+  const summary = await loadOrganizationAccessSummary(supabaseAdmin, userId);
+  if (summary.some(row => row.accessible)) return { pending: false, consentRequired: false, playerProfileRequired: false, pendingClubNames: [] as string[] };
+  const clubIds = [...new Set(memberships.map(row => row.club_id))];
+  const clubs = clubIds.length ? await supabaseAdmin.from("organizations").select("id,name,is_active").in("id", clubIds).eq("is_active", true)
+    : { data: [], error: null };
   if (clubs.error) throw new Error(clubs.error.message);
-  return { pending, pendingClubNames: pendingClubIds.map((id) => clubs.data?.find((club) => club.id === id)?.name ?? "votre club") };
+  const checks = await Promise.all(memberships.filter(row => clubs.data?.some(club => club.id === row.club_id)).map(async row => {
+    // Personal document readiness must not be mistaken for missing parental authorization.
+    const result = await supabaseAdmin.rpc("organization_player_authorized", { p_org: row.club_id, p_player: userId });
+    if (result.error || typeof result.data !== "boolean") throw new Error("Impossible de vérifier l’autorisation du joueur.");
+    return { ...row, authorized: result.data };
+  }));
+  const parentMissing = checks.filter(row => !row.authorized && row.player_consent_status !== "adult");
+  return { pending: true, consentRequired: parentMissing.length > 0,
+    playerProfileRequired: checks.some(row => !row.authorized && row.player_consent_status === "adult"),
+    pendingClubNames: parentMissing.map(row => clubs.data?.find(club => club.id === row.club_id)?.name ?? "votre club") };
 }
 
 export async function POST(req: NextRequest) {
@@ -93,8 +102,8 @@ export async function POST(req: NextRequest) {
     }
     if (role === "player") {
       const consent = await resolvePlayerConsentPending(supabaseAdmin, userId);
-      if (consent.pending) return NextResponse.json({ redirectTo: "/legal/my", consentRequired: true,
-        pendingClubNames: consent.pendingClubNames }, { headers: resHeaders });
+      if (consent.pending) return NextResponse.json({ redirectTo: "/legal/my", consentRequired: consent.consentRequired,
+        ...(consent.playerProfileRequired ? { playerProfileRequired: true } : {}), pendingClubNames: consent.pendingClubNames }, { headers: resHeaders });
     }
     return NextResponse.json({ redirectTo: "/player" }, { headers: resHeaders });
   } catch (error: unknown) {
