@@ -24,7 +24,7 @@ create index platform_news_push_pending on public.platform_news_notification_del
 create function public.enqueue_platform_news_notifications(p_news_id uuid,p_include_existing boolean default false)
 returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$
 declare
-  news public.platform_news%rowtype; target record; notification uuid; inserted_recipient bigint;
+  news public.platform_news%rowtype; target record; notification uuid; inserted_recipient public.notification_recipients.id%type;
   texts jsonb; params jsonb; french jsonb; created integer:=0; actor uuid;
 begin
   select * into news from public.platform_news where id=p_news_id for update;

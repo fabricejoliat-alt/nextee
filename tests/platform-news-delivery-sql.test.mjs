@@ -17,7 +17,7 @@ test('platform publication queues authorized recipients once, preserves targetin
       create table player_guardian_scopes(guardian_user_id uuid,player_id uuid,organization_id uuid,status text,can_view boolean);
       create table user_notification_preferences(user_id uuid,receive_in_app boolean,enabled_kinds text[]);
       create table notifications(id uuid primary key default gen_random_uuid(),actor_user_id uuid,type text,kind text,title text,body text,data jsonb);
-      create table notification_recipients(id bigserial primary key,notification_id uuid,user_id uuid);
+      create table notification_recipients(id uuid primary key default gen_random_uuid(),notification_id uuid,user_id uuid);
       create function is_app_admin(actor uuid) returns boolean language sql as $$ select actor='${id(1)}'::uuid $$;
       create function organization_actor_legal_ready(org uuid,actor uuid) returns boolean language sql as $$ select actor<>'${id(7)}'::uuid $$;
       create function organization_actor_access(org uuid,actor uuid,child uuid) returns boolean language sql as $$ select actor<>'${id(8)}'::uuid $$;
