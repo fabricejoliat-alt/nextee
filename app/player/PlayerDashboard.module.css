@@ -91,3 +91,10 @@
 @media(max-width:520px){.photoPrompt{padding:18px}.photoPromptActions{display:grid;grid-template-columns:1fr}.photoPromptActions button{width:100%}}
 
 .attendanceDetails .statusBadge{max-width:100%;box-sizing:border-box;white-space:normal;overflow-wrap:anywhere}
+
+.benchmarkDetails{display:grid;justify-items:center;gap:9px;min-width:0;text-align:center}
+.benchmarkDetails .benchmarkSignals,.monthVolume>.benchmarkSignals{justify-content:center}
+.meritMedallion{position:relative;width:150px;height:150px;display:grid;place-items:center}
+.meritMedallion svg{position:absolute;inset:0}
+.meritMedallion .meritRank{position:relative;font-size:30px;line-height:1}
+.meritRank sup{font-size:14px}

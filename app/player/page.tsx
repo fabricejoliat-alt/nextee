@@ -17,7 +17,7 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { savePlayerAttendance } from "@/lib/playerAttendanceWrite";
 import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import type { PlayerHomeSummary } from "@/lib/playerHomeSummary";
-import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CalendarCheck2, CheckCircle2, ClipboardCheck, Medal, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, ClipboardCheck, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
 import type { ValidationDashboardPayload } from "@/lib/validations";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -191,7 +191,7 @@ type HomeNewsItem = {
 
 type PendingTraining = { id: string; dateIso: string; title: string; href: string };
 type AttendanceInsight = { present: number; expected: number; rate: number; change: number | null };
-type MeritInsight = { rank: number; total: number; change: number | null } | null;
+type MeritInsight = { rank: number; total: number; points: number | null; change: number | null } | null;
 
 const PLAYER_HOME_CACHE_TTL_MS = 45_000;
 const playerHomeCacheKey = (userId: string, viewerId: string, organizationIds: string[]) =>
@@ -585,8 +585,8 @@ export default function PlayerHomePage() {
           const yearStart = `${today.slice(0, 4)}-01-01`;
           const previousMonthEnd = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 0)).toISOString().slice(0, 10);
           const [ranking, previousRanking] = await Promise.all([
-            playerMeritRead<{player_id:string;rank_net:number}>(organizationId,yearStart,today,signal),
-            previousMonthEnd >= yearStart ? playerMeritRead<{player_id:string;rank_net:number}>(organizationId,yearStart,previousMonthEnd,signal).catch(()=>[]) : Promise.resolve([]),
+            playerMeritRead<{player_id:string;rank_net:number;total_points_net:number | string | null}>(organizationId,yearStart,today,signal),
+            previousMonthEnd >= yearStart ? playerMeritRead<{player_id:string;rank_net:number;total_points_net:number | string | null}>(organizationId,yearStart,previousMonthEnd,signal).catch(()=>[]) : Promise.resolve([]),
           ]);
           if (signal.aborted) return;
           const rows = ranking;
@@ -594,6 +594,7 @@ export default function PlayerHomePage() {
           if (mine && Number.isFinite(Number(mine.rank_net))) {
             const previousMine = previousRanking.find(row => row.player_id === homeContext.userId);
             setMeritInsight({ rank: Number(mine.rank_net), total: rows.length,
+              points: mine.total_points_net != null && Number.isFinite(Number(mine.total_points_net)) ? Number(mine.total_points_net) : null,
               change: previousMine && Number.isFinite(Number(previousMine.rank_net)) ? Number(previousMine.rank_net) - Number(mine.rank_net) : null });
           }
         } catch { if (!signal.aborted) setInsightsError(true); }
@@ -1285,13 +1286,13 @@ export default function PlayerHomePage() {
           <section className={styles.benchmarksSection}>
             <div className={styles.benchmarksHeader}><div><h2>{pickLocaleText(locale, "Mes repères", "My benchmarks")}</h2><p>{pickLocaleText(locale, "Quelques indices en un coup d'oeil", "Your progress at a glance.")}</p></div></div>
             {insightsLoading || meritLoading ? <div className={styles.benchmarks}>{Array.from({ length: 2 }, (_, index) => <div className={`${styles.benchmark} ${styles.benchmarkSkeleton}`} key={index}><span /><span /><span /></div>)}</div> : <div className={styles.benchmarks}>
-              <article className={styles.benchmark}>
-                <div className={styles.benchmarkHeading}><span className={playerUiStyles.dateBox}><CalendarCheck2 size={17} /></span><h3>{pickLocaleText(locale, "Assiduité de la saison", "Season attendance", "Anwesenheit in dieser Saison", "Presenze della stagione")}</h3><Link className={styles.benchmarkLink} href="/player/golf?section=stats" aria-label={pickLocaleText(locale, "Voir les statistiques d’assiduité", "View attendance statistics")}><ArrowRight size={15} /></Link></div>
+              <article className={playerUiStyles.panel}>
+                <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Assiduité de la saison", "Season attendance", "Anwesenheit in dieser Saison", "Presenze della stagione")}</h2></div><Link className={styles.benchmarkLink} href="/player/golf?section=stats" aria-label={pickLocaleText(locale, "Voir les statistiques d’assiduité", "View attendance statistics")}><ArrowRight size={15} /></Link></div>
                 {attendanceInsight ? <>
-                  <div className={styles.attendanceLayout}>
-                    <div className={styles.attendanceRing}><AnimatedProgressRing percent={attendanceInsight.rate} size={100} label={pickLocaleText(locale, "Assiduité", "Attendance")} /></div>
-                    <div className={styles.attendanceDetails}>
-                      <span>{attendanceInsight.present} {pickLocaleText(locale, "activités sur", "activities out of")} {attendanceInsight.expected}</span>
+                  <div className={styles.monthVolume}>
+                    <AnimatedProgressRing percent={attendanceInsight.rate} label={pickLocaleText(locale, "Assiduité", "Attendance")} />
+                    <div className={styles.benchmarkDetails}>
+                      <strong>{attendanceInsight.present} {pickLocaleText(locale, "activités sur", "activities out of")} {attendanceInsight.expected}</strong>
                       <div className={styles.benchmarkSignals}>
                         {attendanceInsight.change != null ? attendanceInsight.change > 0
                           ? <BenchmarkBadge icon={ArrowUp} tone="positive">+{attendanceInsight.change} {pickLocaleText(locale, "pts vs mois précédent", "pts vs previous month")}</BenchmarkBadge>
@@ -1305,20 +1306,21 @@ export default function PlayerHomePage() {
                   </div>
                 </> : <p>{pickLocaleText(locale, "L’assiduité apparaîtra après vos premières activités confirmées.", "Attendance will appear after your first confirmed activities.")}</p>}
               </article>
-              <article className={styles.benchmark}>
-                <div className={styles.benchmarkHeading}><span className={playerUiStyles.dateBox}><Medal size={17} /></span><h3>{pickLocaleText(locale, "Ordre du mérite", "Order of merit")}</h3><Link className={styles.benchmarkLink} href="/player/om" aria-label={pickLocaleText(locale, "Voir l’ordre du mérite", "View order of merit")}><ArrowRight size={15} /></Link></div>
-                {meritInsight ? <>
-                  <div className={styles.rankLine}>
-                    <strong className={styles.rankValue}>{locale === "fr" ? <>{meritInsight.rank}<sup>{meritInsight.rank === 1 ? "er" : "e"}</sup></> : `#${meritInsight.rank}`}</strong>
-                    {meritInsight.rank >= 1 && meritInsight.rank <= 3 ? <span className={styles.rankFlame} role="img" aria-label={pickLocaleText(locale, "Podium", "Podium")}>🔥</span> : null}
+              <article className={playerUiStyles.panel}>
+                <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Ordre du mérite", "Order of merit")}</h2></div><Link className={styles.benchmarkLink} href="/player/om" aria-label={pickLocaleText(locale, "Voir l’ordre du mérite", "View order of merit")}><ArrowRight size={15} /></Link></div>
+                {meritInsight ? <div className={styles.monthVolume}>
+                  <div className={styles.meritMedallion}>
+                    <svg width="150" height="150" viewBox="0 0 140 140" aria-hidden="true"><circle cx="70" cy="70" r="54" strokeWidth="14" stroke="#e9eee7" fill="none" /></svg>
+                    <strong className={styles.meritRank}>{locale === "fr" ? <>{meritInsight.rank}<sup>{meritInsight.rank === 1 ? "er" : "e"}</sup></> : `#${meritInsight.rank}`}</strong>
                   </div>
+                  <strong>{meritInsight.points == null ? "—" : new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(meritInsight.points)} {pickLocaleText(locale, "points de la saison", "season points", "Saisonpunkte", "punti della stagione")}</strong>
                   <span>{pickLocaleText(locale, "sur", "of")} {meritInsight.total} {meritInsight.total === 1 ? pickLocaleText(locale, "joueur actif", "active player", "aktiver Spieler", "giocatore attivo") : pickLocaleText(locale, "joueurs actifs", "active players", "aktive Spieler", "giocatori attivi")}</span>
                   {meritInsight.change != null ? <div className={styles.benchmarkSignals}>
                     {meritInsight.change > 0 ? <BenchmarkBadge icon={ArrowUp} tone="positive">{meritInsight.change} {pickLocaleText(locale, meritInsight.change === 1 ? "place gagnée" : "places gagnées", meritInsight.change === 1 ? "place gained" : "places gained")}</BenchmarkBadge>
                       : meritInsight.change < 0 ? <BenchmarkBadge icon={ArrowDown} tone="caution">{Math.abs(meritInsight.change)} {pickLocaleText(locale, Math.abs(meritInsight.change) === 1 ? "place de moins" : "places de moins", Math.abs(meritInsight.change) === 1 ? "place lower" : "places lower")}</BenchmarkBadge>
                         : <BenchmarkBadge icon={ArrowRight} tone="neutral">{pickLocaleText(locale, "Classement stable", "Ranking stable")}</BenchmarkBadge>}
-                  </div> : null}
-                </> : <p>{pickLocaleText(locale, "Aucun classement net disponible pour le moment.", "No net ranking available yet.")}</p>}
+                  </div> : <p>{pickLocaleText(locale, "Tendance disponible dès le prochain classement mensuel.", "Trend available with the next monthly ranking.", "Trend ab der nächsten monatlichen Rangliste verfügbar.", "Tendenza disponibile dalla prossima classifica mensile.")}</p>}
+                </div> : <p>{pickLocaleText(locale, "Aucun classement net disponible pour le moment.", "No net ranking available yet.")}</p>}
               </article>
             </div>}
           </section>
