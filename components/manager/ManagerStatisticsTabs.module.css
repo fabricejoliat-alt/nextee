@@ -1,3 +1,4 @@
+.mobileSelect { display: none; }
 .tabs {
   display: flex;
   gap: 5px;
@@ -37,6 +38,11 @@
 }
 
 @media (max-width: 760px) {
+  .desktopTabs { display: none; }
+  .mobileSelect { display: flex; align-items: center; position: relative; }
+  .mobileSelect select { appearance: none; width: 100%; min-width: 0; min-height: 48px; border: 1px solid #dce5d9; border-radius: 12px; background: #f1f5ee; padding: 12px 44px 12px 14px; color: #35483b; font: 700 15px var(--font-inter), sans-serif; }
+  .mobileSelect select:focus-visible { outline: 2px solid #607b5b; outline-offset: 2px; }
+  .mobileSelect svg { position: absolute; right: 14px; pointer-events: none; color: #35483b; }
   .mobileGrid {
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));

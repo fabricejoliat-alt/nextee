@@ -6,9 +6,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { dashboardTrainingPeriod } from "@/lib/coachPlayerDashboard";
 import { useRememberedPeriod } from "@/lib/useRememberedPeriod";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
-import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
@@ -60,7 +60,7 @@ import ManagerStatisticsTabs from "@/components/manager/ManagerStatisticsTabs";
 import TrainingDashboard from "@/components/golf/TrainingDashboard";
 import GolfRoundsWorkspace from "@/components/golf/GolfRoundsWorkspace";
 import CoachPlayerFollowup from "@/components/coach/player-detail/CoachPlayerFollowup";
-import type { CoachFollowupEvent, CoachFollowupSelfEvaluation, CoachFollowupCriterion, CoachFollowupResponse, CoachFollowupAttendance } from "@/lib/coachPlayerFollowup";
+import type { CoachFollowupEvent, CoachFollowupSelfEvaluation, CoachFollowupCriterion, CoachFollowupResponse } from "@/lib/coachPlayerFollowup";
 import { CoachActivityAction } from "@/components/coach/CoachActivityCard";
 import { coachCalendarActionState } from "@/lib/coachCalendar";
 import CoachPlayerActivityCard from "@/components/coach/player-detail/CoachPlayerActivityCard";
@@ -187,14 +187,7 @@ type TrainingVolumeClubConfig = {
   rows: TrainingVolumeTargetRow[];
 };
 
-type OmTournamentScoreRow = {
-  round_id: string;
-  score_gross: number | null;
-  score_net: number | null;
-};
-
 type Preset = "season" | "lastSeason" | "week" | "month" | "last3" | "all" | "custom";
-type TrainingScope = "all" | "mine_club";
 type EvalChartMode = "curve" | "trend";
 type DashboardSection = "overview" | "trainings" | "competition" | "stats" | "planning" | "followup" | "thread" | "documents" | "evaluations" | "validations";
 type Role = "coach" | "manager" | "player";
@@ -726,6 +719,9 @@ export default function GolfDashboardPage() {
   const [loadingPrevHoles, setLoadingPrevHoles] = useState(false);
   const [loadingTrainLookback, setLoadingTrainLookback] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [dashboardError, setDashboardError] = useState<string | null>(null);
+  const [dashboardRetry, setDashboardRetry] = useState(0);
+  const [trainingAttendanceOverview, setTrainingAttendanceOverview] = useState<{ present: number; total: number; rate: number | null; trend: number | null }>({ present: 0, total: 0, rate: null, trend: null });
 
   const { period: preset, setPeriod: setPreset, from: fromDate, setFrom: setFromDate, to: toDate, setTo: setToDate } = useRememberedPeriod<Preset>(`coach:player:${playerId}`, "season", ["season", "lastSeason", "week", "month", "last3", "all", "custom"]);
   const [customOpen, setCustomOpen] = useState(false);
@@ -737,10 +733,6 @@ export default function GolfDashboardPage() {
 
   const [prevSessions, setPrevSessions] = useState<TrainingSessionRow[]>([]);
   const [prevItems, setPrevItems] = useState<TrainingItemRow[]>([]);
-  const [plannedClubMinutes, setPlannedClubMinutes] = useState<number>(0);
-  const [prevPlannedClubMinutes, setPrevPlannedClubMinutes] = useState<number>(0);
-  const [plannedClubEventsCount, setPlannedClubEventsCount] = useState<number>(0);
-  const [isPerformanceEnabled, setIsPerformanceEnabled] = useState(false);
 
   const [rounds, setRounds] = useState<GolfRoundRow[]>([]);
   const [roundsError, setRoundsError] = useState<string | null>(null);
@@ -749,16 +741,15 @@ export default function GolfDashboardPage() {
   const [followupSelf, setFollowupSelf] = useState<CoachFollowupSelfEvaluation[]>([]);
   const [followupCriteria, setFollowupCriteria] = useState<CoachFollowupCriterion[]>([]);
   const [followupResponses, setFollowupResponses] = useState<CoachFollowupResponse[]>([]);
-  const [followupAttendance, setFollowupAttendance] = useState<CoachFollowupAttendance[]>([]);
   const [followupError, setFollowupError] = useState<string | null>(null);
   const [prevRounds, setPrevRounds] = useState<GolfRoundRow[]>([]);
-  const [omScoresByRoundId, setOmScoresByRoundId] = useState<Record<string, { gross: number | null; net: number | null }>>({});
+  const [omScoresByRoundId] = useState<Record<string, { gross: number | null; net: number | null }>>({});
 
   const [holes, setHoles] = useState<GolfHoleRow[]>([]);
   const [prevHoles, setPrevHoles] = useState<GolfHoleRow[]>([]);
 
-  const [sessionsLookback, setSessionsLookback] = useState<TrainingSessionRow[]>([]);
-  const [itemsLookback, setItemsLookback] = useState<TrainingItemRow[]>([]);
+  const [sessionsLookback] = useState<TrainingSessionRow[]>([]);
+  const [itemsLookback] = useState<TrainingItemRow[]>([]);
   const [accessChecked, setAccessChecked] = useState(false);
   const [canLoadData, setCanLoadData] = useState(false);
   const [canAccessSensitiveSections, setCanAccessSensitiveSections] = useState(false);
@@ -768,7 +759,6 @@ export default function GolfDashboardPage() {
   const [sharedClubIds, setSharedClubIds] = useState<string[]>([]);
   const [sensitiveClubIds, setSensitiveClubIds] = useState<string[]>([]);
   const [coachId, setCoachId] = useState<string>("");
-  const [trainingScope, setTrainingScope] = useState<TrainingScope>("all");
   const [coachEvaluations, setCoachEvaluations] = useState<CoachEvaluationRow[]>([]);
   const [loadingCoachEvaluations, setLoadingCoachEvaluations] = useState(false);
   const [validatedPrivateNotes, setValidatedPrivateNotes] = useState<ValidatedPrivateNote[]>([]);
@@ -964,8 +954,11 @@ export default function GolfDashboardPage() {
     };
   }, [activeSection, canLoadData, playerId, validationDashboard?.effective_player_id]);
 
-  const shouldLoadTrainingData = canLoadData && (activeSection === "overview" || activeSection === "trainings");
-  const shouldLoadRoundData = canLoadData && (activeSection === "overview" || activeSection === "trainings" || activeSection === "competition" || activeSection === "stats");
+  const dashboardView = activeSection === "overview" || activeSection === "trainings" ? "overview"
+    : activeSection === "stats" || activeSection === "competition" ? activeSection : null;
+
+  const periodCoachEvaluations = useMemo(() => coachEvaluations.filter(event =>
+    (!fromDate || event.starts_at >= startOfDayISO(fromDate)) && (!toDate || event.starts_at < nextDayStartISO(toDate))), [coachEvaluations, fromDate, toDate]);
 
   const validationAttemptCount = useMemo(() => {
     if (!validationDashboard) return 0;
@@ -1116,67 +1109,65 @@ export default function GolfDashboardPage() {
     return t("golfDashboard.vsPrevPeriod");
   }, [prevRange, preset, t]);
 
-  // ===== LOAD TRAININGS (current) =====
+  // One authorized, paginated response keeps the cards and graphs consistent.
   useEffect(() => {
-    (async () => {
-      if (!shouldLoadTrainingData) {
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      setError(null);
-
+    if (!canLoadData || !dashboardView || !playerId) { setLoading(false); return; }
+    if (fromDate && toDate && fromDate > toDate) return;
+    const controller = new AbortController();
+    const isTraining = dashboardView === "overview";
+    setDashboardError(null);
+    setLoading(isTraining);
+    setLoadingPrev(isTraining && Boolean(prevRange));
+    setLoadingRounds(true);
+    setLoadingHoles(dashboardView === "stats" || dashboardView === "competition");
+    setLoadingPrevRounds(Boolean(prevRange));
+    setLoadingPrevHoles(Boolean(prevRange) && dashboardView === "stats");
+    void (async () => {
       try {
-        const uid = playerId;
-
-        let q = supabase
-          .from("training_sessions")
-          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,club_id,coach_user_id")
-          .eq("user_id", uid)
-          .order("start_at", { ascending: true });
-
-        if (fromDate) q = q.gte("start_at", startOfDayISO(fromDate));
-        if (toDate) q = q.lt("start_at", nextDayStartISO(toDate));
-        q = q.limit(2000);
-
-        const sRes = await q;
-        if (sRes.error) throw new Error(sRes.error.message);
-
-        const sess = (sRes.data ?? []) as TrainingSessionRow[];
-        setSessions(sess);
-
-        const ids = sess.map((s) => s.id);
-        if (ids.length === 0) {
-          setItems([]);
-          setLoading(false);
-          return;
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) throw new Error("Session invalide.");
+        const query = new URLSearchParams({ view: dashboardView });
+        if (fromDate) query.set("from", fromDate);
+        if (toDate) query.set("to", toDate);
+        if (prevRange) { query.set("prev_from", prevRange.from); query.set("prev_to", prevRange.to); }
+        const response = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/dashboard?${query}`, {
+          headers: { Authorization: `Bearer ${token}` }, cache: "no-store", signal: controller.signal,
+        });
+        const body = await response.json();
+        if (controller.signal.aborted) return;
+        if (!response.ok) throw new Error(String(body.error ?? t("common.errorLoading")));
+        type TrainingPeriod = ReturnType<typeof dashboardTrainingPeriod>;
+        const current = body.training?.current as TrainingPeriod | undefined;
+        const previous = body.training?.previous as TrainingPeriod | undefined;
+        if (current) {
+          setSessions(current.sessions); setItems(current.items);
+          setPrevSessions(previous?.sessions ?? []); setPrevItems(previous?.items ?? []);
+          setTrainingVolumeSummary({ current: { minutes: current.minutes, count: current.count },
+            previous: { minutes: previous?.minutes ?? 0, count: previous?.count ?? 0 } });
+          setTrainingAttendanceOverview({ ...current.attendance,
+            trend: current.attendance.rate != null && previous?.attendance.rate != null ? current.attendance.rate - previous.attendance.rate : null });
         }
-
-        const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in("session_id", ids);
-        if (iRes.error) throw new Error(iRes.error.message);
-
-        setItems((iRes.data ?? []) as TrainingItemRow[]);
-        setLoading(false);
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : "Erreur chargement.";
-        setError(msg);
-        setSessions([]);
-        setItems([]);
-        setLoading(false);
+        setRounds(body.rounds ?? []); setPrevRounds(body.prevRounds ?? []);
+        setHoles(body.holes ?? []); setPrevHoles(body.prevHoles ?? []);
+        setRoundsError(null); setHolesError(null);
+      } catch (cause) {
+        if (controller.signal.aborted) return;
+        const message = cause instanceof Error ? cause.message : t("common.errorLoading");
+        setDashboardError(message); setRoundsError(message);
+        setSessions([]); setItems([]); setPrevSessions([]); setPrevItems([]);
+        setTrainingVolumeSummary(null);
+        setTrainingAttendanceOverview({ present: 0, total: 0, rate: null, trend: null });
+        setRounds([]); setPrevRounds([]); setHoles([]); setPrevHoles([]);
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false); setLoadingPrev(false); setLoadingRounds(false); setLoadingPrevRounds(false);
+          setLoadingHoles(false); setLoadingPrevHoles(false);
+        }
       }
     })();
-  }, [shouldLoadTrainingData, fromDate, playerId, toDate]);
-
-  useEffect(() => {
-    (async () => {
-      if (!shouldLoadTrainingData || !playerId) {
-        setIsPerformanceEnabled(false);
-        return;
-      }
-      const perfEnabled = await isEffectivePlayerPerformanceEnabled(playerId);
-      setIsPerformanceEnabled(perfEnabled);
-    })();
-  }, [shouldLoadTrainingData, playerId]);
+    return () => controller.abort();
+  }, [canLoadData, dashboardView, playerId, fromDate, toDate, prevRange, dashboardRetry, t]);
 
   // ===== LOAD COACH EVALUATIONS (past trainings) =====
   useEffect(() => {
@@ -1203,7 +1194,6 @@ export default function GolfDashboardPage() {
         setFollowupSelf(body.selfEvaluations ?? []);
         setFollowupCriteria(body.criteria ?? []);
         setFollowupResponses(body.responses ?? []);
-        setFollowupAttendance(body.attendance ?? []);
         const feedbacks = (body.feedback ?? []) as CoachEvaluationFeedbackRow[];
         const events = (body.events ?? []) as CoachEvaluationEventRow[];
         const eventById = new Map(events.map((e) => [e.id, e]));
@@ -1235,7 +1225,7 @@ export default function GolfDashboardPage() {
       } catch {
         if (!active) return;
         setCoachEvaluations([]);
-        setFollowupEvents([]); setFollowupSelf([]); setFollowupCriteria([]); setFollowupResponses([]); setFollowupAttendance([]);
+        setFollowupEvents([]); setFollowupSelf([]); setFollowupCriteria([]); setFollowupResponses([]);
         setFollowupError(t("common.errorLoading"));
       } finally {
         if (active) setLoadingCoachEvaluations(false);
@@ -1276,384 +1266,6 @@ export default function GolfDashboardPage() {
     };
   }, [activeSection, canAccessSensitiveSections, canLoadData, playerId]);
 
-  // ===== LOAD TRAININGS (prev KPIs) =====
-  useEffect(() => {
-    (async () => {
-      if (!shouldLoadTrainingData) {
-        setPrevSessions([]);
-        setPrevItems([]);
-        return;
-      }
-      if (!prevRange) {
-        setPrevSessions([]);
-        setPrevItems([]);
-        return;
-      }
-
-      setLoadingPrev(true);
-      try {
-        const uid = playerId;
-
-        let q = supabase
-          .from("training_sessions")
-          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,club_id,coach_user_id")
-          .eq("user_id", uid)
-          .order("start_at", { ascending: true });
-
-        q = q.gte("start_at", startOfDayISO(prevRange.from)).lt("start_at", nextDayStartISO(prevRange.to)).limit(2000);
-
-        const res = await q;
-        if (res.error) throw new Error(res.error.message);
-
-        const sess = (res.data ?? []) as TrainingSessionRow[];
-        setPrevSessions(sess);
-
-        const ids = sess.map((s) => s.id);
-        if (ids.length === 0) {
-          setPrevItems([]);
-          return;
-        }
-
-        const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in("session_id", ids);
-        if (iRes.error) throw new Error(iRes.error.message);
-
-        setPrevItems((iRes.data ?? []) as TrainingItemRow[]);
-      } catch {
-        setPrevSessions([]);
-        setPrevItems([]);
-      } finally {
-        setLoadingPrev(false);
-      }
-    })();
-  }, [shouldLoadTrainingData, playerId, prevRange, prevRange?.from, prevRange?.to]);
-
-  useEffect(() => {
-    (async () => {
-      if (!shouldLoadTrainingData || !playerId) {
-        setPlannedClubMinutes(0);
-        setPlannedClubEventsCount(0);
-        return;
-      }
-      const attendeeRes = await supabase
-        .from("club_event_attendees")
-        .select("event_id")
-        .eq("player_id", playerId)
-        .eq("status", "present");
-      const attendeeEventIds = Array.from(
-        new Set(((attendeeRes.data ?? []) as Array<{ event_id: string | null }>).map((r) => r.event_id).filter((v): v is string => Boolean(v)))
-      );
-      if (attendeeEventIds.length === 0) {
-        setPlannedClubMinutes(0);
-        setPlannedClubEventsCount(0);
-        return;
-      }
-      let q = supabase
-        .from("club_events")
-        .select("id,club_id,starts_at,ends_at,duration_minutes,status")
-        .in("id", attendeeEventIds)
-        .neq("status", "cancelled")
-        .lt("starts_at", new Date().toISOString());
-      if (fromDate) q = q.gte("starts_at", startOfDayISO(fromDate));
-      if (toDate) q = q.lt("starts_at", nextDayStartISO(toDate));
-      if (trainingScope === "mine_club" && sharedClubIds.length > 0) q = q.in("club_id", sharedClubIds);
-      const res = await q;
-      if (res.error) {
-        setPlannedClubMinutes(0);
-        setPlannedClubEventsCount(0);
-        return;
-      }
-      setPlannedClubEventsCount((res.data ?? []).length);
-      const total = (res.data ?? []).reduce((sum, row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
-        const mins = Number(row.duration_minutes ?? 0);
-        if (Number.isFinite(mins) && mins > 0) return sum + mins;
-        if (row.starts_at && row.ends_at) {
-          const diff = Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000);
-          return sum + (Number.isFinite(diff) && diff > 0 ? diff : 0);
-        }
-        return sum;
-      }, 0);
-      setPlannedClubMinutes(total);
-    })();
-  }, [shouldLoadTrainingData, playerId, fromDate, toDate, trainingScope, sharedClubIds]);
-
-  useEffect(() => {
-    (async () => {
-      if (!shouldLoadTrainingData || !playerId || !prevRange) {
-        setPrevPlannedClubMinutes(0);
-        return;
-      }
-      const attendeeRes = await supabase
-        .from("club_event_attendees")
-        .select("event_id")
-        .eq("player_id", playerId)
-        .eq("status", "present");
-      const attendeeEventIds = Array.from(
-        new Set(((attendeeRes.data ?? []) as Array<{ event_id: string | null }>).map((r) => r.event_id).filter((v): v is string => Boolean(v)))
-      );
-      if (attendeeEventIds.length === 0) {
-        setPrevPlannedClubMinutes(0);
-        return;
-      }
-      let q = supabase
-        .from("club_events")
-        .select("id,club_id,starts_at,ends_at,duration_minutes,status")
-        .in("id", attendeeEventIds)
-        .neq("status", "cancelled")
-        .gte("starts_at", startOfDayISO(prevRange.from))
-        .lt("starts_at", nextDayStartISO(prevRange.to));
-      if (trainingScope === "mine_club" && sharedClubIds.length > 0) q = q.in("club_id", sharedClubIds);
-      const res = await q;
-      if (res.error) {
-        setPrevPlannedClubMinutes(0);
-        return;
-      }
-      const total = (res.data ?? []).reduce((sum, row: { starts_at: string | null; ends_at: string | null; duration_minutes: number | null }) => {
-        const mins = Number(row.duration_minutes ?? 0);
-        if (Number.isFinite(mins) && mins > 0) return sum + mins;
-        if (row.starts_at && row.ends_at) {
-          const diff = Math.round((new Date(row.ends_at).getTime() - new Date(row.starts_at).getTime()) / 60000);
-          return sum + (Number.isFinite(diff) && diff > 0 ? diff : 0);
-        }
-        return sum;
-      }, 0);
-      setPrevPlannedClubMinutes(total);
-    })();
-  }, [shouldLoadTrainingData, playerId, prevRange, trainingScope, sharedClubIds]);
-
-  // ===== LOAD ROUNDS (current) =====
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      if (!shouldLoadRoundData) {
-        setRounds([]);
-        setLoadingRounds(false);
-        return;
-      }
-      setLoadingRounds(true);
-      setRoundsError(null);
-      try {
-        const rows: GolfRoundRow[] = [];
-        for (let offset = 0; ; offset += 500) {
-          let query = supabase.from("golf_rounds")
-            .select("id,start_at,round_type,score_entry_mode,competition_name,course_name,location,tee_name,handicap_start,slope_rating,course_rating,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus")
-            .eq("user_id", playerId).order("start_at", { ascending: true }).order("id");
-          if (activeSection !== "competition" && fromDate) query = query.gte("start_at", startOfDayISO(fromDate));
-          if (activeSection !== "competition" && toDate) query = query.lt("start_at", nextDayStartISO(toDate));
-          const result = await query.range(offset, offset + 499);
-          if (!active) return;
-          if (result.error) throw new Error(result.error.message);
-          rows.push(...(result.data ?? []) as GolfRoundRow[]);
-          if ((result.data?.length ?? 0) < 500) break;
-        }
-        setRounds(rows);
-      } catch {
-        if (!active) return;
-        setRoundsError(t("common.errorLoading"));
-        setRounds([]);
-      } finally {
-        if (active) setLoadingRounds(false);
-      }
-    })();
-    return () => { active = false; };
-  }, [shouldLoadRoundData, activeSection, fromDate, playerId, toDate, t]);
-
-  // ===== LOAD ROUNDS (prev, for trends) =====
-  useEffect(() => {
-    (async () => {
-      if (!shouldLoadRoundData) {
-        setPrevRounds([]);
-        setLoadingPrevRounds(false);
-        return;
-      }
-      if (!prevRange) {
-        setPrevRounds([]);
-        return;
-      }
-
-      setLoadingPrevRounds(true);
-      try {
-        const uid = playerId;
-
-        const q = supabase
-          .from("golf_rounds")
-          .select("id,start_at,round_type,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus")
-          .eq("user_id", uid)
-          .gte("start_at", startOfDayISO(prevRange.from))
-          .lt("start_at", nextDayStartISO(prevRange.to))
-          .order("start_at", { ascending: true })
-          .limit(2000);
-
-        const rRes = await q;
-        if (rRes.error) throw new Error(rRes.error.message);
-
-        setPrevRounds((rRes.data ?? []) as GolfRoundRow[]);
-      } catch {
-        setPrevRounds([]);
-      } finally {
-        setLoadingPrevRounds(false);
-      }
-    })();
-  }, [shouldLoadRoundData, playerId, prevRange, prevRange?.from, prevRange?.to]);
-
-  // ===== LOAD HOLES (current) =====
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      setHolesError(null);
-      if (!shouldLoadRoundData) {
-        setHoles([]);
-        setLoadingHoles(false);
-        return;
-      }
-      setLoadingHoles(true);
-      try {
-        const ids = rounds.map((round) => round.id);
-        const rows: GolfHoleRow[] = [];
-        for (let batch = 0; batch < ids.length; batch += 150) {
-          for (let offset = 0; ; offset += 500) {
-            const result = await supabase.from("golf_round_holes")
-              .select("round_id,hole_no,par,score,putts,fairway_hit")
-              .in("round_id", ids.slice(batch, batch + 150))
-              .order("round_id").order("hole_no").range(offset, offset + 499);
-            if (!active) return;
-            if (result.error) throw new Error(result.error.message);
-            rows.push(...(result.data ?? []) as GolfHoleRow[]);
-            if ((result.data?.length ?? 0) < 500) break;
-          }
-        }
-        setHoles(rows);
-      } catch {
-        if (!active) return;
-        setHoles([]);
-        setHolesError(t("common.errorLoading"));
-      } finally {
-        if (active) setLoadingHoles(false);
-      }
-    })();
-    return () => { active = false; };
-  }, [shouldLoadRoundData, rounds, t]);
-
-  // ===== LOAD OM SCORES (gross/net) FOR CURRENT ROUNDS =====
-  useEffect(() => {
-    (async () => {
-      if (!shouldLoadRoundData) {
-        setOmScoresByRoundId({});
-        return;
-      }
-      try {
-        const ids = rounds.map((r) => r.id);
-        if (ids.length === 0) {
-          setOmScoresByRoundId({});
-          return;
-        }
-        const res = await supabase.from("om_tournament_scores").select("round_id,score_gross,score_net").in("round_id", ids);
-        if (res.error) {
-          setOmScoresByRoundId({});
-          return;
-        }
-        const map: Record<string, { gross: number | null; net: number | null }> = {};
-        for (const row of (res.data ?? []) as OmTournamentScoreRow[]) {
-          map[row.round_id] = {
-            gross: typeof row.score_gross === "number" ? row.score_gross : null,
-            net: typeof row.score_net === "number" ? row.score_net : null,
-          };
-        }
-        setOmScoresByRoundId(map);
-      } catch {
-        setOmScoresByRoundId({});
-      }
-    })();
-  }, [shouldLoadRoundData, rounds]);
-
-  // ===== LOAD HOLES (prev) =====
-  useEffect(() => {
-    (async () => {
-      if (!shouldLoadRoundData) {
-        setPrevHoles([]);
-        setLoadingPrevHoles(false);
-        return;
-      }
-      setLoadingPrevHoles(true);
-      try {
-        if (!prevRange) {
-          setPrevHoles([]);
-          return;
-        }
-        const ids = prevRounds.map((r) => r.id);
-        if (ids.length === 0) {
-          setPrevHoles([]);
-          return;
-        }
-
-        const hRes = await supabase
-          .from("golf_round_holes")
-          .select("round_id,hole_no,par,score,putts,fairway_hit")
-          .in("round_id", ids);
-
-        if (hRes.error) throw new Error(hRes.error.message);
-        setPrevHoles((hRes.data ?? []) as GolfHoleRow[]);
-      } catch {
-        setPrevHoles([]);
-      } finally {
-        setLoadingPrevHoles(false);
-      }
-    })();
-  }, [shouldLoadRoundData, prevRange, prevRounds]);
-
-  // ===== LOAD TRAININGS LOOKBACK (for correlation) =====
-  useEffect(() => {
-    (async () => {
-      if (!shouldLoadTrainingData) {
-        setSessionsLookback([]);
-        setItemsLookback([]);
-        setLoadingTrainLookback(false);
-        return;
-      }
-      setLoadingTrainLookback(true);
-      try {
-        const uid = playerId;
-
-        const now = new Date();
-        const fallbackFrom = isoToYMD(new Date(now.getFullYear(), now.getMonth() - 2, 1));
-        const from = fromDate || fallbackFrom;
-        const to = toDate || isoToYMD(now);
-
-        const fromISO = toISOStartMinusDays(from, LOOKBACK_DAYS);
-        const toISO = nextDayStartISO(to);
-
-        const sRes = await supabase
-          .from("training_sessions")
-          .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,club_id,coach_user_id")
-          .eq("user_id", uid)
-          .gte("start_at", fromISO)
-          .lt("start_at", toISO)
-          .order("start_at", { ascending: true })
-          .limit(4000);
-
-        if (sRes.error) throw new Error(sRes.error.message);
-
-        const sess = (sRes.data ?? []) as TrainingSessionRow[];
-        setSessionsLookback(sess);
-
-        const ids = sess.map((s) => s.id);
-        if (ids.length === 0) {
-          setItemsLookback([]);
-          return;
-        }
-
-        const iRes = await supabase.from("training_session_items").select("session_id,category,minutes").in("session_id", ids);
-        if (iRes.error) throw new Error(iRes.error.message);
-
-        setItemsLookback((iRes.data ?? []) as TrainingItemRow[]);
-      } catch {
-        setSessionsLookback([]);
-        setItemsLookback([]);
-      } finally {
-        setLoadingTrainLookback(false);
-      }
-    })();
-  }, [shouldLoadTrainingData, fromDate, playerId, toDate]);
-      
   const PRESET_LABEL: Record<Preset, string> = {
     season: t("coach.training.season"),
     lastSeason: t("coach.training.lastSeason"),
@@ -1675,66 +1287,12 @@ function presetToSelectValue(p: Preset): Preset {
     if (preset === "custom") return pickLocaleText(locale, "Volume de la période", "Period training volume");
     return t("golfDashboard.volume");
   }, [locale, preset, t]);
-  const filteredSessions = useMemo(() => {
-    if (trainingScope === "all") return sessions;
-    return sessions.filter(
-      (s) =>
-        s.session_type === "club" &&
-        s.coach_user_id === coachId &&
-        !!s.club_id &&
-        sharedClubIds.includes(s.club_id)
-    );
-  }, [trainingScope, sessions, coachId, sharedClubIds]);
-
-  const filteredSessionIds = useMemo(
-    () => new Set(filteredSessions.map((s) => s.id)),
-    [filteredSessions]
-  );
-
-  const filteredItems = useMemo(
-    () => items.filter((it) => filteredSessionIds.has(it.session_id)),
-    [items, filteredSessionIds]
-  );
-
-  const filteredPrevSessions = useMemo(() => {
-    if (trainingScope === "all") return prevSessions;
-    return prevSessions.filter(
-      (s) =>
-        s.session_type === "club" &&
-        s.coach_user_id === coachId &&
-        !!s.club_id &&
-        sharedClubIds.includes(s.club_id)
-    );
-  }, [trainingScope, prevSessions, coachId, sharedClubIds]);
-
-  const filteredPrevSessionIds = useMemo(
-    () => new Set(filteredPrevSessions.map((s) => s.id)),
-    [filteredPrevSessions]
-  );
-
-  const filteredPrevItems = useMemo(
-    () => prevItems.filter((it) => filteredPrevSessionIds.has(it.session_id)),
-    [prevItems, filteredPrevSessionIds]
-  );
-
-  // ===== TRAININGS AGGREGATES (current + prev) =====
-  const totalMinutes = useMemo(
-    () => {
-      if (trainingVolumeSummary) return trainingVolumeSummary.current.minutes;
-      if (isPerformanceEnabled) return filteredItems.reduce((sum, it) => sum + (it.minutes || 0), 0);
-      return plannedClubMinutes;
-    },
-    [trainingVolumeSummary, isPerformanceEnabled, filteredItems, plannedClubMinutes]
-  );
-  const displayedTrainingCount = useMemo(
-    () =>
-      trainingVolumeSummary
-        ? trainingVolumeSummary.current.count
-        : isPerformanceEnabled
-          ? filteredSessions.length
-          : plannedClubEventsCount,
-    [trainingVolumeSummary, isPerformanceEnabled, filteredSessions.length, plannedClubEventsCount]
-  );
+  const filteredSessions = sessions;
+  const filteredItems = items;
+  const filteredPrevSessions = prevSessions;
+  const filteredPrevItems = prevItems;
+  const totalMinutes = trainingVolumeSummary?.current.minutes ?? 0;
+  const displayedTrainingCount = trainingVolumeSummary?.current.count ?? 0;
   const trainingLevel = trainingVolumeLevelFromDb ?? "—";
   const trainingVolumeObjective = trainingVolumeObjectiveFromDb ?? 0;
   const weeklyObjectiveMinutes = useMemo(
@@ -1768,19 +1326,6 @@ function presetToSelectValue(p: Preset): Preset {
     }
     return total;
   }, [fromDate, toDate, weeklyObjectiveMinutes, trainingVolumeConfigs, handicapForDate]);
-  const trainingAttendanceOverview = useMemo(() => {
-    const calculate = (from: string, to: string) => {
-      const eligible = followupEvents.filter((event) => event.event_type === "training"
-        && (!from || event.starts_at >= startOfDayISO(from)) && (!to || event.starts_at < nextDayStartISO(to)));
-      const ids = new Set(eligible.map((event) => event.id));
-      const recorded = followupAttendance.filter((row) => ids.has(row.event_id) && ["present", "absent"].includes(row.coach_recorded_status ?? ""));
-      const present = recorded.filter((row) => row.coach_recorded_status === "present").length;
-      return { present, total: recorded.length, rate: recorded.length ? Math.round(present / recorded.length * 100) : null };
-    };
-    const current = calculate(fromDate, toDate);
-    const previous = prevRange ? calculate(prevRange.from, prevRange.to) : null;
-    return { ...current, trend: current.rate != null && previous?.rate != null ? current.rate - previous.rate : null };
-  }, [followupEvents, followupAttendance, fromDate, toDate, prevRange]);
   const trainingVolumePercent =
     displayedTrainingVolumeObjective > 0
       ? Math.max(0, Math.round((totalMinutes / displayedTrainingVolumeObjective) * 100))
@@ -1876,31 +1421,6 @@ function presetToSelectValue(p: Preset): Preset {
   const avgDifficulty = useMemo(() => avg(filteredSessions.map((s) => s.difficulty)), [filteredSessions]);
   const avgSatisfaction = useMemo(() => avg(filteredSessions.map((s) => s.satisfaction)), [filteredSessions]);
 
-  const nonPerformanceManualSessions = useMemo(
-    () =>
-      filteredSessions.filter(
-        (session) =>
-          !session.club_event_id &&
-          (session.session_type === "individual" || session.session_type === "private")
-      ),
-    [filteredSessions]
-  );
-
-  const byType = useMemo(() => {
-    if (!isPerformanceEnabled) {
-      const manualPrivateCount = nonPerformanceManualSessions.filter((session) => session.session_type === "private").length;
-      const manualIndividualCount = nonPerformanceManualSessions.filter((session) => session.session_type === "individual").length;
-      return {
-        club: plannedClubEventsCount,
-        private: manualPrivateCount,
-        individual: manualIndividualCount,
-      } satisfies Record<SessionType, number>;
-    }
-    const m: Record<SessionType, number> = { club: 0, private: 0, individual: 0 };
-    for (const s of filteredSessions) m[s.session_type] += 1;
-    return m;
-  }, [isPerformanceEnabled, plannedClubEventsCount, filteredSessions, nonPerformanceManualSessions]);
-
   const minutesByCat = useMemo(() => {
     const map: Record<string, number> = {};
     for (const it of filteredItems) map[it.category] = (map[it.category] ?? 0) + (it.minutes || 0);
@@ -1918,68 +1438,7 @@ function presetToSelectValue(p: Preset): Preset {
     return m || 1;
   }, [topCats]);
 
-  const prevTotalMinutes = useMemo(
-    () => {
-      if (trainingVolumeSummary) return trainingVolumeSummary.previous.minutes;
-      if (isPerformanceEnabled) return filteredPrevItems.reduce((sum, it) => sum + (it.minutes || 0), 0);
-      return prevPlannedClubMinutes;
-    },
-    [trainingVolumeSummary, isPerformanceEnabled, filteredPrevItems, prevPlannedClubMinutes]
-  );
-  useEffect(() => {
-    (async () => {
-      if (!shouldLoadTrainingData || !playerId) {
-        setTrainingVolumeSummary(null);
-        return;
-      }
-      try {
-        const { data: sess } = await supabase.auth.getSession();
-        const token = sess.session?.access_token ?? "";
-        if (!token) {
-          setTrainingVolumeSummary(null);
-          return;
-        }
-
-        const params = new URLSearchParams();
-        params.set("scope", trainingScope);
-        if (fromDate) params.set("from", fromDate);
-        if (toDate) params.set("to", toDate);
-        if (prevRange?.from) params.set("prev_from", prevRange.from);
-        if (prevRange?.to) params.set("prev_to", prevRange.to);
-
-        const res = await fetch(
-          `/api/coach/players/${encodeURIComponent(playerId)}/training-volume-summary?${params.toString()}`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
-          }
-        );
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          setTrainingVolumeSummary(null);
-          return;
-        }
-
-        const currentMinutes = Number(json?.current?.minutes);
-        const currentCount = Number(json?.current?.count);
-        const previousMinutes = Number(json?.previous?.minutes);
-        const previousCount = Number(json?.previous?.count);
-
-        setTrainingVolumeSummary({
-          current: {
-            minutes: Number.isFinite(currentMinutes) ? currentMinutes : 0,
-            count: Number.isFinite(currentCount) ? currentCount : 0,
-          },
-          previous: {
-            minutes: Number.isFinite(previousMinutes) ? previousMinutes : 0,
-            count: Number.isFinite(previousCount) ? previousCount : 0,
-          },
-        });
-      } catch {
-        setTrainingVolumeSummary(null);
-      }
-    })();
-  }, [shouldLoadTrainingData, playerId, trainingScope, fromDate, toDate, prevRange?.from, prevRange?.to]);
+  const prevTotalMinutes = trainingVolumeSummary?.previous.minutes ?? 0;
   const prevAvgMotivation = useMemo(() => avg(filteredPrevSessions.map((s) => s.motivation)), [filteredPrevSessions]);
   const prevAvgDifficulty = useMemo(() => avg(filteredPrevSessions.map((s) => s.difficulty)), [filteredPrevSessions]);
   const prevAvgSatisfaction = useMemo(
@@ -3643,7 +3102,6 @@ function presetToSelectValue(p: Preset): Preset {
               setPreset(v);
               setCustomOpen(false);
             }}
-            disabled={loading}
             style={{
               width: "100%",
               height: 44,
@@ -3669,6 +3127,8 @@ function presetToSelectValue(p: Preset): Preset {
             <option value="custom">{pickLocaleText(locale, "Période personnalisée", "Custom period", "Benutzerdefinierter Zeitraum", "Periodo personalizzato")}</option>
           </select>
 
+          <p className={playerStyles.periodCaption}>{periodLabel}</p>
+          {fromDate && toDate && fromDate > toDate ? <p role="alert">La date de fin doit suivre la date de début.</p> : null}
           {customOpen && preset === "custom" ? (
             <>
               <div className="hr-soft" style={{ margin: "2px 0" }} />
@@ -3760,17 +3220,19 @@ function presetToSelectValue(p: Preset): Preset {
       <section className={managerStyles.panel} aria-label="Identité sportive">
         <CoachPlayerIdentity avatarUrl={playerAvatarUrl} name={fullName(playerProfile)} initials={initials(playerProfile)} handicap={playerProfile?.handicap} />
       </section>
-      <ManagerStatisticsTabs<DashboardSection> items={visibleSectionTabs.map((tab) => ({ value: tab.id, label: tab.label }))} value={activeSection} onChange={setActiveSection} ariaLabel="Sections du junior" mobileGrid />
+      <ManagerStatisticsTabs<DashboardSection> items={visibleSectionTabs.map((tab) => ({ value: tab.id, label: tab.label }))} value={activeSection} onChange={setActiveSection} ariaLabel="Sections du junior" mobileSelect />
 
+        {dashboardView && dashboardView !== "competition" ? <div className={playerStyles.section}>{renderFilterCard()}</div> : null}
+        {dashboardView && dashboardError ? <div className={managerStyles.alertError} role="alert">{dashboardError} <button type="button" className={actionStyles.secondaryButton} onClick={() => setDashboardRetry(value => value + 1)}>Réessayer</button></div> : null}
         {activeSection === "overview" ? (
           <div className={playerStyles.stack}>
             <section className={playerStyles.overviewGrid} aria-label="Vue d’ensemble sportive">
-              <div className={playerStyles.metric}><span>Assiduité</span><strong>—</strong><small>Données insuffisantes</small></div>
-              <div className={playerStyles.metric}><span>Volume</span><strong>{trainingMinutesLabel}</strong><small>Période sélectionnée</small></div>
+              <div className={playerStyles.metric}><span>Assiduité</span><strong>{loading || trainingAttendanceOverview.rate == null ? "—" : `${trainingAttendanceOverview.rate} %`}</strong><small>{loading ? t("common.loading") : trainingAttendanceOverview.total ? `${trainingAttendanceOverview.present} / ${trainingAttendanceOverview.total} entraînements suivis` : "Aucune présence renseignée"}</small></div>
+              <div className={playerStyles.metric}><span>Volume</span><strong>{loading || dashboardError ? "—" : trainingMinutesLabel}</strong><small>Période sélectionnée</small></div>
               <div className={playerStyles.metric}><span>Objectif</span><strong>{displayedTrainingVolumeObjective > 0 ? `${trainingVolumePercent} %` : "—"}</strong><small>{displayedTrainingVolumeObjective > 0 ? `${displayedTrainingVolumeObjective} min` : "Non défini"}</small></div>
-              <div className={playerStyles.metric}><span>Activités</span><strong>{displayedTrainingCount}</strong><small>Période sélectionnée</small></div>
+              <div className={playerStyles.metric}><span>Activités</span><strong>{loading || dashboardError ? "—" : displayedTrainingCount}</strong><small>Période sélectionnée</small></div>
               <div className={playerStyles.metric}><span>Compétitions</span><strong>{loadingRounds ? "—" : competitionRounds.length}</strong><small>Période sélectionnée</small></div>
-              <div className={playerStyles.metric}><span>Évaluations</span><strong>{coachEvaluations.length || "—"}</strong><small>{coachEvaluations.length ? "Réalisées par ce coach" : "Aucune donnée"}</small></div>
+              <div className={playerStyles.metric}><span>Évaluations</span><strong>{loadingCoachEvaluations ? "—" : periodCoachEvaluations.length}</strong><small>{periodCoachEvaluations.length ? "Réalisées par ce coach" : "Aucune donnée"}</small></div>
             </section>
             <div className={playerStyles.overviewColumns}>
               <section className={playerStyles.panel}>
@@ -3790,9 +3252,6 @@ function presetToSelectValue(p: Preset): Preset {
           </div>
         ) : null}
 
-        {activeSection === "trainings" || activeSection === "stats" ? (
-          <div className={playerStyles.section}>{renderFilterCard()}</div>
-        ) : null}
 
         {activeSection === "thread" ? (
           <div className={playerStyles.section}>
@@ -4105,7 +3564,7 @@ function presetToSelectValue(p: Preset): Preset {
             return Math.max(maximum, objectiveForMonth(target, config.season_months, config.offseason_months, new Date(`${week}T12:00:00`).getMonth() + 1));
           }, 0) : weeklyObjectiveMinutes}
           compareLabel={compareLabel} periodLabel={periodLabel} trainingAttendanceOverview={trainingAttendanceOverview}
-          loading={loading} pendingEvaluationCount={0} latestCoachEvaluation={coachEvaluations[0] ?? null}
+          loading={loading} pendingEvaluationCount={0} latestCoachEvaluation={periodCoachEvaluations[0] ?? null}
           calendarHref={`/coach/players/${playerId}?tab=planning`} pendingHref="/coach/calendar?view=evaluations&period=year"
           onEvaluationsClick={() => setActiveSection("followup")}/> : null}
         {activeSection === "competition" ? <GolfRoundsWorkspace key={playerId} readOnly dataset={{

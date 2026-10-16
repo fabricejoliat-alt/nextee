@@ -2,8 +2,8 @@
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
-import { useEffect, useMemo, useState } from "react";
-import { ChevronRight, ListChecks } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
@@ -156,6 +156,10 @@ export default function CoachOrderOfMeritPage() {
   const [error, setError] = useState<string | null>(null);
   const [rankingLoading, setRankingLoading] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [detailsRetry, setDetailsRetry] = useState(0);
+  const rankingRequest = useRef(0);
+  const playersRequest = useRef(0);
 
   const [orgs, setOrgs] = useState<ManagedOrg[]>([]);
   const [organizationId, setOrganizationId] = useState("");
@@ -213,20 +217,25 @@ export default function CoachOrderOfMeritPage() {
   }
 
   async function loadRanking(orgId: string, fromDate: string, toDate: string) {
+    const request = ++rankingRequest.current;
     if (!orgId || !fromDate || !toDate) {
       setRankingRows([]);
+      setRankingLoading(false);
       return;
     }
     const rangeFrom = fromDate <= toDate ? fromDate : toDate;
     const rangeTo = fromDate <= toDate ? toDate : fromDate;
     setRankingLoading(true);
+    setError(null);
     const r = await supabase.rpc("om_ranking_snapshot", { p_org_id: orgId, p_from: rangeFrom, p_as_of: rangeTo });
+    if (request !== rankingRequest.current) return;
     setRankingLoading(false);
-    if (r.error) throw new Error(r.error.message);
+    if (r.error) { setRankingRows([]); throw new Error(r.error.message); }
     setRankingRows((r.data ?? []) as OMRankingRow[]);
   }
 
   async function loadEligiblePlayers(orgId: string) {
+    const request = ++playersRequest.current;
     if (!orgId) {
       setEligiblePlayers([]);
       setAvatarByPlayerId({});
@@ -240,6 +249,7 @@ export default function CoachOrderOfMeritPage() {
       .eq("role", "player")
       .eq("is_active", true)
       .eq("is_performance", true);
+    if (request !== playersRequest.current) return;
     if (membersRes.error) throw new Error(membersRes.error.message);
 
     const playerIds = Array.from(
@@ -252,6 +262,7 @@ export default function CoachOrderOfMeritPage() {
     }
 
     const profilesRes = await supabase.from("profiles").select("id,first_name,last_name,avatar_url").in("id", playerIds);
+    if (request !== playersRequest.current) return;
     if (profilesRes.error) throw new Error(profilesRes.error.message);
 
     const profiles = (profilesRes.data ?? []) as ProfileAvatarRow[];
@@ -270,13 +281,10 @@ export default function CoachOrderOfMeritPage() {
 
   async function loadPointDetails(playerId: string, orgId: string, fromDate: string, toDate: string) {
     if (!playerId || !orgId || !fromDate || !toDate) {
-      setPointDetails([]);
-      return;
+      return [];
     }
     const rangeFrom = fromDate <= toDate ? fromDate : toDate;
     const rangeTo = fromDate <= toDate ? toDate : fromDate;
-    setDetailsLoading(true);
-
     const [scoreRes, bonusRes] = await Promise.all([
       supabase
         .from("om_tournament_scores")
@@ -296,7 +304,6 @@ export default function CoachOrderOfMeritPage() {
         .lte("occurred_on", rangeTo)
         .order("occurred_on", { ascending: false }),
     ]);
-    setDetailsLoading(false);
     if (scoreRes.error) throw new Error(scoreRes.error.message);
     if (bonusRes.error) throw new Error(bonusRes.error.message);
 
@@ -440,7 +447,7 @@ export default function CoachOrderOfMeritPage() {
       };
     });
 
-    setPointDetails([...scoreCards, ...bonusCards].sort((a, b) => String(b.date).localeCompare(String(a.date))));
+    return [...scoreCards, ...bonusCards].sort((a, b) => String(b.date).localeCompare(String(a.date)));
   }
 
   async function loadInitialData() {
@@ -466,7 +473,7 @@ export default function CoachOrderOfMeritPage() {
         return;
       }
 
-      await Promise.all([loadEligiblePlayers(nextOrgId), loadRanking(nextOrgId, rankingFrom, rankingTo)]);
+
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : txt.genericError);
       setRankingRows([]);
@@ -486,7 +493,7 @@ export default function CoachOrderOfMeritPage() {
     if (!organizationId) return;
     (async () => {
       try {
-        await Promise.all([loadEligiblePlayers(organizationId), loadRanking(organizationId, rankingFrom, rankingTo)]);
+        await loadRanking(organizationId, rankingFrom, rankingTo);
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : txt.genericError);
       }
@@ -580,33 +587,32 @@ export default function CoachOrderOfMeritPage() {
     return rows;
   }, [mergedRows, rankingMode]);
 
-  const selectedRow = useMemo(
-    () => sortedRows.find((row) => row.player_id === selectedPlayerId) ?? null,
-    [selectedPlayerId, sortedRows]
-  );
+  useEffect(() => {
+    if (!organizationId) return;
+    setSelectedPlayerId("");
+    setEligiblePlayers([]);
+    setAvatarByPlayerId({});
+    void loadEligiblePlayers(organizationId).catch(cause => setError(cause instanceof Error ? cause.message : txt.genericError));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [organizationId]);
 
   useEffect(() => {
-    if (!sortedRows.length) {
-      setSelectedPlayerId("");
-      setPointDetails([]);
-      return;
-    }
-    if (!selectedPlayerId || !sortedRows.some((row) => row.player_id === selectedPlayerId)) {
-      setSelectedPlayerId(sortedRows[0].player_id);
-    }
+    if (selectedPlayerId && !sortedRows.some(row => row.player_id === selectedPlayerId)) setSelectedPlayerId("");
   }, [selectedPlayerId, sortedRows]);
 
   useEffect(() => {
-    if (!organizationId || !selectedPlayerId) return;
-    (async () => {
-      try {
-        await loadPointDetails(selectedPlayerId, organizationId, rankingFrom, rankingTo);
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : txt.genericError);
-      }
-    })();
+    let active = true;
+    setPointDetails([]);
+    setDetailsError(null);
+    if (!organizationId || !selectedPlayerId) { setDetailsLoading(false); return; }
+    setDetailsLoading(true);
+    void loadPointDetails(selectedPlayerId, organizationId, rankingFrom, rankingTo)
+      .then(rows => { if (active) setPointDetails(rows); })
+      .catch(cause => { if (active) setDetailsError(cause instanceof Error ? cause.message : txt.genericError); })
+      .finally(() => { if (active) setDetailsLoading(false); });
+    return () => { active = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [organizationId, selectedPlayerId, rankingFrom, rankingTo]);
+  }, [organizationId, selectedPlayerId, rankingFrom, rankingTo, locale, detailsRetry]);
 
   return <main className={styles.page}>
     <nav data-ui="breadcrumb" className={styles.breadcrumb} aria-label="Fil d’Ariane"><a href="/coach">Coach</a><ChevronRight size={13} aria-hidden="true" /><span>Suivi</span><ChevronRight size={13} aria-hidden="true" /><span>{txt.title}</span></nav>
@@ -614,7 +620,7 @@ export default function CoachOrderOfMeritPage() {
     {error ? <div className={styles.alertError} role="alert">{error}</div> : null}
     <section className={styles.panel}>
       <div className={styles.panelHeader}><div><h2>Filtres du classement</h2><p>Les données sont limitées aux clubs auxquels vous êtes rattaché.</p></div></div>
-      <div className={styles.toolbar}>
+      <div className={`${styles.toolbar} ${omStyles.filters}`}>
         {orgs.length > 1 ? <label className={styles.field}><span>{txt.organization}</span><select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{orgs.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}</select></label> : null}
         <label className={`${styles.field} ${omStyles.dateField}`}><span>{txt.rankingDateFrom}</span><input type="date" value={rankingFrom} onChange={(event) => setRankingFrom(event.target.value)} /></label>
         <label className={`${styles.field} ${omStyles.dateField}`}><span>{txt.rankingDateTo}</span><input type="date" value={rankingTo} onChange={(event) => setRankingTo(event.target.value)} /></label>
@@ -626,25 +632,38 @@ export default function CoachOrderOfMeritPage() {
       <section className={styles.panel}>
         <div className={styles.panelHeader}><div><h2>Classement</h2><p>{sortedRows.length} junior{sortedRows.length > 1 ? "s" : ""} sur la période.</p></div></div>
         {!organizationId || orgs.length === 0 ? <div className={styles.empty}>{txt.noOrg}</div> : rankingLoading ? <ListLoadingBlock label={txt.loading} /> : sortedRows.length === 0 ? <div className={styles.empty}>{txt.rankingEmpty}</div> : (
-          <div className={styles.tableWrap}>
-            <table className={styles.table}>
-              <thead><tr><th>Rang</th><th>Junior</th><th>{txt.rankingTournament}</th><th>{txt.rankingBonus}</th><th>{txt.rankingTotal}</th><th>Action</th></tr></thead>
-              <tbody>{sortedRows.map((row) => (
-                <tr key={row.player_id}>
-                  <td data-label="Rang"><span className={styles.badge}>#{rankingMode === "net" ? row.rank_net : row.rank_brut}</span></td>
-                  <td data-label="Junior"><div className={styles.person}><span className={styles.avatar}>{avatarByPlayerId[row.player_id] ? <img src={avatarByPlayerId[row.player_id] ?? ""} alt="" /> : initialsFromName(row.full_name)}</span><b>{row.full_name}</b></div></td>
-                  <td data-label={txt.rankingTournament}>{points(rankingMode === "net" ? row.tournament_points_net : row.tournament_points_brut)}</td>
-                  <td data-label={txt.rankingBonus}>{points(rankingMode === "net" ? row.bonus_points_net : row.bonus_points_brut)}</td>
-                  <td data-label={txt.rankingTotal}><strong>{points(rankingMode === "net" ? row.total_points_net : row.total_points_brut)}</strong></td>
-                  <td data-label="Action"><button type="button" className={styles.secondary} onClick={() => setSelectedPlayerId(row.player_id)} aria-label={`Afficher le détail des points de ${row.full_name}`} title="Détail des points"><ListChecks size={15} aria-hidden="true" />Détail des points</button></td>
-                </tr>
-              ))}</tbody>
-            </table>
+          <div className={omStyles.rankingList}>
+            {sortedRows.map(row => {
+              const expanded = selectedPlayerId === row.player_id;
+              const rank = rankingMode === "net" ? row.rank_net : row.rank_brut;
+              return <div key={row.player_id} className={`${omStyles.rankingEntry} ${expanded ? omStyles.expanded : ""}`}>
+                <button type="button" className={omStyles.rankingRow} aria-expanded={expanded} aria-controls={`points-${row.player_id}`}
+                  onClick={() => { setPointDetails([]); setDetailsError(null); setDetailsLoading(!expanded); setSelectedPlayerId(expanded ? "" : row.player_id); }}>
+                  <span className={omStyles.rank}>#{rank}</span>
+                  <span className={omStyles.avatar}>{avatarByPlayerId[row.player_id] ? <img src={avatarByPlayerId[row.player_id] ?? ""} alt="" /> : initialsFromName(row.full_name)}</span>
+                  <span className={omStyles.playerName}>{row.full_name}</span>
+                  <span className={omStyles.points}><strong>{points(rankingMode === "net" ? row.total_points_net : row.total_points_brut)}</strong><small>points</small></span>
+                  <ChevronDown className={omStyles.chevron} size={18} aria-hidden="true" />
+                </button>
+                {expanded ? <div id={`points-${row.player_id}`} className={omStyles.pointDetails} role="region" aria-label={`${txt.details} · ${row.full_name}`}>
+                  <div className={omStyles.pointSummary}>
+                    <div><span>{txt.rankingTournament}</span><strong>{points(rankingMode === "net" ? row.tournament_points_net : row.tournament_points_brut)}</strong></div>
+                    <div><span>{txt.rankingBonus}</span><strong>{points(rankingMode === "net" ? row.bonus_points_net : row.bonus_points_brut)}</strong></div>
+                    <div><span>{txt.rankingTotal} {rankingMode === "net" ? txt.rankingNet : txt.rankingBrut}</span><strong>{points(rankingMode === "net" ? row.total_points_net : row.total_points_brut)}</strong></div>
+                  </div>
+                  <h3>{txt.details}</h3>
+                  {detailsLoading ? <ListLoadingBlock label={txt.loading} /> : detailsError ? <div role="alert" className={styles.alertError}>{detailsError}<button type="button" className={styles.secondary} onClick={() => setDetailsRetry(value => value + 1)}>{labelByLocale(locale, "Réessayer", "Retry", "Erneut versuchen", "Riprova")}</button></div> : pointDetails.length === 0 ? <p className={omStyles.emptyDetails}>{txt.detailsEmpty}</p> : <div className={omStyles.detailList}>
+                    {pointDetails.map(detail => <div key={detail.id} className={omStyles.detailRow}>
+                      <div><time>{detail.dateLabel ?? String(detail.date).slice(0, 10)}</time><b>{detail.title}</b>{detail.subtitle ? <p>{detail.subtitle}</p> : null}</div>
+                      <strong>{points(rankingMode === "net" ? detail.pointsNet : detail.pointsBrut)}<small>points</small></strong>
+                    </div>)}
+                  </div>}
+                </div> : null}
+              </div>;
+            })}
           </div>
         )}
       </section>
-      <section className={styles.panel}><div className={styles.panelHeader}><div><h2>{txt.summary}</h2><p>{txt.summaryAsOf} {fmtActivityDate(rankingFrom, locale)} – {fmtActivityDate(rankingTo, locale)}</p></div></div>{!selectedRow ? <div className={styles.empty}>{txt.notRanked}</div> : <div className={styles.metrics}><div className={styles.metric}><span>{txt.summaryRankNet}</span><b>#{selectedRow.rank_net}</b><p className={styles.muted}>{txt.rankingTotal}: {points(selectedRow.total_points_net)}</p></div><div className={styles.metric}><span>{txt.summaryRankBrut}</span><b>#{selectedRow.rank_brut}</b><p className={styles.muted}>{txt.rankingTotal}: {points(selectedRow.total_points_brut)}</p></div></div>}</section>
-      <section className={styles.panel}><div className={styles.panelHeader}><div><h2>{txt.details}</h2><p>{selectedRow?.full_name ?? ""}</p></div></div>{detailsLoading ? <ListLoadingBlock label={txt.loading} /> : pointDetails.length === 0 ? <div className={styles.empty}>{txt.detailsEmpty}</div> : <div className={styles.tableWrap}><table className={styles.table}><thead><tr><th>Date</th><th>Élément</th><th>{txt.rankingNet}</th><th>{txt.rankingBrut}</th></tr></thead><tbody>{pointDetails.map((detail) => <tr key={detail.id}><td data-label="Date">{detail.dateLabel ?? String(detail.date).slice(0, 10)}</td><td data-label="Élément"><div className={styles.titleCell}><b>{detail.title}</b>{detail.subtitle ? <span className={styles.muted}>{detail.subtitle}</span> : null}</div></td><td data-label={txt.rankingNet}>{points(detail.pointsNet)}</td><td data-label={txt.rankingBrut}>{points(detail.pointsBrut)}</td></tr>)}</tbody></table></div>}</section>
     </>}
   </main>;
 }
