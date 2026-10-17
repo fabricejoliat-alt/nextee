@@ -13,7 +13,6 @@ import {
   type NotificationRow,
 } from "@/lib/notifications";
 import { supabase } from "@/lib/supabaseClient";
-import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { Bell, Check, CheckCheck, ChevronRight, ExternalLink, Eye, Settings, Trash2 } from "lucide-react";
 import campsStyles from "@/app/manager/camps/Camps.module.css";
 import styles from "@/components/notifications/NotificationsCenter.module.css";
@@ -527,9 +526,9 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
           {error ? <div className={managerDesign ? campsStyles.alertError : "marketplace-error"} role="alert">{error}</div> : null}
         </div>
 
-        <div className={managerDesign ? campsStyles.panel : "glass-section"}>
-          <div className={managerDesign ? styles.panelContent : "glass-card"} style={managerDesign ? undefined : { display: "grid", gap: 10 }}>
-            <div className={managerDesign ? campsStyles.panelHeader : undefined} style={managerDesign ? undefined : { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div className={`${styles.listPanel} ${managerDesign ? campsStyles.panel : "glass-section"}`}>
+          <div className={`${styles.listPanelContent} ${managerDesign ? styles.panelContent : "glass-card"}`} style={managerDesign ? undefined : { display: "grid", gap: 10 }}>
+            <div className={managerDesign ? `${campsStyles.panelHeader} ${styles.listSummary}` : undefined} style={managerDesign ? undefined : { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <div className={managerDesign ? styles.panelTitle : undefined} style={managerDesign ? undefined : { display: "inline-flex", gap: 8, alignItems: "center", fontWeight: 950 }}>
                 {managerDesign ? <span className={styles.panelIcon}><Bell size={16} /></span> : <Bell size={16} />}
                 {managerDesign ? <div><h2>{tr("Toutes les notifications", "All notifications", "Alle Benachrichtigungen", "Tutte le notifiche")}</h2><p>{tr(`${visibleRows.length} notification${visibleRows.length > 1 ? "s" : ""}, dont ${unreadCount} non lue${unreadCount > 1 ? "s" : ""}.`, `${visibleRows.length} notification${visibleRows.length === 1 ? "" : "s"}, ${unreadCount} unread.`, `${visibleRows.length} Benachrichtigungen, ${unreadCount} ungelesen.`, `${visibleRows.length} notifiche, ${unreadCount} non lette.`)}</p></div> : tr("Centre de notifications", "Notification center")}
@@ -546,8 +545,9 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
               </div> : null}
             </div>
 
+            {!loading && visibleRows.length > 0 ? <p className={styles.swipeHint}>{tr("Balayez vers la gauche pour supprimer une notification.", "Swipe left to delete a notification.", "Zum Löschen einer Benachrichtigung nach links wischen.", "Scorri verso sinistra per eliminare una notifica.")}</p> : null}
             {loading ? (
-              <ListLoadingBlock label={t("common.loading")} />
+              <div className={styles.loadingPanel} role="status" aria-busy="true" aria-label={t("common.loading")} />
             ) : visibleRows.length === 0 ? (
               <div className={managerDesign ? styles.emptyState : undefined} style={managerDesign ? undefined : { opacity: 0.8, fontWeight: 800 }}>{managerDesign ? <Bell size={21} aria-hidden="true" /> : null}{tr("Aucune notification.", "No notification.", "Keine Benachrichtigung.", "Nessuna notifica.")}</div>
             ) : (
@@ -599,7 +599,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                     new Intl.DateTimeFormat(dateLocale, options).format(notificationDate).replace(".", "");
                   const card = (
                     <div
-                      className={managerDesign ? `${styles.notificationItem} ${playerScope ? styles.playerNotificationItem : ""} ${!r.recipient.is_read ? styles.notificationUnread : ""}` : "marketplace-item"}
+                      className={managerDesign ? `${styles.swipeCard} ${styles.notificationItem} ${playerScope ? styles.playerNotificationItem : ""} ${!r.recipient.is_read ? styles.notificationUnread : ""}` : `${styles.swipeCard} marketplace-item`}
                       style={managerDesign ? undefined : {
                         width: "100%",
                         minWidth: 0,
@@ -610,6 +610,10 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                           : {}),
                       }}
                     >
+                      {href ? <Link href={href} className={styles.mobileCardLink} aria-label={notificationTitle} onClick={() => {
+                        applyChildContextFromNotification(n, href);
+                        if (!r.recipient.is_read) void onRead(r.recipient.id);
+                      }} /> : null}
                       {managerDesign && playerScope && hasValidNotificationDate ? (
                         <div
                           className={styles.notificationDateTile}
@@ -697,8 +701,8 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                             {notificationBody}
                           </div>
                         ) : null}
-                        {!playerScope ? <div className={managerDesign ? styles.notificationDate : undefined} style={managerDesign ? undefined : { fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{fmtDate(notificationCreatedAt)}</div> : null}
-                        <div className={managerDesign ? `${campsStyles.actions} ${playerScope ? styles.playerNotificationActions : ""}` : undefined} style={managerDesign ? undefined : { display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+                        <div className={`${styles.notificationDate} ${playerScope ? styles.mobileDate : ""}`} style={managerDesign ? undefined : { fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{fmtDate(notificationCreatedAt)}</div>
+                        <div className={`${styles.cardActions} ${managerDesign ? `${campsStyles.actions} ${playerScope ? styles.playerNotificationActions : ""}` : ""}`} style={managerDesign ? undefined : { display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                           {href ? (
                             <Link
                               href={href}
@@ -748,8 +752,9 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                     </div>
                   );
                   return (
-                    <div key={r.recipient.id} className={managerDesign ? `${styles.notificationRow} ${playerScope ? styles.playerNotificationRow : ""}` : undefined} style={{ minWidth: 0, width: "100%", maxWidth: "100%", overflowX: "hidden" }}>
+                    <div key={r.recipient.id} className={`${styles.swipeRow} ${managerDesign ? `${styles.notificationRow} ${playerScope ? styles.playerNotificationRow : ""}` : ""}`}>
                       {card}
+                      <button type="button" className={styles.swipeDelete} disabled={busy} aria-label={`${tr("Effacer", "Delete", "Löschen", "Elimina")} : ${notificationTitle}`} onClick={() => void onDelete(r.recipient.id)}><Trash2 size={21} aria-hidden="true" /></button>
                     </div>
                   );
                 })}

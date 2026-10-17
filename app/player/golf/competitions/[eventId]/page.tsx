@@ -5,8 +5,8 @@ import { organizationFetch as fetch } from "@/lib/organizationFetch";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { ArrowLeft, Bell, ExternalLink, MapPin, Trophy } from "lucide-react";
-import ActivityDateTile from "@/components/ui/ActivityDateTile";
+import { ArrowLeft, Bell, ExternalLink, MapPin } from "lucide-react";
+import dashboardStyles from "@/app/player/PlayerDashboard.module.css";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -34,16 +34,15 @@ export default function CompetitionDetailPage(){
   const [error,setError]=useState<string|null>(null);
   const dateLocale=locale==="fr"?"fr-CH":locale==="de"?"de-CH":locale==="it"?"it-CH":"en-US";
 
-  useEffect(()=>{let cancelled=false;void(async()=>{try{setLoading(true);setError(null);const [{effectiveUserId},{data:auth}]=await Promise.all([resolveEffectivePlayerContext(),supabase.auth.getSession()]);const token=auth.session?.access_token??"";if(!token)throw new Error(pickLocaleText(locale,"Session invalide.","Invalid session."));const query=new URLSearchParams({child_id:effectiveUserId});const response=await fetch(`/api/player/competitions/${encodeURIComponent(eventId)}?${query}`,{headers:{Authorization:`Bearer ${token}`},cache:"no-store"});const json=await response.json();if(!response.ok)throw new Error(String(json.error??pickLocaleText(locale,"Chargement impossible.","Unable to load.")));if(!cancelled)setData(json as Payload)}catch(caught){if(!cancelled)setError(caught instanceof Error?caught.message:pickLocaleText(locale,"Chargement impossible.","Unable to load."))}finally{if(!cancelled)setLoading(false)}})();return()=>{cancelled=true}},[eventId,locale]);
+  useEffect(()=>{let cancelled=false;const controller=new AbortController();void(async()=>{try{setLoading(true);setError(null);const [{effectiveUserId},{data:auth}]=await Promise.all([resolveEffectivePlayerContext(),supabase.auth.getSession()]);const token=auth.session?.access_token??"";if(!token)throw new Error(pickLocaleText(locale,"Session invalide.","Invalid session."));const query=new URLSearchParams({child_id:effectiveUserId});const response=await fetch(`/api/player/competitions/${encodeURIComponent(eventId)}?${query}`,{headers:{Authorization:`Bearer ${token}`},cache:"no-store",signal:controller.signal});const json=await response.json();if(!response.ok)throw new Error(String(json.error??pickLocaleText(locale,"Chargement impossible.","Unable to load.")));if(!cancelled)setData(json as Payload)}catch(caught){if(!cancelled)setError(caught instanceof Error?caught.message:pickLocaleText(locale,"Chargement impossible.","Unable to load."))}finally{if(!cancelled)setLoading(false)}})();return()=>{cancelled=true;controller.abort()}},[eventId,locale]);
 
-  if(loading)return <div className="player-dashboard-bg"><div className="app-shell marketplace-page"><div className={styles.loading} aria-label={pickLocaleText(locale,"Chargement…","Loading…")}/></div></div>;
+  if(loading)return <div className="player-dashboard-bg"><div className="app-shell marketplace-page"><div className={styles.loadingPanel} role="status" aria-busy="true" aria-label={pickLocaleText(locale,"Chargement…","Loading…","Wird geladen…","Caricamento…")}/></div></div>;
   const event=data?.event;
   if(!event||error)return <div className="player-dashboard-bg"><div className="app-shell marketplace-page"><div className={playerUiStyles.alertError}>{error??pickLocaleText(locale,"Compétition introuvable.","Competition not found.")}</div></div></div>;
 
   const start=new Date(event.starts_at);
   const end=event.ends_at?new Date(event.ends_at):new Date(start.getTime()+Math.max(0,Number(event.duration_minutes??0))*60000);
   const dateTime=(value:Date)=>new Intl.DateTimeFormat(dateLocale,{dateStyle:"long",timeStyle:"short"}).format(value);
-  const isFuture=end.getTime()>=Date.now();
   const category=event.competition_category==="all"?pickLocaleText(locale,"Toutes catégories","All categories"):event.competition_category?.toUpperCase()||"—";
   const level=levelLabels[String(event.competition_level??"")]??event.competition_level??"—";
   const attendance=data.attendanceStatus==="present"?pickLocaleText(locale,"Présent","Present"):data.attendanceStatus==="absent"?pickLocaleText(locale,"Absent","Absent"):data.attendanceStatus==="excused"?pickLocaleText(locale,"Excusé","Excused"):pickLocaleText(locale,"Attendu","Expected");
@@ -53,10 +52,15 @@ export default function CompetitionDetailPage(){
     <PlayerBreadcrumb items={[{label:"Player",href:"/player"},{label:pickLocaleText(locale, "Calendrier", "Calendar", "Kalender", "Calendario"),href:"/player/golf/trainings?type=all"},{label:pickLocaleText(locale,"Compétition","Competition")}]}/>
     <header className={playerUiStyles.topline}><div><h1>{pickLocaleText(locale,"Détail de la compétition","Competition details")}</h1><p className={playerUiStyles.lead}>{pickLocaleText(locale,"Retrouve les informations pratiques et les rappels liés à cette compétition.","Review the practical information and reminders for this competition.")}</p></div><div className={playerUiStyles.actions}><Link className={playerUiStyles.secondary} href="/player/golf/trainings?type=all"><ArrowLeft size={15}/>{pickLocaleText(locale,"Retour aux activités","Back to activities")}</Link></div></header>
 
-    <article className={`glass-card ${styles.summary}`}>
-      <ActivityDateTile startsAt={event.starts_at} locale={dateLocale} className={styles.dateTile}/>
-      <div className={styles.summaryBody}><span className={styles.summaryType}>{event.event_type==="interclub"?"Interclub":pickLocaleText(locale,"Compétition","Competition")}</span><strong className={styles.summaryTitle}>{event.title?.trim()||pickLocaleText(locale,"Compétition du club","Club competition")}{organizer?` · ${organizer}`:""}</strong>{event.location_text?<span className={styles.summaryLocation}><MapPin size={14}/>{event.location_text}</span>:null}</div>
-      <span className={styles.summaryStatus}><Trophy size={14}/>{isFuture?pickLocaleText(locale,"À venir","Upcoming"):pickLocaleText(locale,"Terminée","Completed")}</span>
+    <article className={`${dashboardStyles.activityItem} ${styles.summary}`}>
+      <div className={dashboardStyles.activityDate} aria-label={new Intl.DateTimeFormat(dateLocale,{dateStyle:"full",timeStyle:"short"}).format(start)}>
+        <span>{new Intl.DateTimeFormat(dateLocale,{weekday:"short"}).format(start).replace(".","")}</span><b>{start.getDate()}</b><span>{new Intl.DateTimeFormat(dateLocale,{month:"short"}).format(start).replace(".","")}</span><time dateTime={event.starts_at}>{new Intl.DateTimeFormat(dateLocale,{hour:"2-digit",minute:"2-digit"}).format(start)}</time>
+      </div>
+      <div className={dashboardStyles.activityBody}>
+        <span className={dashboardStyles.activityTitle}>{event.event_type==="interclub"?"Interclub":pickLocaleText(locale,"Compétition","Competition")}</span>
+        <span className={dashboardStyles.activityMeta}>{[event.title?.trim(),organizer].filter(Boolean).join(" · ")||pickLocaleText(locale,"Compétition du club","Club competition")}</span>
+        <span className={`planning-event-location ${dashboardStyles.activityLocation}`}><MapPin size={14} aria-hidden="true"/><span>{event.location_text||pickLocaleText(locale,"Lieu non renseigné","Location not specified")}</span></span>
+      </div>
     </article>
 
     <section className={styles.panel}>

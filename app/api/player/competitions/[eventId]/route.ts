@@ -24,21 +24,23 @@ export async function GET(
     });
     const { supabaseAdmin } = access;
 
-    const attendeeRes = await supabaseAdmin
-      .from("club_event_attendees")
-      .select("status")
-      .eq("event_id", eventId)
-      .eq("player_id", access.subjectPlayerId)
-      .maybeSingle();
+    const [attendeeRes, eventRes] = await Promise.all([
+      supabaseAdmin
+        .from("club_event_attendees")
+        .select("status")
+        .eq("event_id", eventId)
+        .eq("player_id", access.subjectPlayerId)
+        .maybeSingle(),
+      supabaseAdmin
+        .from("club_events")
+        .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status,competition_level,competition_category,external_registration_url,competition_note")
+        .eq("id", eventId)
+        .in("club_id", access.organizationIds)
+        .maybeSingle(),
+    ]);
     if (attendeeRes.error) return NextResponse.json({ error: attendeeRes.error.message }, { status: 400 });
     if (!attendeeRes.data) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const eventRes = await supabaseAdmin
-      .from("club_events")
-      .select("id,event_type,title,starts_at,ends_at,duration_minutes,location_text,club_id,group_id,status,competition_level,competition_category,external_registration_url,competition_note")
-      .eq("id", eventId)
-      .in("club_id",access.organizationIds)
-      .maybeSingle();
     if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
     if (!eventRes.data) return NextResponse.json({ error: "Not found" }, { status: 404 });
     if (!["competition", "interclub"].includes(String(eventRes.data.event_type))) {

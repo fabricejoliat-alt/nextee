@@ -25,3 +25,22 @@
 .addActivityMenu svg{flex:0 0 auto;padding:4px;border-radius:7px;background:rgba(255,255,255,.16);stroke-width:2.5}
 .addActivityButton:focus-visible,.addActivityMenu a:focus-visible,.addActivityMenu button:focus-visible{outline:3px solid #b9d3aa;outline-offset:2px}
 @media(max-width:899px){.addActivity{display:none}}
+
+.seasonActivity:not(:disabled){cursor:pointer;font:inherit;transition:background .15s,border-color .15s}
+.seasonActivity:not(:disabled):hover{background:#eaf2e7;border-color:#91aa86}
+.seasonActivity:focus-visible{outline:3px solid #91aa86;outline-offset:2px}
+.seasonActivity:disabled{opacity:1}
+.dayDialog{box-sizing:border-box;width:720px;border:0;border-radius:18px;background:#fff;box-shadow:0 25px 70px rgba(0,0,0,.28)}
+.dayDialog.dayDialog[open]{position:fixed;inset:0;margin:auto;transform:none}
+.dayDialogHeader{position:sticky;top:0;z-index:2;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:22px;background:#fff;border-bottom:1px solid #e3e9e2}
+.dayDialogHeader h2{margin:0;color:#35483b;font:750 22px/1.2 var(--font-inter-tight),sans-serif}
+.dayDialogHeader button{display:grid;place-items:center;flex:0 0 44px;width:44px;height:44px;border:0;border-radius:50%;background:#edf4ea;color:#35483b;cursor:pointer}
+.dayDialogActivities{display:grid;gap:10px;padding:18px}
+@media(max-width:640px){.dayDialogHeader{padding:16px;gap:8px}.dayDialogHeader h2{font-size:20px}.dayDialogActivities{padding:12px}}
+
+.filterActions{display:flex;align-items:center;justify-content:flex-end;gap:8px}
+.filterActions>button{min-height:44px}
+.controlsHeading{padding-bottom:0;border-bottom:0}
+.calendarToolbar{display:grid;gap:12px;padding:7px 7px 0}
+.calendarToolbar .agendaHeading{padding-inline:0}
+@media(max-width:640px){.controlsHeading{gap:10px}.filterActions{flex-shrink:0}.controlFooter{gap:12px}.viewSwitch button{min-height:44px}}

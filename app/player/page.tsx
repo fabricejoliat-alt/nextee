@@ -1049,6 +1049,15 @@ export default function PlayerHomePage() {
   }, [consentResolved, heroLoading, loading, playerConsentStatus, profile?.avatar_url, viewerRole, viewerUserId]);
 
   const upcomingPreview = upcomingActivities.slice(0, 3);
+  const nextCompetitionItem = upcomingActivities.find(item =>
+    item.kind === "event" ? item.event.event_type === "competition" || item.event.event_type === "interclub"
+      : item.kind === "competition" && item.competition.event_type === "competition");
+  const nextCompetition = nextCompetitionItem?.kind === "event" ? nextCompetitionItem.event
+    : nextCompetitionItem?.kind === "competition" ? nextCompetitionItem.competition : null;
+  const nextCompetitionHref = nextCompetitionItem?.kind === "event"
+    ? `/player/golf/competitions/${encodeURIComponent(nextCompetitionItem.event.id)}`
+    : "/player/golf/trainings?type=all";
+
   const attentionEvents = upcomingActivities
     .filter((item): item is Extract<HomeUpcomingItem, { kind: "event" }> => item.kind === "event")
     .filter((item) => isClubAttendanceEventType(item.event.event_type))
@@ -1110,7 +1119,7 @@ export default function PlayerHomePage() {
     return "/player/news";
   }, [viewerRole, effectiveUserId]);
   const volumeNeedsAttention = trainingsSummary.objective > 0 && trainingsSummary.percent < 100 && new Date().getDate() >= 20;
-  const showAttentionCard = upcomingLoading || insightsLoading || insightsError || pendingTrainings.length > 0 || attentionEvents.length > 0 || volumeNeedsAttention;
+  const showAttentionCard = upcomingLoading || insightsLoading || insightsError || pendingTrainings.length > 0 || attentionEvents.length > 0 || Boolean(nextCompetition) || volumeNeedsAttention;
 
   return (
     <div className="player-dashboard-bg player-home-page">
@@ -1200,8 +1209,44 @@ export default function PlayerHomePage() {
               ) : <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Aucune activité planifiée.", "No upcoming activity.")}</div>}
             </section>
 
-            <section className={playerUiStyles.panel}>
-              <div className={playerUiStyles.panelHeader}><div><h2>{t("organization.newsTitle")}</h2><p>{t("organization.newsLead")}</p></div><Link className={playerUiStyles.textLink} href={allNewsHref} aria-label={pickLocaleText(locale, "Toutes les actualités", "All news")}><ArrowRight size={16} /></Link></div>
+            {showAttentionCard ? <section className={playerUiStyles.panel}>
+              <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Les éléments à vérifier prochainement.", "Things to review soon.")}</p></div></div>
+              {upcomingLoading || insightsLoading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : (
+                <>
+                {nextCompetition ? <div className={styles.attentionCompetition}>
+                  <h3>{pickLocaleText(locale,"Prochaine compétition","Next competition","Nächster Wettkampf","Prossima competizione")}</h3>
+                  <HomeActivityCard startsAt={nextCompetition.starts_at} dateLocale={dateLocale}
+                    title={nextCompetition.title?.trim() || eventTypeLabel(nextCompetition.event_type,locale)}
+                    detail={[eventTypeLabel(nextCompetition.event_type,locale), ...(nextCompetitionItem?.kind === "event"
+                      ? [clubNameById[nextCompetitionItem.event.club_id], nextCompetitionItem.event.group_id ? groupNameById[nextCompetitionItem.event.group_id] : null]
+                      : [pickLocaleText(locale,"Activité personnelle","Personal activity","Persönliche Aktivität","Attività personale")])].filter(Boolean).join(" · ")}
+                    location={nextCompetition.location_text || pickLocaleText(locale,"Lieu non renseigné","Location not specified")}
+                    href={nextCompetitionHref}
+                    action={<Link className={playerUiStyles.textLink} href={nextCompetitionHref} aria-label={pickLocaleText(locale,"Voir le détail","View details","Details ansehen","Vedi dettagli")}><ArrowRight size={16}/></Link>}
+                  />
+                </div> : null}
+                <div className={`${overviewStyles.attentionList} ${styles.attentionListCompact}`}>
+                  {pendingTrainings.length ? <Link href="/player/golf/trainings/to-complete">
+                    <span><ClipboardCheck size={17} /></span>
+                    <div><b>{pendingTrainings.length} {pickLocaleText(locale, pendingTrainings.length === 1 ? "activité à évaluer" : "activités à évaluer", pendingTrainings.length === 1 ? "activity to evaluate" : "activities to evaluate")}</b><small>{pickLocaleText(locale, "Partager votre ressenti", "Share your feedback")}</small></div>
+                    <ArrowRight size={15} />
+                  </Link> : null}
+                  {attentionEvents.map(({ event }) => <Link key={event.id} href={`/player/golf/trainings/new?club_event_id=${encodeURIComponent(event.id)}`}>
+                    <span><AlertTriangle size={17} /></span>
+                    <div><b>{pickLocaleText(locale, "Présence à confirmer", "Attendance to confirm")}</b><small>{event.title?.trim() || eventTypeLabel(event.event_type, locale)}</small></div>
+                    <ArrowRight size={15} />
+                  </Link>)}
+                  {volumeNeedsAttention ? (
+                    <Link href="#player-training-volume"><span><Target size={17} /></span><div><b>{pickLocaleText(locale, "Objectif FTEM à poursuivre", "Keep working toward FTEM goal")}</b><small>{Math.round(trainingsSummary.percent)}% {pickLocaleText(locale, "réalisé", "completed")}</small></div><ArrowRight size={15} /></Link>
+                  ) : null}
+                  {insightsError ? <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Certaines données sont momentanément indisponibles.", "Some data is temporarily unavailable.")}</div> : null}
+                </div>
+                </>
+              )}
+            </section> : null}
+
+            <section className={`${playerUiStyles.panel} ${styles.newsCard}`}>
+              <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Actualités", "News", "Neuigkeiten", "Notizie")}</h2><p>{pickLocaleText(locale, "Les dernières nouvelles ActiviTee", "The latest ActiviTee news", "Die neuesten Nachrichten von ActiviTee", "Le ultime notizie ActiviTee")}</p></div><Link className={playerUiStyles.textLink} href={allNewsHref} aria-label={pickLocaleText(locale, "Toutes les actualités", "All news")}><ArrowRight size={16} /></Link></div>
               {newsLoading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : latestNews.length ? (
                 <div className={`${playerUiStyles.eventList} ${styles.alignedCardContent}`}>
                   <Link href={allNewsHref} className={styles.newsFeatured}>
@@ -1227,28 +1272,6 @@ export default function PlayerHomePage() {
                 </div>
               ) : <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Aucune actualité pour le moment.", "No news at the moment.")}</div>}
             </section>
-
-            {showAttentionCard ? <section className={`${playerUiStyles.panel} ${styles.attentionCard}`}>
-              <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Les éléments à vérifier prochainement.", "Things to review soon.")}</p></div></div>
-              {upcomingLoading || insightsLoading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : (
-                <div className={`${overviewStyles.attentionList} ${styles.attentionListCompact}`}>
-                  {pendingTrainings.length ? <Link href="/player/golf/trainings/to-complete">
-                    <span><ClipboardCheck size={17} /></span>
-                    <div><b>{pendingTrainings.length} {pickLocaleText(locale, pendingTrainings.length === 1 ? "activité à évaluer" : "activités à évaluer", pendingTrainings.length === 1 ? "activity to evaluate" : "activities to evaluate")}</b><small>{pickLocaleText(locale, "Partager votre ressenti", "Share your feedback")}</small></div>
-                    <ArrowRight size={15} />
-                  </Link> : null}
-                  {attentionEvents.map(({ event }) => <Link key={event.id} href={`/player/golf/trainings/new?club_event_id=${encodeURIComponent(event.id)}`}>
-                    <span><AlertTriangle size={17} /></span>
-                    <div><b>{pickLocaleText(locale, "Présence à confirmer", "Attendance to confirm")}</b><small>{event.title?.trim() || eventTypeLabel(event.event_type, locale)}</small></div>
-                    <ArrowRight size={15} />
-                  </Link>)}
-                  {volumeNeedsAttention ? (
-                    <Link href="#player-training-volume"><span><Target size={17} /></span><div><b>{pickLocaleText(locale, "Objectif FTEM à poursuivre", "Keep working toward FTEM goal")}</b><small>{Math.round(trainingsSummary.percent)}% {pickLocaleText(locale, "réalisé", "completed")}</small></div><ArrowRight size={15} /></Link>
-                  ) : null}
-                  {insightsError ? <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Certaines données sont momentanément indisponibles.", "Some data is temporarily unavailable.")}</div> : null}
-                </div>
-              )}
-            </section> : null}
 
           </div>
 

@@ -222,3 +222,29 @@
     min-height: 72px;
   }
 }
+
+.swipeRow{min-width:0;width:100%;max-width:100%}
+.swipeDelete,.mobileCardLink,.mobileDate,.swipeHint{display:none}
+@media(max-width:640px){
+  .listPanel.listPanel,.listPanelContent.listPanelContent{padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+  .listSummary{display:none}
+  .listPanel .notificationList{gap:10px;border:0;border-radius:0;background:transparent}
+  .swipeCard.swipeCard{position:relative;box-sizing:border-box;min-width:0;width:100%;grid-template-columns:minmax(0,1fr);padding:16px;border:1px solid #e3e9e2;border-radius:13px;background:#fff}
+  .swipeCard.notificationUnread{background:#f6faf4}
+  .swipeCard .notificationDateTile,.swipeCard .notificationIcon{display:none}
+  .swipeCard .mobileDate{display:block}
+}
+@media(max-width:640px) and (hover:none) and (pointer:coarse){
+  .swipeRow.swipeRow{display:flex;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scrollbar-width:none;border:0;border-radius:13px}
+  .swipeRow::-webkit-scrollbar{display:none}
+  .swipeCard.swipeCard{flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always}
+  .swipeCard .cardActions{display:none!important}
+  .mobileCardLink{display:block;position:absolute;inset:0;z-index:1;border-radius:inherit}
+  .mobileCardLink:focus-visible{outline:3px solid #91aa86;outline-offset:-3px}
+  .swipeDelete{display:grid;flex:0 0 76px;place-items:center;align-self:stretch;min-height:60px;border:0;background:#b63e39;color:#fff;scroll-snap-align:end;scroll-snap-stop:always;cursor:pointer}
+  .swipeDelete:disabled{opacity:.5}
+  .swipeHint{display:block;margin:0;color:#738076;font-size:11px;line-height:1.4}
+}
+@media(prefers-reduced-motion:reduce){.notificationItem{transition:none}}
+
+.loadingPanel{min-height:360px;border:1px solid #e3e9e2;border-radius:15px;background:#fff}

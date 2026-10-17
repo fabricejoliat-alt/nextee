@@ -727,6 +727,7 @@ const rows = {
     "abgeschlossen und geplant",
     "completate e pianificate"
   ],
+  "coach.calendar.filterButton": ["Filtrer", "Filter", "Filtern", "Filtra"],
   "coach.calendar.filter": [
     "Filtrer les activités",
     "Filter activities",

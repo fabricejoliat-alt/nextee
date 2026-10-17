@@ -1,7 +1,8 @@
 .firstRow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:stretch}
 .firstRowWithoutAttention{grid-template-columns:repeat(2,minmax(0,1fr))}
 .firstRow>*{min-width:0}
-.attentionCard{grid-column:3}
+.newsCard{grid-column:3}
+.firstRowWithoutAttention .newsCard{grid-column:auto}
 .attentionListCompact{padding-top:0!important}
 .learningSection{display:grid;gap:12px}
 .learningGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:stretch}
@@ -72,8 +73,8 @@
 .monthVolume span{color:#7a857c;font-size:11px;font-weight:700}
 .monthVolume p{margin:4px 0 0;color:#526056;font-size:12px;font-weight:700;line-height:1.45}
 .monthVolume :global(.donut-bg){stroke:#e9eee7}
-@media(max-width:1080px){.firstRow,.learningGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.attentionCard,.homeValidationCard{grid-column:1/-1}.rulesCard{grid-column:1}.etiquetteCard{grid-column:2}}
-@media(max-width:760px){.firstRow,.learningGrid,.marketplaceGrid,.volumeRow{grid-template-columns:1fr}.attentionCard,.homeValidationCard,.rulesCard,.etiquetteCard{grid-column:1/-1}.rulesVisual,.etiquetteVisual{aspect-ratio:16/9}.benchmarks{grid-template-columns:1fr;gap:9px}.benchmark{min-height:168px;padding:13px}.benchmarkHeading{align-items:center;gap:7px}.benchmarkHeading>span:first-child{width:30px;height:30px;flex:0 0 30px}.benchmark h3{font-size:12px}.benchmark strong{font-size:26px}.benchmark>span:not(.statusBadge){font-size:10px}.benchmark small,.benchmark p{font-size:9px}.benchmarkSignals{gap:4px}.statusBadge{font-size:8px}.benchmarksHeader{align-items:flex-start}}
+@media(max-width:1080px){.firstRow,.learningGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.newsCard,.homeValidationCard{grid-column:1/-1}.rulesCard{grid-column:1}.etiquetteCard{grid-column:2}}
+@media(max-width:760px){.firstRow,.learningGrid,.marketplaceGrid,.volumeRow{grid-template-columns:1fr}.newsCard,.homeValidationCard,.rulesCard,.etiquetteCard{grid-column:1/-1}.rulesVisual,.etiquetteVisual{aspect-ratio:16/9}.benchmarks{grid-template-columns:1fr;gap:9px}.benchmark{min-height:168px;padding:13px}.benchmarkHeading{align-items:center;gap:7px}.benchmarkHeading>span:first-child{width:30px;height:30px;flex:0 0 30px}.benchmark h3{font-size:12px}.benchmark strong{font-size:26px}.benchmark>span:not(.statusBadge){font-size:10px}.benchmark small,.benchmark p{font-size:9px}.benchmarkSignals{gap:4px}.statusBadge{font-size:8px}.benchmarksHeader{align-items:flex-start}}
 
 .photoPromptOverlay{--player-primary:#35483b;--player-accent:#899d7d;position:fixed;z-index:4000;inset:0;display:grid;place-items:center;overflow-y:auto;padding:calc(16px + env(safe-area-inset-top,0px)) 16px calc(16px + env(safe-area-inset-bottom,0px));background:rgba(15,23,42,.52)}
 .photoPrompt{box-sizing:border-box;display:grid;width:min(520px,100%);max-height:calc(100dvh - 32px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));gap:16px;overflow-y:auto;margin:auto;padding:22px;border:1px solid rgba(0,0,0,.1);border-radius:16px;background:#fff;box-shadow:0 28px 80px rgba(15,23,42,.22)}
@@ -98,3 +99,6 @@
 .meritMedallion svg{position:absolute;inset:0}
 .meritMedallion .meritRank{position:relative;font-size:30px;line-height:1}
 .meritRank sup{font-size:14px}
+
+.attentionCompetition{display:grid;gap:8px;padding-bottom:12px;border-bottom:1px solid #e8eee6}
+.attentionCompetition h3{margin:0;color:#35483b;font:750 12px/1.3 var(--font-inter-tight),var(--font-inter),sans-serif}

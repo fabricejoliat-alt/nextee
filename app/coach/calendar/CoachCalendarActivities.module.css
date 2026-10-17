@@ -92,3 +92,8 @@
 
   .iconAction { width: 44px; height: 44px; flex-basis: 44px; }
 }
+
+.filterHeading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.filterHeading h2{margin:0;color:#35483b;font:750 16px/1.2 var(--font-inter-tight),sans-serif}
+.calendarPanel{display:grid;gap:16px}
+.calendarToolbar{display:grid;gap:12px;padding-bottom:14px;border-bottom:1px solid #e3e9e2}

@@ -1,28 +1,47 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useSyncExternalStore, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import styles from "./AccessibleDialog.module.css";
 
+const subscribeToDocument = () => () => {};
+const getDocumentBody = () => document.body;
+const getServerBody = () => null;
+
 /** Native modal top layer: background inert, focus contained, Escape supported. */
-export default function AccessibleDialog({ children, onClose, className = "", labelledBy, label }: {
-  children: ReactNode; onClose: () => void; className?: string; labelledBy?: string; label?: string;
+export default function AccessibleDialog({ children, onClose, className = "", labelledBy, label, portal = false }: {
+  children: ReactNode; onClose: () => void; className?: string; labelledBy?: string; label?: string; portal?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
+  const portalRoot = useSyncExternalStore(subscribeToDocument, getDocumentBody, getServerBody);
+  useLayoutEffect(() => {
     const dialog = ref.current;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (!dialog) return;
+    const pagePosition = { left: window.scrollX, top: window.scrollY };
+    const ancestors: Array<{ element: HTMLElement; left: number; top: number }> = [];
+    for (let element = dialog.parentElement; element; element = element.parentElement) {
+      ancestors.push({ element, left: element.scrollLeft, top: element.scrollTop });
+    }
+    const restorePosition = () => {
+      for (const { element, left, top } of ancestors) {
+        element.scrollTo({ left, top, behavior: "instant" });
+      }
+      window.scrollTo({ ...pagePosition, behavior: "instant" });
+    };
     const previousOverflow = document.body.style.overflow;
     dialog.showModal();
     dialog.focus({ preventScroll: true });
     document.body.style.overflow = "hidden";
+    restorePosition();
     return () => {
       dialog.close();
       document.body.style.overflow = previousOverflow;
       if (opener?.isConnected) opener.focus({ preventScroll: true });
+      restorePosition();
     };
-  }, []);
-  return <dialog ref={ref} tabIndex={-1} autoFocus className={`${styles.dialog} ${className}`} aria-label={label} aria-labelledby={labelledBy}
+  }, [portal, portalRoot]);
+  const content = <dialog ref={ref} tabIndex={-1} className={`${styles.dialog} ${className}`} aria-label={label} aria-labelledby={labelledBy}
     aria-modal="true" onCancel={(event) => { event.preventDefault(); onClose(); }}
     onKeyDown={(event) => {
       if (event.key !== "Tab") return;
@@ -45,4 +64,5 @@ export default function AccessibleDialog({ children, onClose, className = "", la
     }}>
     {children}
   </dialog>;
+  return portal ? (portalRoot ? createPortal(content, portalRoot) : null) : content;
 }

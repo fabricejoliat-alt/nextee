@@ -7,10 +7,9 @@ import { organizationFetch as fetch } from "@/lib/organizationFetch";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useRememberedPeriod } from "@/lib/useRememberedPeriod";
-import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { coachDateLocale } from "@/lib/i18n/coachMessages";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
@@ -55,6 +54,7 @@ export default function CoachCalendarPage() {
   const [canPlan, setCanPlan] = useState(false);
   const { period: view, setPeriod: setView, from: customFrom, setFrom: setCustomFrom, to: customTo, setTo: setCustomTo } = useRememberedPeriod<CoachCalendarView>("coach:calendar", coachCalendarInitialPeriod(searchParams.get("view"), searchParams.get("period")), ["year", "month", "week", "day", "custom"], searchParams.get("period") || searchParams.get("view") === "evaluations" ? coachCalendarInitialPeriod(searchParams.get("view"), searchParams.get("period")) : undefined);
   const [eventFilter, setEventFilter] = useState<EventFilter>(searchParams.get("view") === "evaluations" ? "evaluations" : "all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [typeFilter, setTypeFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
   const [anchorDate, setAnchorDate] = useState(() => new Date());
@@ -118,13 +118,19 @@ export default function CoachCalendarPage() {
     <CalendarSubscriptionButton kind="coach" organizationId={searchParams.get("organization_id") || undefined} disabled={loading || Boolean(error)}/>
     {error ? <div className={actionStyles.errorAlert} role="alert">{t(error)} <button type="button" className={actionStyles.secondaryButton} onClick={() => setReload((value) => value + 1)}>{t("coach.retry")}</button></div> : null}
     <section className={styles.overview} aria-label={t("coach.calendar.metrics")}><div className={styles.statsGrid}><article className={styles.statCard}><span>{t("coach.calendar.completed")}</span><b>{loading || error ? "—" : stats.completed}</b><small>{t("coach.calendar.scope")}</small></article><article className={styles.statCard}><span>{t("coach.calendar.planned")}</span><b>{loading || error ? "—" : stats.planned}</b><small>{t("coach.calendar.upcoming")}</small></article><article className={styles.statCard}><span>{t("coach.calendar.total")}</span><b>{loading || error ? "—" : stats.total}</b><small>{t("coach.calendar.totalHint")}</small></article></div></section>
-    <section className={styles.quickPanel}><div className={styles.sectionHeading}><div><h2>{t("coach.calendar.filter")}</h2><p>{t("coach.calendar.filterHint")}</p></div></div><div style={{ display: "grid", gap: 12 }}>
-      <div style={{...segmentWrapStyle, flexWrap: "wrap"}}>{(["year", "month", "week", "day", "custom"] as const).map((period, index) => <button key={period} type="button" onClick={() => setView(period)} aria-pressed={view === period} style={segmentButtonStyle(view === period, index < 4)}>{period === "custom" ? pickLocaleText(locale, "Période personnalisée", "Custom period", "Benutzerdefinierter Zeitraum", "Periodo personalizzato") : t(`coach.calendar.${period}`)}</button>)}</div>
-      {view === "custom" ? <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}><label style={fieldStyle}><span style={fieldLabelStyle}>{pickLocaleText(locale,"Du","From","Von","Dal")}</span><input className="input" type="date" value={customFrom} max={customTo || undefined} onChange={event=>setCustomFrom(event.target.value)}/></label><label style={fieldStyle}><span style={fieldLabelStyle}>{pickLocaleText(locale,"Au","To","Bis","Al")}</span><input className="input" type="date" value={customTo} min={customFrom || undefined} onChange={event=>setCustomTo(event.target.value)}/></label></div> : null}
+    <section className={styles.quickPanel}>
+      <div className={activityStyles.filterHeading}><h2>{t("coach.calendar.filter")}</h2><button type="button" className={actionStyles.secondaryButton} aria-expanded={filtersOpen} aria-controls="coach-calendar-filters" onClick={() => setFiltersOpen(open => !open)}><SlidersHorizontal size={16} aria-hidden="true" />{t("coach.calendar.filterButton")}</button></div>
+      {filtersOpen ? <div id="coach-calendar-filters">
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(210px,1fr))", gap: 12 }}><FilterSelect label={t("coach.calendar.year")} value={String(anchorDate.getFullYear())} onChange={(value) => setAnchorDate(new Date(Number(value), 0, 1))} options={years.map((year) => [String(year), String(year)])}/><FilterSelect label={t("coach.calendar.display")} value={eventFilter} onChange={(value) => { setEventFilter(value as EventFilter); if (value === "evaluations") setView("year"); }} options={[["all", t("coach.calendar.all")], ["evaluations", t("coach.nav.evaluations")]]} /><FilterSelect label={t("coach.calendar.type")} value={typeFilter} onChange={setTypeFilter} options={[["all", t("coach.calendar.allTypes")], ["training", t("coach.activity.training")], ["interclub", t("coach.activity.interclub")], ["camp", t("coach.activity.camp")], ["session", t("coach.activity.session")], ["event", t("coach.activity.event")]]} /><FilterSelect label={t("coach.calendar.group")} value={groupFilter} onChange={setGroupFilter} options={[["all", t("coach.calendar.allGroups")], ...groups]} /></div>
+      </div> : null}
+    </section>
+    <section className={`${styles.quickPanel} ${activityStyles.calendarPanel}`}>
+      <div className={activityStyles.calendarToolbar}>
+      <div style={{...segmentWrapStyle, flexWrap: "wrap"}}>{(["year", "month", "week", "day", "custom"] as const).map((period, index) => <button key={period} type="button" onClick={() => setView(period)} aria-pressed={view === period} style={segmentButtonStyle(view === period, index < 4)}>{period === "custom" ? t("common.custom") : t(`coach.calendar.${period}`)}</button>)}</div>
+      {view === "custom" ? <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12}}><label style={fieldStyle}><span style={fieldLabelStyle}>{t("common.from")}</span><input className="input" type="date" value={customFrom} max={customTo || undefined} onChange={event=>setCustomFrom(event.target.value)}/></label><label style={fieldStyle}><span style={fieldLabelStyle}>{t("common.to")}</span><input className="input" type="date" value={customTo} min={customFrom || undefined} onChange={event=>setCustomTo(event.target.value)}/></label></div> : null}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>{view !== "custom" ? <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}><button className={actionStyles.secondaryButton} type="button" onClick={() => movePeriod(-1)} aria-label={t("coach.calendar.previous")} title={t("coach.calendar.previous")}><ChevronLeft size={16} aria-hidden="true" /></button><button className={actionStyles.secondaryButton} type="button" onClick={() => setAnchorDate(new Date())}>{t("coach.calendar.today")}</button><button className={actionStyles.secondaryButton} type="button" onClick={() => movePeriod(1)} aria-label={t("coach.calendar.next")} title={t("coach.calendar.next")}><ChevronRight size={16} aria-hidden="true" /></button></div> : null}<strong style={{ color: "#35483b", fontSize: 16 }}>{headerLabel}</strong></div>
-    </div></section>
-    {loading ? <section className={styles.quickPanel}><ListLoadingBlock label={t("coach.calendar.loading")} /></section> : error ? null : <section className={activityStyles.list}>
+      </div>
+    {loading ? <ListLoadingBlock label={t("coach.calendar.loading")} /> : error ? null : <div className={activityStyles.list}>
       {displayedEvents.map((event) => {
         const href = `/coach/groups/${event.group_id}/planning/${event.id}`;
         const actionState = coachCalendarActionState(event, trainingEvaluationCompleteByEventId[event.id] === true, referenceNow);
@@ -135,7 +141,8 @@ export default function CoachCalendarPage() {
           actions={<CoachActivityAction state={actionState} groupId={event.group_id} eventId={event.id} name={event.title || eventTypeLabel(event.event_type, t)}/>}/>;
       })}
       {!displayedEvents.length ? <div className="marketplace-empty">{t("coach.calendar.empty")}</div> : null}
-    </section>}
+    </div>}
+    </section>
   </main>;
 }
 
