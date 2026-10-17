@@ -4,6 +4,8 @@ import Link from "next/link";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import type { AppLocale } from "@/lib/i18n/messages";
+import { Settings } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
@@ -80,7 +82,7 @@ function translateAuthMessage(message: string, t: (key: string) => string) {
 }
 
 export default function ManagerProfilePage() {
-  const { t } = useI18n();
+  const { t, locale, setLocale } = useI18n();
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -749,7 +751,22 @@ export default function ManagerProfilePage() {
 
                 <div className="hr-soft" />
 
-                <BiometricLockSettings />
+                <div style={{ display: "grid", gap: 10, minWidth: 0 }}>
+                  <div className="card-title" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 0 }}>
+                    <Settings size={17} aria-hidden="true" />
+                    {t("playerProfile.applicationSettings")}
+                  </div>
+                  <Field label={t("common.language")}>
+                    <select value={locale} onChange={(event) => setLocale(event.target.value as AppLocale)}>
+                      <option value="fr">Français</option>
+                      <option value="en">English</option>
+                      <option value="de">Deutsch</option>
+                      <option value="it">Italiano</option>
+                    </select>
+                  </Field>
+                  <BiometricLockSettings />
+                </div>
+                <div className="hr-soft" />
                 {/* ✅ ENREGISTRER à l’intérieur de la card */}
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
                   <button

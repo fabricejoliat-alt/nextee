@@ -11,7 +11,7 @@ import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import type { AppLocale } from "@/lib/i18n/messages";
-import { Languages } from "lucide-react";
+import { Settings } from "lucide-react";
 import CoachListSkeleton from "@/components/coach/CoachListSkeleton";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import styles from "./CoachProfile.module.css";
@@ -760,11 +760,10 @@ export default function CoachProfilePage() {
 
                 <div className="hr-soft" />
 
-                <BiometricLockSettings />
                 <div className={styles.interfaceSettings}>
                   <div className={`card-title ${styles.interfaceTitle}`}>
-                    <Languages size={17} aria-hidden="true" />
-                    {t("playerProfile.interfaceSettings")}
+                    <Settings size={17} aria-hidden="true" />
+                    {t("playerProfile.applicationSettings")}
                   </div>
                   <Field label={t("common.language")}>
                     <select value={locale} onChange={(event) => setLocale(event.target.value as AppLocale)}>
@@ -774,7 +773,7 @@ export default function CoachProfilePage() {
                       <option value="it">Italiano</option>
                     </select>
                   </Field>
-                  <p className={styles.helperText}>{t("playerProfile.interfaceLanguageHelp")}</p>
+                  <BiometricLockSettings />
                 </div>
 
                 <div className="hr-soft" />

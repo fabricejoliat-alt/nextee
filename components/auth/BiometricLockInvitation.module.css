@@ -1,0 +1,10 @@
+.dialog { width: min(420px, calc(100vw - 32px)); padding: 24px; border: 1px solid #dce5d9; border-radius: 20px; background: #fff; color: #35483b; }
+.icon { display: block; margin-bottom: 16px; }
+.dialog h2 { margin: 0 0 12px; font-size: 22px; line-height: 1.2; }
+.dialog p { margin: 0; font-size: 14px; line-height: 1.6; }
+.actions { display: grid; gap: 10px; margin-top: 22px; }
+.actions button { min-height: 46px; width: 100%; padding: 12px 16px; border: 1px solid #35483b; border-radius: 11px; font: inherit; font-weight: 750; cursor: pointer; }
+.primary { background: #35483b; color: #fff; }
+.secondary { background: #fff; color: #35483b; }
+.actions button:disabled { cursor: wait; opacity: .6; }
+.actions + p { margin-top: 12px; }

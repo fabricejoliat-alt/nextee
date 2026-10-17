@@ -17,6 +17,7 @@ interface BiometricLockPlugin {
 }
 
 const plugin = registerPlugin<BiometricLockPlugin>("BiometricLock");
+export const BIOMETRIC_LOCK_CHANGE_EVENT = "activitee:biometric-lock-changed";
 
 export function supportsNativeBiometricLock() {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios" && Capacitor.isPluginAvailable("BiometricLock");
@@ -28,7 +29,9 @@ export async function getBiometricLockStatus(): Promise<BiometricLockStatus | nu
 
 export async function configureBiometricLock(userID: string, enabled: boolean, locale: AppLocale) {
   if (!supportsNativeBiometricLock()) throw new Error("UNAVAILABLE");
-  return plugin.configure({ userID, enabled, locale });
+  const status = await plugin.configure({ userID, enabled, locale });
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(BIOMETRIC_LOCK_CHANGE_EVENT));
+  return status;
 }
 
 export async function syncBiometricSession(userID: string | null, locale?: AppLocale) {

@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { ScanFace, ShieldCheck } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { supabase } from "@/lib/supabaseClient";
 import { biometricMessages } from "@/lib/i18n/biometricMessages";
-import { biometricErrorKey, configureBiometricLock, getBiometricLockStatus, supportsNativeBiometricLock, syncBiometricSession, type BiometricLockStatus } from "@/lib/nativeBiometricLock";
+import { BIOMETRIC_LOCK_CHANGE_EVENT, biometricErrorKey, configureBiometricLock, getBiometricLockStatus, supportsNativeBiometricLock, syncBiometricSession, type BiometricLockStatus } from "@/lib/nativeBiometricLock";
 import styles from "./BiometricLockSettings.module.css";
 
 export default function BiometricLockSettings() {
@@ -29,8 +28,10 @@ export default function BiometricLockSettings() {
     };
     void refresh();
     const onVisible = () => { if (document.visibilityState === "visible") void refresh(); };
+    const onConfigured = () => { void refresh(); };
     document.addEventListener("visibilitychange", onVisible);
-    return () => { active = false; document.removeEventListener("visibilitychange", onVisible); };
+    window.addEventListener(BIOMETRIC_LOCK_CHANGE_EVENT, onConfigured);
+    return () => { active = false; document.removeEventListener("visibilitychange", onVisible); window.removeEventListener(BIOMETRIC_LOCK_CHANGE_EVENT, onConfigured); };
   }, []);
 
   async function toggle() {
@@ -55,17 +56,14 @@ export default function BiometricLockSettings() {
   if (!status && !failed) return null;
   const method = status?.biometryType === "touchID" ? "Touch ID" : "Face ID";
   return (
-    <section className={styles.card} aria-labelledby={headingId}>
-      <h3 id={headingId}><ScanFace size={21} aria-hidden="true" />{copy.title}</h3>
-      <p>{copy.description.replace("{method}", method)}</p>
-      {status ? <p className={styles.status} role="status"><ShieldCheck size={16} aria-hidden="true" />{status.enabled ? copy.enabled : copy.disabled}</p> : null}
+    <div className={styles.field} role="group" aria-labelledby={headingId}>
+      <span id={headingId} className={styles.label}>{copy.title}</span>
       {status && !status.available && !status.enabled ? <p>{copy.unavailable}</p> : null}
       {failed ? <p role="alert">{copy.error}</p> : null}
       <button className="btn" type="button" disabled={busy} onClick={() => void toggle()}>
-        {busy ? copy.checking : status?.enabled ? copy.disable : copy.enable.replace("{method}", method)}
+        {busy ? copy.checking : (status?.enabled ? copy.disable : copy.enable).replace("{method}", method)}
       </button>
       {feedback ? <p role={feedback === "cancelled" ? "status" : "alert"}>{copy[feedback]}</p> : null}
-      <p className={styles.help}>{copy.privacy}</p>
-    </section>
+    </div>
   );
 }

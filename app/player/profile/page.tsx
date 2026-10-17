@@ -19,7 +19,7 @@ import {
   ContactRound,
   Gauge,
   History,
-  Languages,
+  Settings,
   KeyRound,
   MapPin,
   Pencil,
@@ -1307,8 +1307,7 @@ export default function PlayerProfilePage() {
                   </SectionCard>
                 ) : null}
 
-                <BiometricLockSettings />
-                <SectionCard title={t("playerProfile.interfaceSettings")} icon={<Languages size={17} />} wide>
+                <SectionCard title={t("playerProfile.applicationSettings")} icon={<Settings size={17} />} wide>
                   <div className={styles.field}>
                     <label htmlFor="player-interface-language">{t("common.language")}</label>
                     <select
@@ -1322,7 +1321,7 @@ export default function PlayerProfilePage() {
                       <option value="it">Italiano</option>
                     </select>
                   </div>
-                  <p className={styles.helperText}>{t("playerProfile.interfaceLanguageHelp")}</p>
+                  <BiometricLockSettings />
                 </SectionCard>
 
                 {viewerRole === "player" ? (

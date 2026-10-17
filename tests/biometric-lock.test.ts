@@ -4,6 +4,7 @@ import test from "node:test";
 import { biometricMessages } from "../lib/i18n/biometricMessages.ts";
 import { loadManagerModule } from "./helpers/managerRouteHarness.ts";
 import type * as NativeLock from "../lib/nativeBiometricLock.ts";
+import type * as Invitation from "../lib/biometricInvitation.ts";
 
 function fixture(platform = "ios", registered = true) {
   const calls: Array<{ method: string; options?: unknown }> = [];
@@ -53,6 +54,41 @@ test("cancellation and unavailable biometrics are recoverable, localized outcome
   for (const error of [null, "error", { code: "LOCKED" }, new Error("secret system detail")]) assert.equal(api.biometricErrorKey(error), "error");
 });
 
+test("invitation is offered once per account and remains dismissed across app restarts", () => {
+  const values = new Map<string, string>();
+  const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+  const status = { enabled: false, available: true, locked: false, biometryType: "faceID" as const };
+  const { claimBiometricInvitation: claim } = loadManagerModule<typeof Invitation>("lib/biometricInvitation.ts", {});
+  assert.equal(claim("parent", status, storage), true);
+  assert.equal(claim("parent", status, storage), false);
+  const restarted = loadManagerModule<typeof Invitation>("lib/biometricInvitation.ts", {});
+  assert.equal(restarted.claimBiometricInvitation("parent", status, storage), false);
+  assert.equal(restarted.claimBiometricInvitation("another-account", status, storage), true);
+  assert.deepEqual([...values.values()], ["offered", "offered"]);
+});
+
+test("invitation waits for an unlocked compatible device and skips an already enabled account", () => {
+  const values = new Map<string, string>();
+  const storage = { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+  const status = { enabled: false, available: true, locked: false, biometryType: "faceID" as const };
+  const { claimBiometricInvitation: claim } = loadManagerModule<typeof Invitation>("lib/biometricInvitation.ts", {});
+  for (const state of [null, { ...status, available: false }, { ...status, locked: true }, { ...status, biometryType: "none" as const }]) {
+    assert.equal(claim("player", state, storage), false);
+  }
+  assert.equal(values.size, 0);
+  assert.equal(claim("player", status, storage), true);
+  assert.equal(claim("enabled-account", { ...status, enabled: true }, storage), false);
+  assert.equal(claim("enabled-account", status, storage), false);
+});
+
+test("unavailable preference storage never blocks access or repeats an invitation in the same session", () => {
+  const storage = { getItem(): null { throw new Error("Storage blocked"); }, setItem() { throw new Error("Storage blocked"); } };
+  const { claimBiometricInvitation: claim } = loadManagerModule<typeof Invitation>("lib/biometricInvitation.ts", {});
+  const status = { enabled: false, available: true, locked: false, biometryType: "touchID" as const };
+  assert.equal(claim("account", status, storage), true);
+  assert.equal(claim("account", status, storage), false);
+});
+
 test("four languages cover settings, native lock and iOS Face ID permission", () => {
   const keys = Object.keys(biometricMessages.fr).sort();
   const nativeKeys = [...readFileSync("ios/App/App/fr.lproj/BiometricLock.strings", "utf8").matchAll(/^"([^"]+)"/gm)].map(match => match[1]).sort();
@@ -60,6 +96,8 @@ test("four languages cover settings, native lock and iOS Face ID permission", ()
     assert.deepEqual(Object.keys(biometricMessages[locale]).sort(), keys);
     assert.ok(Object.values(biometricMessages[locale]).every(value => value.trim().length > 0));
     assert.match(biometricMessages[locale].description, /\{method\}/);
+    assert.match(biometricMessages[locale].disable, /\{method\}/);
+    assert.match(biometricMessages[locale].invitationTitle, /\{method\}/);
     const native = readFileSync(`ios/App/App/${locale}.lproj/BiometricLock.strings`, "utf8");
     assert.deepEqual([...native.matchAll(/^"([^"]+)"/gm)].map(match => match[1]).sort(), nativeKeys);
     assert.match(readFileSync(`ios/App/App/${locale}.lproj/InfoPlist.strings`, "utf8"), /"NSFaceIDUsageDescription" = ".+";/);
