@@ -1119,7 +1119,7 @@ export default function PlayerHomePage() {
     return "/player/news";
   }, [viewerRole, effectiveUserId]);
   const volumeNeedsAttention = trainingsSummary.objective > 0 && trainingsSummary.percent < 100 && new Date().getDate() >= 20;
-  const showAttentionCard = upcomingLoading || insightsLoading || insightsError || pendingTrainings.length > 0 || attentionEvents.length > 0 || Boolean(nextCompetition) || volumeNeedsAttention;
+  const showAttentionCard = !upcomingLoading && !insightsLoading && (pendingTrainings.length > 0 || attentionEvents.length > 0 || Boolean(nextCompetition) || volumeNeedsAttention);
 
   return (
     <div className="player-dashboard-bg player-home-page">
@@ -1211,8 +1211,7 @@ export default function PlayerHomePage() {
 
             {showAttentionCard ? <section className={playerUiStyles.panel}>
               <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Les éléments à vérifier prochainement.", "Things to review soon.")}</p></div></div>
-              {upcomingLoading || insightsLoading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : (
-                <>
+              <>
                 {nextCompetition ? <div className={styles.attentionCompetition}>
                   <h3>{pickLocaleText(locale,"Prochaine compétition","Next competition","Nächster Wettkampf","Prossima competizione")}</h3>
                   <HomeActivityCard startsAt={nextCompetition.starts_at} dateLocale={dateLocale}
@@ -1241,8 +1240,7 @@ export default function PlayerHomePage() {
                   ) : null}
                   {insightsError ? <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Certaines données sont momentanément indisponibles.", "Some data is temporarily unavailable.")}</div> : null}
                 </div>
-                </>
-              )}
+              </>
             </section> : null}
 
             <section className={`${playerUiStyles.panel} ${styles.newsCard}`}>
