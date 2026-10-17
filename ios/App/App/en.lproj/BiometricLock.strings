@@ -1,0 +1,11 @@
+"locked" = "Unlock the app with Face ID, Touch ID or your device passcode.";
+"unlock" = "Unlock";
+"checking" = "Verifying…";
+"cancel" = "Cancel";
+"passcode" = "Use device passcode";
+"enableReason" = "Enable biometric unlock for ActiviTee on this device.";
+"disableReason" = "Confirm disabling biometric unlock for ActiviTee.";
+"unlockReason" = "Unlock ActiviTee to access your account.";
+"cancelled" = "The app is still locked. Try again when you are ready.";
+"failed" = "Verification failed. Try again using biometrics or your device passcode.";
+"unavailable" = "Check that a passcode is set in your device settings, then try again.";

@@ -7,6 +7,7 @@ import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
+import BiometricLockSettings from "@/components/auth/BiometricLockSettings";
 
 type ProfileRow = {
   id: string;
@@ -748,6 +749,7 @@ export default function ManagerProfilePage() {
 
                 <div className="hr-soft" />
 
+                <BiometricLockSettings />
                 {/* ✅ ENREGISTRER à l’intérieur de la card */}
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 4 }}>
                   <button

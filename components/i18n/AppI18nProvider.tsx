@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { DEFAULT_LOCALE, messages, type AppLocale } from "@/lib/i18n/messages";
+import { syncBiometricLocale } from "@/lib/nativeBiometricLocale";
 
 type I18nContextValue = {
   locale: AppLocale;
@@ -27,6 +28,7 @@ export default function AppI18nProvider({ children }: { children: React.ReactNod
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, locale);
     document.documentElement.lang = locale;
+    void syncBiometricLocale(locale);
   }, [locale]);
 
   useEffect(() => {

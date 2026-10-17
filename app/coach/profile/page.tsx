@@ -15,6 +15,7 @@ import { Languages } from "lucide-react";
 import CoachListSkeleton from "@/components/coach/CoachListSkeleton";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import styles from "./CoachProfile.module.css";
+import BiometricLockSettings from "@/components/auth/BiometricLockSettings";
 
 type ProfileRow = {
   id: string;
@@ -759,6 +760,7 @@ export default function CoachProfilePage() {
 
                 <div className="hr-soft" />
 
+                <BiometricLockSettings />
                 <div className={styles.interfaceSettings}>
                   <div className={`card-title ${styles.interfaceTitle}`}>
                     <Languages size={17} aria-hidden="true" />

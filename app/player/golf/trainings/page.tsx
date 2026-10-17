@@ -1,5 +1,7 @@
 "use client";
 
+import CalendarSubscriptionButton from "@/components/calendar/CalendarSubscriptionButton";
+
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
 import Link from "next/link";
@@ -114,6 +116,7 @@ export default function PlayerActivitiesPage(){
   return <div className={`player-dashboard-bg ${styles.page}`}><div className={`app-shell ${styles.shell}`}>
     <PlayerBreadcrumb items={[{label:"Player",href:"/player"},{label:t("nav.calendar")}]} />
     <header className={playerUiStyles.topline}><div><h1>{t("nav.calendar")}</h1><p className={playerUiStyles.lead}>{tr("Retrouvez votre programme, confirmez vos présences et complétez vos évaluations.","Review your schedule, confirm attendance and complete your evaluations.")}</p></div></header>
+    <CalendarSubscriptionButton kind="player" playerId={playerId} disabled={loading || Boolean(error) || !playerId}/>
     {error?<div className={styles.error} role="alert">{error}</div>:null}
     {plannerType?<section id="personal-planning-title" className={styles.plannerSection} aria-labelledby="personal-planner-heading"><div className={`${styles.plannerPanel} ${plannerType==="training"?styles.trainingPlannerPanel:""}`}><div className={styles.plannerPanelHeading}><div><span>{plannerType==="training"?tr("Entraînement personnel","Personal training"):plannerType==="competition"?tr("Compétition personnelle","Personal competition"):tr("Stage personnel","Personal camp")}</span><h3 id="personal-planner-heading">{plannerType==="training"?tr("Ajouter ou planifier un entraînement","Add or schedule a training"):plannerType==="competition"?tr("Planifier une compétition","Schedule a competition"):tr("Planifier un stage","Schedule a camp")}</h3></div><button type="button" onClick={()=>setPlannerType(null)} aria-label={tr("Fermer le formulaire","Close form")}><X size={17}/></button></div>{plannerType==="training"?<div className={styles.embeddedTrainingForm}><PlayerTrainingNewClient embedded embeddedSubmitClassName={styles.saveButton} embeddedSubmitLabel={tr("Ajouter au calendrier","Add to calendar")} onSaved={()=>{setPlannerType(null);setReloadKey(current=>current+1)}}/></div>:<form className={styles.plannerForm} onSubmit={savePersonalActivity}>
       <label className={styles.wideField}><span>{plannerType==="camp"?tr("Nom du stage","Camp name"):tr("Nom de la compétition","Competition name")}</span><input value={plannerTitle} onChange={e=>setPlannerTitle(e.target.value)} required placeholder={plannerType==="camp"?tr("Stage de printemps","Spring camp"):tr("Championnat du club","Club championship")}/></label>

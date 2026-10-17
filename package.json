@@ -7,6 +7,8 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
+    "test:calendar-subscriptions": "node --experimental-strip-types --test tests/calendar-subscriptions.test.ts tests/calendar-subscriptions-sql.test.mjs",
+    "test:biometric-lock": "node --experimental-strip-types --test tests/biometric-lock.test.ts",
     "test:camps": "node --test --experimental-strip-types tests/camps-management.test.ts",
     "test:competitions": "node --test --experimental-strip-types tests/competitions.test.ts",
     "test:evaluation-criteria": "node --test --experimental-strip-types tests/evaluation-criteria.test.ts",

@@ -1,5 +1,7 @@
 "use client";
 
+import CalendarSubscriptionButton from "@/components/calendar/CalendarSubscriptionButton";
+
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
 import Link from "next/link";
@@ -113,6 +115,7 @@ export default function CoachCalendarPage() {
   return <main className={styles.page}>
     <nav data-ui="breadcrumb" className={actionStyles.breadcrumb} aria-label={t("common.breadcrumb")}>{`${t("common.coach")} / ${t("coach.nav.activities")}`}</nav>
     <div className={styles.topline}><div><h1>{t("coach.nav.activities")}</h1><p className={styles.lead}>{t("coach.calendar.intro")}</p></div>{canPlan && firstGroupId ? <Link className={actionStyles.primaryButton} href={`/coach/groups/${firstGroupId}/planning/add`}><CalendarDays size={16} aria-hidden="true" />{t("coach.calendar.add")}</Link> : null}</div>
+    <CalendarSubscriptionButton kind="coach" organizationId={searchParams.get("organization_id") || undefined} disabled={loading || Boolean(error)}/>
     {error ? <div className={actionStyles.errorAlert} role="alert">{t(error)} <button type="button" className={actionStyles.secondaryButton} onClick={() => setReload((value) => value + 1)}>{t("coach.retry")}</button></div> : null}
     <section className={styles.overview} aria-label={t("coach.calendar.metrics")}><div className={styles.statsGrid}><article className={styles.statCard}><span>{t("coach.calendar.completed")}</span><b>{loading || error ? "—" : stats.completed}</b><small>{t("coach.calendar.scope")}</small></article><article className={styles.statCard}><span>{t("coach.calendar.planned")}</span><b>{loading || error ? "—" : stats.planned}</b><small>{t("coach.calendar.upcoming")}</small></article><article className={styles.statCard}><span>{t("coach.calendar.total")}</span><b>{loading || error ? "—" : stats.total}</b><small>{t("coach.calendar.totalHint")}</small></article></div></section>
     <section className={styles.quickPanel}><div className={styles.sectionHeading}><div><h2>{t("coach.calendar.filter")}</h2><p>{t("coach.calendar.filterHint")}</p></div></div><div style={{ display: "grid", gap: 12 }}>

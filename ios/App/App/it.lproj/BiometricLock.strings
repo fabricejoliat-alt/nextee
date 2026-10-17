@@ -1,0 +1,11 @@
+"locked" = "Sblocca l’app con Face ID, Touch ID o il codice del dispositivo.";
+"unlock" = "Sblocca";
+"checking" = "Verifica…";
+"cancel" = "Annulla";
+"passcode" = "Usa il codice del dispositivo";
+"enableReason" = "Attiva lo sblocco biometrico di ActiviTee su questo dispositivo.";
+"disableReason" = "Conferma la disattivazione dello sblocco biometrico di ActiviTee.";
+"unlockReason" = "Sblocca ActiviTee per accedere al tuo account.";
+"cancelled" = "L’app rimane bloccata. Riprova quando sei pronto.";
+"failed" = "Verifica non riuscita. Riprova con la biometria o il codice del dispositivo.";
+"unavailable" = "Verifica che sia configurato un codice nelle impostazioni del dispositivo, poi riprova.";

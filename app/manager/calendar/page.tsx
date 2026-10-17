@@ -1,5 +1,7 @@
 "use client";
 
+import CalendarSubscriptionButton from "@/components/calendar/CalendarSubscriptionButton";
+
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
@@ -479,6 +481,7 @@ export default function CoachCalendarPage() {
         </Link>
       </div>
 
+      <CalendarSubscriptionButton kind="manager" disabled={loading || Boolean(error)}/>
       {error && <div className={actionStyles.errorAlert} role="alert">{error}</div>}
 
       <section className={styles.overview} aria-label={tr("Indicateurs des activités", "Activity statistics")}>

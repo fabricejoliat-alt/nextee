@@ -31,6 +31,7 @@ import {
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import styles from "./PlayerProfile.module.css";
 import { isValidPassword } from "@/lib/passwordPolicy";
+import BiometricLockSettings from "@/components/auth/BiometricLockSettings";
 
 type ProfileRow = {
   id: string;
@@ -1306,6 +1307,7 @@ export default function PlayerProfilePage() {
                   </SectionCard>
                 ) : null}
 
+                <BiometricLockSettings />
                 <SectionCard title={t("playerProfile.interfaceSettings")} icon={<Languages size={17} />} wide>
                   <div className={styles.field}>
                     <label htmlFor="player-interface-language">{t("common.language")}</label>

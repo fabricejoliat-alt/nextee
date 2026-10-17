@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { invalidateClientPageCacheByPrefix } from "@/lib/clientPageCache";
+import { syncBiometricSession } from "@/lib/nativeBiometricLock";
 
 const LAST_USER_KEY = "app:last_user_id";
 const PLAYER_DRAWER_CACHE_KEY = "player:drawer:footer:v1";
@@ -46,9 +47,11 @@ export default function AuthSessionBoundary() {
     let active = true;
 
     (async () => {
-      const { data } = await supabase.auth.getUser();
+      const { data, error } = await supabase.auth.getUser();
       if (!active) return;
       const currentUserId = data.user?.id ?? "";
+      // A transient network error must never turn off the native device lock.
+      if (!error && currentUserId) void syncBiometricSession(currentUserId).catch(() => {});
       const lastUserId = safeGet(LAST_USER_KEY) ?? "";
 
       if (currentUserId && lastUserId && currentUserId !== lastUserId) {
@@ -64,6 +67,7 @@ export default function AuthSessionBoundary() {
       const lastUserId = safeGet(LAST_USER_KEY) ?? "";
 
       if (event === "SIGNED_OUT") {
+        void syncBiometricSession(null).catch(() => {});
         clearPerUserCaches();
         safeRemove(LAST_USER_KEY);
         return;
@@ -74,6 +78,7 @@ export default function AuthSessionBoundary() {
       }
 
       if (currentUserId) safeSet(LAST_USER_KEY, currentUserId);
+      if (currentUserId) void syncBiometricSession(currentUserId).catch(() => {});
     });
 
     return () => {
@@ -84,4 +89,3 @@ export default function AuthSessionBoundary() {
 
   return null;
 }
-

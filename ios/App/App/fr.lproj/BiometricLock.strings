@@ -1,0 +1,11 @@
+"locked" = "Déverrouillez l’app avec Face ID, Touch ID ou le code de votre appareil.";
+"unlock" = "Déverrouiller";
+"checking" = "Vérification…";
+"cancel" = "Annuler";
+"passcode" = "Utiliser le code de l’appareil";
+"enableReason" = "Activer le déverrouillage biométrique d’ActiviTee sur cet appareil.";
+"disableReason" = "Confirmer la désactivation du déverrouillage biométrique d’ActiviTee.";
+"unlockReason" = "Déverrouiller ActiviTee pour accéder à votre compte.";
+"cancelled" = "L’app reste verrouillée. Réessayez lorsque vous êtes prêt.";
+"failed" = "Vérification impossible. Réessayez avec la biométrie ou le code de l’appareil.";
+"unavailable" = "Vérifiez qu’un code de déverrouillage est configuré dans les réglages de votre appareil, puis réessayez.";

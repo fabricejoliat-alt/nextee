@@ -1,0 +1,24 @@
+.trigger, .primary, .secondary, .danger { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border-radius: 10px; padding: 10px 14px; font: inherit; font-size: 13px; font-weight: 750; cursor: pointer; text-decoration: none; text-align: center; }
+.trigger, .secondary { color: #35483b; border: 1px solid #cdd9ce; background: #fff; }
+.trigger { width: fit-content; max-width: 100%; }
+.trigger svg, .primary svg, .secondary svg { flex-shrink: 0; }
+.primary { background: #35483b; color: #fff; border: 1px solid #35483b; }
+.dialog { width: min(540px, calc(100vw - 32px)); border: 1px solid #dce5db; border-radius: 18px; padding: 24px; background: #fff; color: #35483b; box-shadow: 0 24px 80px #14271930; }
+.heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.heading h2 { margin: 5px 0 0; font-size: 22px; line-height: 1.25; }
+.close { display: grid; place-items: center; width: 44px; min-height: 44px; flex-shrink: 0; border: 0; border-radius: 8px; color: #35483b; background: #f1f5f0; cursor: pointer; }
+.dialog p { font-size: 14px; line-height: 1.6; margin: 12px 0; }
+.intro { font-weight: 600; }
+.note { color: #58675d; background: #f4f7f2; padding: 12px; border-radius: 10px; }
+.subscription { display: grid; gap: 10px; margin-top: 18px; }
+.subscription p { margin: 0; }
+.label { display: grid; gap: 6px; font-size: 12px; font-weight: 700; min-width: 0; }
+.label input { width: 100%; min-width: 0; box-sizing: border-box; min-height: 44px; padding: 10px; font-size: 16px; border: 1px solid #cdd9ce; border-radius: 8px; color: #35483b; background: #fafcf9; }
+.error { color: #9f3030; }
+.revoke { display: grid; gap: 12px; border-top: 1px solid #e4ebe4; padding-top: 14px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.danger { color: #9f3030; border: 1px solid #dfbaba; background: #fff; }
+.revokeButton { justify-self: start; min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: #9f3030; font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
+.trigger:disabled, .dialog button:disabled { opacity: .55; cursor: wait; }
+.trigger:focus-visible, .dialog :is(a,button,input):focus-visible { outline: 3px solid #87ad75; outline-offset: 3px; }
+@media (max-width: 600px) { .trigger { width: 100%; } .dialog { padding: 18px; } .heading h2 { font-size: 20px; } }

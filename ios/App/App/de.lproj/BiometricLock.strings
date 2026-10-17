@@ -1,0 +1,11 @@
+"locked" = "Entsperre die App mit Face ID, Touch ID oder deinem Gerätecode.";
+"unlock" = "Entsperren";
+"checking" = "Wird überprüft…";
+"cancel" = "Abbrechen";
+"passcode" = "Gerätecode verwenden";
+"enableReason" = "Biometrisches Entsperren von ActiviTee auf diesem Gerät aktivieren.";
+"disableReason" = "Deaktivierung des biometrischen Entsperrens von ActiviTee bestätigen.";
+"unlockReason" = "ActiviTee entsperren, um auf dein Konto zuzugreifen.";
+"cancelled" = "Die App bleibt gesperrt. Versuche es erneut, wenn du bereit bist.";
+"failed" = "Überprüfung fehlgeschlagen. Versuche es mit Biometrie oder deinem Gerätecode erneut.";
+"unavailable" = "Prüfe, ob in den Geräteeinstellungen ein Gerätecode eingerichtet ist, und versuche es erneut.";

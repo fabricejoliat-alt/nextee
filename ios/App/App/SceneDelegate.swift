@@ -6,6 +6,10 @@ private class BrandedBridgeViewController: CAPBridgeViewController {
     private var launchOverlay: UIImageView?
     private var loadingObservation: NSKeyValueObservation?
 
+    override func capacitorDidLoad() {
+        bridge?.registerPluginInstance(BiometricLockPlugin())
+    }
+
     override func webView(with frame: CGRect, configuration: WKWebViewConfiguration) -> WKWebView {
         let webView = super.webView(with: frame, configuration: configuration)
         let launchColor = UIColor(red: 53 / 255, green: 72 / 255, blue: 59 / 255, alpha: 1)
@@ -64,10 +68,15 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
         window = UIWindow(windowScene: windowScene)
         window?.rootViewController = BrandedBridgeViewController()
+        if let window { BiometricLockController.shared.attach(to: window) }
         window?.makeKeyAndVisible()
 
         SceneDelegateProxy.shared.scene(scene, willConnectTo: session, options: connectionOptions)
     }
+
+    func sceneWillResignActive(_ scene: UIScene) { BiometricLockController.shared.resignActive() }
+    func sceneDidEnterBackground(_ scene: UIScene) { BiometricLockController.shared.enterBackground() }
+    func sceneDidBecomeActive(_ scene: UIScene) { BiometricLockController.shared.becomeActive() }
 
     func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
         SceneDelegateProxy.shared.scene(scene, openURLContexts: URLContexts)
