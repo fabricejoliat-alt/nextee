@@ -1182,7 +1182,7 @@ export default function PlayerHomePage() {
 
         <div className={playerUiStyles.page}>
           <div className={`${styles.firstRow} ${!showAttentionCard ? styles.firstRowWithoutAttention : ""}`}>
-            <section id="player-upcoming-activities" className={playerUiStyles.panel}>
+            <section id="player-upcoming-activities" className={`${playerUiStyles.panel} ${styles.upcomingActivitiesPanel}`}>
               <div className={playerUiStyles.panelHeader}>
                 <div><h2>{pickLocaleText(locale, "Prochaines activités", "Upcoming activities")}</h2><p>{pickLocaleText(locale, "Les trois prochains rendez-vous.", "Your next three activities.")}</p></div>
                 <Link className={playerUiStyles.textLink} href="/player/golf/trainings?type=all" aria-label={pickLocaleText(locale, "Voir mes activités", "View my activities")}><ArrowRight size={16} /></Link>
