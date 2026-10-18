@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { readUploadedDocumentPrefix } from "@/lib/readUploadedDocumentPrefix";
 import type { PlayerDocumentUploadReservation } from "@/lib/playerDocumentUpload";
 import {
   LEGACY_PLAYER_DOCUMENT_BUCKET,
@@ -170,32 +171,7 @@ async function readObjectPrefix(supabaseAdmin: any, bucket: string, storagePath:
   if (signedRes.error || !signedRes.data?.signedUrl) {
     throw new Error(signedRes.error?.message ?? "Unable to inspect uploaded object");
   }
-  const response = await fetch(signedRes.data.signedUrl, { headers: { Range: "bytes=0-511" }, cache: "no-store" });
-  if (!response.ok || !response.body) throw new Error("Unable to inspect uploaded object");
-
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let length = 0;
-  try {
-    while (length < 512) {
-      const { done, value } = await reader.read();
-      if (done || !value) break;
-      const remaining = 512 - length;
-      const chunk = value.length > remaining ? value.slice(0, remaining) : value;
-      chunks.push(chunk);
-      length += chunk.length;
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined);
-  }
-
-  const bytes = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.length;
-  }
-  return bytes;
+  return readUploadedDocumentPrefix(signedRes.data.signedUrl);
 }
 
 export async function inspectUploadedPlayerDocument(

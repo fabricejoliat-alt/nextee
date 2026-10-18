@@ -19,7 +19,9 @@ import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import AnimatedProgressRing from "@/components/player/AnimatedProgressRing";
 import { playerGolfOverviewStats } from "@/lib/playerGolfOverviewStats";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
-import { PLAYER_DOCUMENT_ACCEPT } from "@/lib/playerDocumentPolicy";
+import DocumentUploadProgress from "@/components/ui/DocumentUploadProgress";
+import { uploadDocumentWithProgress, type DocumentUploadProgress as DocumentUploadState } from "@/lib/uploadDocumentWithProgress";
+import { PLAYER_DOCUMENT_ACCEPT, validatePlayerDocumentFile } from "@/lib/playerDocumentPolicy";
 import dynamic from "next/dynamic";
 import { buildManagementDualLineChartOption, buildManagementLineChartOption, buildManagementVolumeChartOption, MANAGEMENT_CHART_COLORS } from "@/lib/managementCharts";
 import playerUiStyles from "@/components/player/PlayerUI.module.css";
@@ -644,6 +646,7 @@ export default function GolfDashboardPage() {
   const [documents, setDocuments] = useState<PlayerDashboardDocument[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [documentUploadProgress, setDocumentUploadProgress] = useState<DocumentUploadState | null>(null);
   const [renamingDocumentId, setRenamingDocumentId] = useState<string>("");
   const [deletingDocumentId, setDeletingDocumentId] = useState<string>("");
   const [docFile, setDocFile] = useState<File | null>(null);
@@ -758,6 +761,7 @@ export default function GolfDashboardPage() {
   function onPickDocument(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
     e.target.value = "";
+    setDocumentUploadProgress(null);
     setDocFile(file);
     setDocName(file?.name ?? "");
   }
@@ -769,9 +773,13 @@ export default function GolfDashboardPage() {
       setError(pickLocaleText(locale, "Veuillez saisir un nom de document.", "Enter a document name.", "Bitte einen Dokumentnamen eingeben."));
       return;
     }
+    setError(null);
+    setDocumentUploadProgress({ phase: "preparing", percent: 0 });
     setUploadingDocument(true);
     try {
       const uploadFile = await optimizeUploadFile(docFile);
+      const validation = validatePlayerDocumentFile({ fileName: uploadFile.name, mimeType: uploadFile.type, sizeBytes: uploadFile.size });
+      if (validation.ok === false) throw new Error(validation.error);
       const { effectiveUserId: playerId } = await resolveEffectivePlayerContext();
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token ?? "";
@@ -794,6 +802,7 @@ export default function GolfDashboardPage() {
         bucket?: unknown;
         path?: unknown;
         token?: unknown;
+        upload_url?: unknown;
         reservation_token?: unknown;
         mime_type?: unknown;
       };
@@ -801,23 +810,18 @@ export default function GolfDashboardPage() {
 
       const uploadBucket = String(prepareJson?.bucket ?? "").trim();
       const uploadPath = String(prepareJson?.path ?? "").trim();
-      const uploadToken = String(prepareJson?.token ?? "").trim();
+      const uploadUrl = String(prepareJson?.upload_url ?? "").trim();
       const reservationToken = String(prepareJson?.reservation_token ?? "").trim();
       const normalizedMimeType = String(prepareJson?.mime_type ?? "").trim();
-      if (!uploadBucket || !uploadPath || !uploadToken || !reservationToken || !normalizedMimeType) {
+      if (!uploadBucket || !uploadPath || !uploadUrl || !reservationToken || !normalizedMimeType) {
         throw new Error(pickLocaleText(locale, "Initialisation du téléversement impossible.", "Upload initialization failed.", "Hochladen konnte nicht gestartet werden."));
       }
 
-      const uploadRes = await supabase.storage.from(uploadBucket).uploadToSignedUrl(
-        uploadPath,
-        uploadToken,
-        uploadFile,
-        {
-          upsert: false,
-          contentType: normalizedMimeType,
-        }
-      );
-      if (uploadRes.error) throw new Error(uploadRes.error.message);
+      setDocumentUploadProgress({ phase: "uploading", percent: 0 });
+      await uploadDocumentWithProgress(uploadUrl, uploadFile, normalizedMimeType, (percent) => {
+        setDocumentUploadProgress({ phase: "uploading", percent });
+      });
+      setDocumentUploadProgress({ phase: "finalizing", percent: 100 });
 
       const finalizeRes = await fetch(`/api/player/documents?player_id=${encodeURIComponent(playerId)}`, {
         method: "POST",
@@ -844,11 +848,13 @@ export default function GolfDashboardPage() {
       } else {
         await loadDocuments();
       }
+      setDocumentUploadProgress({ phase: "complete", percent: 100 });
       setDocFile(null);
       setDocName("");
       if (docFileInputRef.current) docFileInputRef.current.value = "";
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : pickLocaleText(locale, "Téléversement impossible.", "Upload failed.", "Hochladen fehlgeschlagen."));
+      const message = e instanceof Error ? e.message : pickLocaleText(locale, "Téléversement impossible.", "Upload failed.", "Hochladen fehlgeschlagen.");
+      setDocumentUploadProgress((previous) => ({ phase: "error", percent: previous?.percent ?? 0, error: message }));
     } finally {
       setUploadingDocument(false);
     }
@@ -2218,16 +2224,18 @@ export default function GolfDashboardPage() {
                   className="btn btn-primary btn-upload-green"
                   type="button"
                   onClick={() => void uploadDocument()}
+                  disabled={!docFile || !docName.trim() || uploadingDocument}
                   style={{
                     opacity: !docFile || !docName.trim() || uploadingDocument ? 0.65 : 1,
                     pointerEvents: !docFile || !docName.trim() || uploadingDocument ? "none" : "auto",
                   }}
                 >
                   <Upload size={14} style={{ marginRight: 6, verticalAlign: "middle" }} />
-                  {pickLocaleText(locale, "Téléverser", "Upload", "Hochladen")}
+                  {uploadingDocument ? pickLocaleText(locale, "Envoi en cours…", "Uploading…", "Wird hochgeladen…") : pickLocaleText(locale, "Téléverser", "Upload", "Hochladen")}
                 </button>
               </div>
             </div>
+            <DocumentUploadProgress state={documentUploadProgress} />
             {loadingDocuments ? (
               <div aria-live="polite" aria-busy="true" style={{ display: "flex", justifyContent: "center", padding: "6px 0" }}>
                 <div className="route-loading-spinner" style={{ width: 18, height: 18, borderWidth: 2, boxShadow: "none" }} />
@@ -2413,16 +2421,6 @@ export default function GolfDashboardPage() {
                 </>}
               </section>
             </div>
-
-            <section className={overviewStyles.shortcutsSection}>
-              <div className={overviewStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Raccourcis", "Shortcuts")}</h2><p>{pickLocaleText(locale, "Accédez directement aux actions principales.", "Go directly to key actions.")}</p></div></div>
-              <div className={overviewStyles.shortcuts}>
-                <Link href="/player/golf/trainings?plan=training"><span><Dumbbell size={18} /></span><b>{pickLocaleText(locale, "Ajouter un entraînement", "Add training")}</b><ArrowRight size={15} /></Link>
-                <Link href="/player/golf/rounds/new"><span><Flag size={18} /></span><b>{pickLocaleText(locale, "Saisir un parcours", "Enter a round")}</b><ArrowRight size={15} /></Link>
-                <Link href="/player/golf/trainings/to-complete"><span><ClipboardList size={18} /></span><b>{pickLocaleText(locale, "Compléter mes évaluations", "Complete my evaluations")}</b><ArrowRight size={15} /></Link>
-                <button type="button" onClick={() => selectSection("documents")}><span><Upload size={18} /></span><b>{pickLocaleText(locale, "Ajouter un document", "Add document")}</b><ArrowRight size={15} /></button>
-              </div>
-            </section>
 
             <section className={overviewStyles.panel}>
               <div className={overviewStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Documents récents", "Recent documents")}</h2><p>{pickLocaleText(locale, "Les derniers fichiers disponibles dans votre espace.", "Latest files available in your space.")}</p></div><button type="button" onClick={() => selectSection("documents")}>{pickLocaleText(locale, "Voir tous les documents", "View all documents")}<ArrowRight size={14} /></button></div>

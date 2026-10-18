@@ -218,6 +218,7 @@ export async function POST(req: NextRequest) {
           bucket: PLAYER_DOCUMENT_BUCKET,
           path: objectPath,
           token: String(signedRes.data?.token ?? ""),
+          upload_url: String(signedRes.data?.signedUrl ?? ""),
           reservation_token: issuedReservation.token,
           mime_type: mimeType,
           max_bytes: fileValidation.maxBytes,

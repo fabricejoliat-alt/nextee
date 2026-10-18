@@ -12,7 +12,9 @@ import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
-import { PLAYER_DOCUMENT_ACCEPT } from "@/lib/playerDocumentPolicy";
+import DocumentUploadProgress from "@/components/ui/DocumentUploadProgress";
+import { uploadDocumentWithProgress, type DocumentUploadProgress as DocumentUploadState } from "@/lib/uploadDocumentWithProgress";
+import { PLAYER_DOCUMENT_ACCEPT, validatePlayerDocumentFile } from "@/lib/playerDocumentPolicy";
 import { DifficultyIcon, EvaluationIconBadge, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
 import {
   getValidationBadgeColors,
@@ -771,6 +773,7 @@ export default function GolfDashboardPage() {
   const [documents, setDocuments] = useState<PlayerDashboardDocument[]>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
   const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [documentUploadProgress, setDocumentUploadProgress] = useState<DocumentUploadState | null>(null);
   const [renamingDocumentId, setRenamingDocumentId] = useState<string>("");
   const [deletingDocumentId, setDeletingDocumentId] = useState<string>("");
   const [docFile, setDocFile] = useState<File | null>(null);
@@ -2319,6 +2322,7 @@ function presetToSelectValue(p: Preset): Preset {
   function onPickDocument(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
     e.target.value = "";
+    setDocumentUploadProgress(null);
     setDocFile(file);
     setDocName(file?.name ?? "");
   }
@@ -2330,9 +2334,13 @@ function presetToSelectValue(p: Preset): Preset {
       setError("Veuillez saisir un nom de document.");
       return;
     }
+    setError(null);
+    setDocumentUploadProgress({ phase: "preparing", percent: 0 });
     setUploadingDocument(true);
     try {
       const uploadFile = await optimizeUploadFile(docFile);
+      const validation = validatePlayerDocumentFile({ fileName: uploadFile.name, mimeType: uploadFile.type, sizeBytes: uploadFile.size });
+      if (validation.ok === false) throw new Error(validation.error);
       const { data: sess } = await supabase.auth.getSession();
       const token = sess.session?.access_token ?? "";
       if (!token) throw new Error("Missing token");
@@ -2357,23 +2365,18 @@ function presetToSelectValue(p: Preset): Preset {
 
       const uploadBucket = String(prepareJson?.bucket ?? "").trim();
       const uploadPath = String(prepareJson?.path ?? "").trim();
-      const uploadToken = String(prepareJson?.token ?? "").trim();
+      const uploadUrl = String(prepareJson?.upload_url ?? "").trim();
       const reservationToken = String(prepareJson?.reservation_token ?? "").trim();
       const normalizedMimeType = String(prepareJson?.mime_type ?? "").trim();
-      if (!uploadBucket || !uploadPath || !uploadToken || !reservationToken || !normalizedMimeType) {
+      if (!uploadBucket || !uploadPath || !uploadUrl || !reservationToken || !normalizedMimeType) {
         throw new Error("Upload initialization failed");
       }
 
-      const uploadRes = await supabase.storage.from(uploadBucket).uploadToSignedUrl(
-        uploadPath,
-        uploadToken,
-        uploadFile,
-        {
-          upsert: false,
-          contentType: normalizedMimeType,
-        }
-      );
-      if (uploadRes.error) throw new Error(uploadRes.error.message);
+      setDocumentUploadProgress({ phase: "uploading", percent: 0 });
+      await uploadDocumentWithProgress(uploadUrl, uploadFile, normalizedMimeType, (percent) => {
+        setDocumentUploadProgress({ phase: "uploading", percent });
+      });
+      setDocumentUploadProgress({ phase: "finalizing", percent: 100 });
 
       const finalizeRes = await fetch(`/api/coach/players/${encodeURIComponent(playerId)}/documents`, {
         method: "POST",
@@ -2402,11 +2405,13 @@ function presetToSelectValue(p: Preset): Preset {
       } else {
         await loadDocuments();
       }
+      setDocumentUploadProgress({ phase: "complete", percent: 100 });
       setDocFile(null);
       setDocName("");
       if (docFileInputRef.current) docFileInputRef.current.value = "";
-    } catch (e: any) {
-      setError(e?.message ?? "Upload failed");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : pickLocaleText(locale, "Téléversement impossible.", "Upload failed.", "Hochladen fehlgeschlagen.");
+      setDocumentUploadProgress((previous) => ({ phase: "error", percent: previous?.percent ?? 0, error: message }));
     } finally {
       setUploadingDocument(false);
     }
@@ -3296,6 +3301,7 @@ function presetToSelectValue(p: Preset): Preset {
                 </button>
             </div>
 
+            <DocumentUploadProgress state={documentUploadProgress} />
             <div className={playerStyles.documentsListHeader}><span>Documents liés</span><small>{documents.length ? `${documents.length} fichier${documents.length > 1 ? "s" : ""}` : "Aucun fichier"}</small></div>
             {loadingDocuments ? (
               <CompactLoadingBlock label="Chargement des documents…" />
