@@ -2312,12 +2312,12 @@ export default function GolfDashboardPage() {
           <div className={overviewStyles.overview}>
             <section className={overviewStyles.kpiGrid} aria-label={pickLocaleText(locale, "Indicateurs golf", "Golf indicators")}>
               <article className={overviewStyles.kpiCard}>
-                <div className={overviewStyles.cardTitle}><span><Target size={17} /></span><h2>{pickLocaleText(locale, "Objectif FTEM", "FTEM goal")}</h2></div>
+                <div className={overviewStyles.cardTitle}><span><Target size={17} /></span><h2>{t("playerVolume.recommended")}</h2></div>
                 {loading ? <div className={overviewStyles.kpiSkeleton} /> : overviewFtemPercent == null ? <div className={overviewStyles.neutralValue}>—<small>{pickLocaleText(locale, "Objectif indisponible", "Goal unavailable")}</small></div> : <>
                   <strong>{overviewFtemPercent}%</strong>
                   <div className={overviewStyles.progress}><span style={{ width: `${Math.min(100, overviewFtemPercent)}%` }} /></div>
                   <p>{totalMinutes} / {overviewObjective} min</p>
-                  <small>{trainingVolumeTarget?.ftem_code}{trainingVolumeTarget?.level_label ? ` · ${trainingVolumeTarget.level_label}` : ""}</small>
+                  {trainingVolumeTarget?.level_label ? <small>{trainingVolumeTarget.level_label}</small> : null}
                 </>}
               </article>
 
@@ -2379,14 +2379,14 @@ export default function GolfDashboardPage() {
             <div className={overviewStyles.splitWide}>
               <section className={overviewStyles.panel}>
                 <div className={overviewStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume et régularité", "Volume and consistency")}</h2><p>{periodLabel}</p></div><button type="button" onClick={() => selectSection("trainings")}>{pickLocaleText(locale, "Voir les entraînements", "View trainings")}<ArrowRight size={14} /></button></div>
-                {loading ? <div className={overviewStyles.chartSkeleton} /> : overviewWeekSeries.length ? <ActiviteeEChart height={300} ariaLabel={pickLocaleText(locale, "Volume hebdomadaire et objectif FTEM", "Weekly volume and FTEM goal")} option={buildManagementVolumeChartOption({ labels: overviewWeekSeries.map((row) => row.weekLabel), values: overviewWeekSeries.map((row) => row.minutes), valueLabel: pickLocaleText(locale, "Volume réalisé", "Completed volume"), objective: overviewWeekSeries.map((row) => row.objective), objectiveLabel: pickLocaleText(locale, "Objectif FTEM", "FTEM goal") })} /> : <div className={overviewStyles.empty}>{pickLocaleText(locale, "Aucune donnée d’entraînement sur cette période.", "No training data for this period.")}</div>}
+                {loading ? <div className={overviewStyles.chartSkeleton} /> : overviewWeekSeries.length ? <ActiviteeEChart height={300} ariaLabel={t("playerVolume.weeklyChart")} option={buildManagementVolumeChartOption({ labels: overviewWeekSeries.map((row) => row.weekLabel), values: overviewWeekSeries.map((row) => row.minutes), valueLabel: pickLocaleText(locale, "Volume réalisé", "Completed volume"), objective: overviewWeekSeries.map((row) => row.objective), objectiveLabel: t("playerVolume.recommended") })} /> : <div className={overviewStyles.empty}>{pickLocaleText(locale, "Aucune donnée d’entraînement sur cette période.", "No training data for this period.")}</div>}
               </section>
 
               <section className={overviewStyles.panel}>
                 <div className={overviewStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Les prochaines actions utiles.", "Useful next actions.")}</p></div></div>
                 <div className={overviewStyles.attentionList}>
                   {pendingEvaluationCount > 0 ? <Link href="/player/golf/trainings/to-complete"><span><ClipboardList size={16} /></span><div><b>{pendingEvaluationCount} {pickLocaleText(locale, pendingEvaluationCount === 1 ? "activité à évaluer" : "activités à évaluer", pendingEvaluationCount === 1 ? "activity to evaluate" : "activities to evaluate")}</b><small>{pickLocaleText(locale, "Partager votre ressenti", "Share your feedback")}</small></div><ArrowRight size={14} /></Link> : null}
-                  {overviewFtemPercent != null && overviewFtemPercent < 100 ? <button type="button" onClick={() => selectSection("trainings")}><span><Target size={16} /></span><div><b>{pickLocaleText(locale, "Objectif FTEM à poursuivre", "Keep working toward FTEM goal")}</b><small>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "restantes", "remaining")}</small></div><ArrowRight size={14} /></button> : null}
+                  {overviewFtemPercent != null && overviewFtemPercent < 100 ? <button type="button" onClick={() => selectSection("trainings")}><span><Target size={16} /></span><div><b>{t("playerVolume.keepGoing")}</b><small>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "restantes", "remaining")}</small></div><ArrowRight size={14} /></button> : null}
                   {newestSharedDocument ? <button type="button" onClick={() => selectSection("documents")}><span><FileText size={16} /></span><div><b>{pickLocaleText(locale, "Document partagé", "Shared document")}</b><small>{newestSharedDocument.file_name}</small></div><ArrowRight size={14} /></button> : null}
                   {incompleteRound ? <Link href={`/player/golf/rounds/${incompleteRound.id}/edit`}><span><Flag size={16} /></span><div><b>{pickLocaleText(locale, "Parcours à compléter", "Round to complete")}</b><small>{incompleteRound.course_name || shortDate(incompleteRound.start_at, dateLocale)}</small></div><ArrowRight size={14} /></Link> : null}
                   {!pendingEvaluationCount && !(overviewFtemPercent != null && overviewFtemPercent < 100) && !newestSharedDocument && !incompleteRound ? <div className={overviewStyles.positiveState}><CalendarCheck2 size={20} /><b>{pickLocaleText(locale, "Tout est à jour", "Everything is up to date")}</b><small>{pickLocaleText(locale, "Aucune action nécessaire pour le moment.", "No action is needed right now.")}</small></div> : null}
@@ -2439,7 +2439,7 @@ export default function GolfDashboardPage() {
                   <Plus size={18} aria-hidden="true" />{t("player.newTraining")}
                 </Link>
               </div>
-              <TrainingDashboard sessions={sessions} items={items} prevSessions={prevSessions} prevItems={prevItems} rounds={rounds}
+              <TrainingDashboard playerView sessions={sessions} items={items} prevSessions={prevSessions} prevItems={prevItems} rounds={rounds}
                 fromDate={fromDate} toDate={toDate} totalMinutes={totalMinutes} displayedTrainingCount={displayedTrainingCount}
                 overviewObjective={overviewObjective} overviewFtemPercent={overviewFtemPercent} trainingVolumeTarget={trainingVolumeTarget}
                 trainingVolumeMotivation={trainingVolumeMotivation} weeklyObjectiveMinutes={weeklyObjectiveMinutes}

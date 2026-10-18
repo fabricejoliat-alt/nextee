@@ -13,6 +13,7 @@ import trainingStyles from "@/app/player/golf/PlayerGolfTraining.module.css";
 export type TrainingDashboardSession = { id: string; start_at: string; total_minutes: number | null; session_type: "club" | "private" | "individual"; satisfaction: number | null };
 export type TrainingDashboardItem = { session_id: string; category: string; minutes: number };
 type Props = {
+ playerView?: boolean;
  sessions: TrainingDashboardSession[]; items: TrainingDashboardItem[]; prevSessions: TrainingDashboardSession[]; prevItems: TrainingDashboardItem[];
  rounds: { start_at: string; total_score: number | null }[];
  fromDate: string; toDate: string; totalMinutes: number; displayedTrainingCount: number; overviewObjective: number;
@@ -85,12 +86,17 @@ function ProgressDonut({ percent, size = 156 }: { percent: number; size?: number
 
 
 export default function TrainingDashboard({
+ playerView = false,
  sessions, items, prevSessions, prevItems, rounds, fromDate, toDate, totalMinutes, displayedTrainingCount, overviewObjective,
  overviewFtemPercent, trainingVolumeTarget, trainingVolumeMotivation, weeklyObjectiveMinutes, objectiveForWeek, compareLabel, periodLabel,
  trainingAttendanceOverview, loading, pendingEvaluationCount, latestCoachEvaluation, calendarHref, pendingHref, onEvaluationsClick,
 }: Props) {
  const { locale, t } = useI18n();
  const dateLocale = coachDateLocale(locale);
+ const volumeLabel = playerView ? t("playerVolume.recommended") : pickLocaleText(locale, "Objectif FTEM", "FTEM goal");
+ const volumeUnavailable = playerView ? t("playerVolume.unavailable") : pickLocaleText(locale, "Objectif FTEM indisponible", "FTEM goal unavailable");
+ const volumeAttention = playerView ? t("playerVolume.keepGoing") : pickLocaleText(locale, "Objectif FTEM à poursuivre", "Keep pursuing the FTEM goal");
+ const weeklyVolumeLabel = playerView ? t("playerVolume.weeklySourceChart") : pickLocaleText(locale, "Volume hebdomadaire par origine et objectif FTEM", "Weekly volume by source and FTEM goal");
   const sessionMinutesById = useMemo(() => {
     const map = new Map<string, number>();
     items.forEach((item) => map.set(item.session_id, (map.get(item.session_id) ?? 0) + Number(item.minutes ?? 0)));
@@ -179,9 +185,9 @@ export default function TrainingDashboard({
       { type: "bar", stack: "volume", name: pickLocaleText(locale, "Club", "Club"), data: trainingWeeklyRows.map((row) => row.club), itemStyle: { borderRadius: [4, 4, 0, 0] } },
       { type: "bar", stack: "volume", name: pickLocaleText(locale, "Cours privé", "Private lesson"), data: trainingWeeklyRows.map((row) => row.private) },
       { type: "bar", stack: "volume", name: pickLocaleText(locale, "Individuel", "Individual"), data: trainingWeeklyRows.map((row) => row.individual) },
-      { type: "line", name: pickLocaleText(locale, "Objectif FTEM", "FTEM goal"), data: trainingWeeklyRows.map((row) => row.objective), symbol: "none", lineStyle: { width: 2, type: "dashed", color: "#d9a441" } },
+      { type: "line", name: volumeLabel, data: trainingWeeklyRows.map((row) => row.objective), symbol: "none", lineStyle: { width: 2, type: "dashed", color: "#d9a441" } },
     ],
-  }), [locale, trainingWeeklyRows]);
+  }), [locale, trainingWeeklyRows, volumeLabel]);
 
   const sectorChartOption = useMemo<EChartsOption>(() => ({
     animationDuration: 900,
@@ -234,10 +240,10 @@ export default function TrainingDashboard({
                 <article className={`${trainingStyles.kpi} ${trainingStyles.volumeKpi}`}>
                   <div className={trainingStyles.kpiTitle}><span><Activity size={17} /></span><h2>{pickLocaleText(locale, "Volume d’entraînement", "Training volume")}</h2></div>
                   <div className={trainingStyles.volumeKpiContent}>
-                    {overviewFtemPercent == null ? <div className={trainingStyles.volumeNoGoal}><strong>{totalMinutes} min</strong><p>{pickLocaleText(locale, "Objectif FTEM indisponible", "FTEM goal unavailable")}</p></div> : <div className={trainingStyles.ftemDonut}><ProgressDonut percent={overviewFtemPercent} size={132} /></div>}
+                    {overviewFtemPercent == null ? <div className={trainingStyles.volumeNoGoal}><strong>{totalMinutes} min</strong><p>{volumeUnavailable}</p></div> : <div className={trainingStyles.ftemDonut}><ProgressDonut percent={overviewFtemPercent} size={132} /></div>}
                     <div className={trainingStyles.volumeKpiDetails}>
                       <strong>{totalMinutes} min</strong>
-                      <p>{pickLocaleText(locale, "sur", "of")} {overviewObjective || "—"} min · {trainingVolumeTarget?.ftem_code ?? "FTEM"}</p>
+                      <p>{pickLocaleText(locale, "sur", "of")} {overviewObjective || "—"} min{playerView ? ` ${t("playerVolume.recommendedMinutes")}` : ` · ${trainingVolumeTarget?.ftem_code ?? "FTEM"}`}</p>
                       <div className={trainingStyles.metrics}><span>{displayedTrainingCount} {pickLocaleText(locale, displayedTrainingCount === 1 ? "séance" : "séances", displayedTrainingCount === 1 ? "session" : "sessions")}</span>{overviewFtemPercent != null ? <span>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "restantes", "remaining")}</span> : null}</div>
                       {trainingVolumeMotivation ? <p className={trainingStyles.volumeMotivation}>{trainingVolumeMotivation}</p> : null}
                       <small className={volumeDelta == null ? "" : volumeDelta >= 0 ? trainingStyles.positive : trainingStyles.caution}>{volumeDelta == null ? pickLocaleText(locale, "Pas de période comparable", "No comparable period") : `${volumeDelta > 0 ? "+" : ""}${volumeDelta}% · ${compareLabel}`}</small>
@@ -260,14 +266,14 @@ export default function TrainingDashboard({
               <div className={trainingStyles.split}>
                 <section className={trainingStyles.panel}>
                   <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume et rythme hebdomadaire", "Weekly volume and rhythm")}</h2><p>{periodLabel} · {pickLocaleText(locale, "volumes empilés par origine", "volume stacked by source")}</p></div><Link href={calendarHref}>{pickLocaleText(locale, "Voir le calendrier", "View calendar")}<ArrowRight size={14} /></Link></div>
-                  {loading ? <div className={trainingStyles.empty}>{t("common.loading")}</div> : trainingWeeklyRows.length ? <ActiviteeEChart height={310} ariaLabel={pickLocaleText(locale, "Volume hebdomadaire par origine et objectif FTEM", "Weekly volume by source and FTEM goal")} option={trainingVolumeOption} /> : <div className={trainingStyles.empty}>{t("common.noData")}</div>}
+                  {loading ? <div className={trainingStyles.empty}>{t("common.loading")}</div> : trainingWeeklyRows.length ? <ActiviteeEChart height={310} ariaLabel={weeklyVolumeLabel} option={trainingVolumeOption} /> : <div className={trainingStyles.empty}>{t("common.noData")}</div>}
                 </section>
                 <section className={trainingStyles.panel}>
                   <div className={trainingStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Actions utiles liées à vos séances.", "Useful actions related to your sessions.")}</p></div></div>
                   <div className={trainingStyles.attentionList}>
                     {pendingEvaluationCount ? <Link href={pendingHref}><span><ClipboardList size={16} /></span><div><b>{pendingEvaluationCount} {pickLocaleText(locale, pendingEvaluationCount === 1 ? "activité à évaluer" : "activités à évaluer", pendingEvaluationCount === 1 ? "activity to evaluate" : "activities to evaluate")}</b><small>{pickLocaleText(locale, "Compléter mon ressenti", "Complete my feedback")}</small></div><ArrowRight size={14} /></Link> : null}
                     {latestCoachEvaluation?.player_note ? <button type="button" onClick={onEvaluationsClick}><span><MessageSquareText size={16} /></span><div><b>{pickLocaleText(locale, "Nouveau retour du coach", "New coach feedback")}</b><small>{latestCoachEvaluation.title || shortDate(latestCoachEvaluation.starts_at, dateLocale)}</small></div><ArrowRight size={14} /></button> : null}
-                    {overviewFtemPercent != null && overviewFtemPercent < 100 ? <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><span><Target size={16} /></span><div><b>{pickLocaleText(locale, "Objectif FTEM à poursuivre", "Keep pursuing the FTEM goal")}</b><small>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "restantes", "remaining")}</small></div><ArrowRight size={14} /></button> : null}
+                    {overviewFtemPercent != null && overviewFtemPercent < 100 ? <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><span><Target size={16} /></span><div><b>{volumeAttention}</b><small>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "restantes", "remaining")}</small></div><ArrowRight size={14} /></button> : null}
                     {!pendingEvaluationCount && !latestCoachEvaluation?.player_note && !(overviewFtemPercent != null && overviewFtemPercent < 100) ? <div className={trainingStyles.empty}><CheckCircle2 size={20} />{pickLocaleText(locale, "Tout est à jour pour le moment.", "Everything is up to date for now.")}</div> : null}
                   </div>
                 </section>

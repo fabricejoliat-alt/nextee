@@ -1247,7 +1247,7 @@ export default function PlayerHomePage() {
                     <ArrowRight size={15} />
                   </Link>)}
                   {volumeNeedsAttention ? (
-                    <Link href="#player-training-volume"><span><Target size={17} /></span><div><b>{pickLocaleText(locale, "Objectif FTEM à poursuivre", "Keep working toward FTEM goal")}</b><small>{Math.round(trainingsSummary.percent)}% {pickLocaleText(locale, "réalisé", "completed")}</small></div><ArrowRight size={15} /></Link>
+                    <Link href="#player-training-volume"><span><Target size={17} /></span><div><b>{t("playerVolume.keepGoing")}</b><small>{Math.round(trainingsSummary.percent)}% {pickLocaleText(locale, "réalisé", "completed")}</small></div><ArrowRight size={15} /></Link>
                   ) : null}
                   {insightsError ? <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Certaines données sont momentanément indisponibles.", "Some data is temporarily unavailable.")}</div> : null}
                 </div>
@@ -1361,15 +1361,15 @@ export default function PlayerHomePage() {
             <section className={playerUiStyles.panel}>
               <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume d’entraînement du mois", "Monthly training volume")}</h2><p>{thisMonthTitle}</p></div></div>
               {loading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : <div className={styles.monthVolume}>
-                {trainingsSummary.objective > 0 ? <AnimatedProgressRing percent={trainingsSummary.percent} label={pickLocaleText(locale, "Volume d’entraînement", "Training volume")} /> : <div className={playerUiStyles.empty}>{pickLocaleText(locale, "Objectif FTEM indisponible.", "FTEM goal unavailable.")}</div>}
+                {trainingsSummary.objective > 0 ? <AnimatedProgressRing percent={trainingsSummary.percent} label={pickLocaleText(locale, "Volume d’entraînement", "Training volume")} /> : <div className={playerUiStyles.empty}>{t("playerVolume.unavailable")}</div>}
                 <strong>{trainingsSummary.totalMinutes} {t("common.min")}</strong>
-                {trainingsSummary.objective > 0 ? <span>{pickLocaleText(locale, "sur", "of")} {trainingsSummary.objective} {t("common.min")}</span> : null}
+                {trainingsSummary.objective > 0 ? <span>{pickLocaleText(locale, "sur", "of")} {trainingsSummary.objective} {t("common.min")} {t("playerVolume.recommendedMinutes")}</span> : null}
                 {trainingVolumeMotivation ? <p>{trainingVolumeMotivation}</p> : null}
               </div>}
             </section>
             <section className={playerUiStyles.panel}>
-              <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume par semaine", "Weekly training volume")}</h2><p>{pickLocaleText(locale, "Réalisé et objectif FTEM pour chaque semaine du mois.", "Actual volume and FTEM goal for each week of the month.")}</p></div></div>
-              {loading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : <><ActiviteeEChart ariaLabel={pickLocaleText(locale, "Volume hebdomadaire d’entraînement en minutes", "Weekly training volume in minutes")} option={buildManagementVolumeChartOption({ labels: weeklyVolume.map((item) => item.label), values: weeklyVolume.map((item) => item.minutes), valueLabel: t("golfDashboard.minutesPerWeek"), objective: weeklyVolume.map((item) => item.objective), objectiveLabel: pickLocaleText(locale, "Objectif FTEM", "FTEM goal") })} />{weeklyVolume.some((item) => item.objective != null) ? <small className={styles.chartNote}>{pickLocaleText(locale, "Objectif FTEM complet pour chaque semaine, y compris celles à cheval sur deux mois.", "Full FTEM goal for every week, including weeks spanning two months.")}</small> : null}</>}
+              <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume par semaine", "Weekly training volume")}</h2><p>{t("playerVolume.weeklyComparison")}</p></div></div>
+              {loading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : <><ActiviteeEChart ariaLabel={pickLocaleText(locale, "Volume hebdomadaire d’entraînement en minutes", "Weekly training volume in minutes")} option={buildManagementVolumeChartOption({ labels: weeklyVolume.map((item) => item.label), values: weeklyVolume.map((item) => item.minutes), valueLabel: t("golfDashboard.minutesPerWeek"), objective: weeklyVolume.map((item) => item.objective), objectiveLabel: t("playerVolume.recommended") })} />{weeklyVolume.some((item) => item.objective != null) ? <small className={styles.chartNote}>{t("playerVolume.fullWeek")}</small> : null}</>}
             </section>
           </div>
 

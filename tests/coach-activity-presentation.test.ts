@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { coachComponentHarness, elements, textContent, flush } from "./helpers/coachComponentHarness.ts";
+import { messages } from "../lib/i18n/messages.ts";
 
 const noFetch: typeof fetch = async () => { throw new Error("Unexpected network request"); };
 const chartMocks = { "@/components/ui/ActiviteeEChart": { __esModule: true, default: "chart" } };
@@ -137,4 +138,35 @@ test("shared training dashboard preserves Coach destinations for attendance and 
   assert.ok(links.includes("/coach/calendar?view=evaluations&period=year"));
   assert.ok(!links.some((href) => href.startsWith("/player/")));
   harness.cleanup();
+});
+
+test("Player training labels use the club recommendation in every language while keeping Coach labels and numerical targets", () => {
+  const props = {
+    sessions: [], items: [], prevSessions: [], prevItems: [], rounds: [], fromDate: "2026-09-01", toDate: "2026-09-30",
+    totalMinutes: 120, displayedTrainingCount: 1, overviewObjective: 600, overviewFtemPercent: 20,
+    trainingVolumeTarget: { ftem_code: "F2" }, trainingVolumeMotivation: null, weeklyObjectiveMinutes: 120,
+    compareLabel: null, periodLabel: "Septembre", trainingAttendanceOverview: { rate: 100, present: 1, total: 1, trend: null },
+    loading: false, pendingEvaluationCount: 0, latestCoachEvaluation: null,
+    calendarHref: "/player/golf/trainings", pendingHref: "/player/golf/trainings/to-complete", onEvaluationsClick: () => {},
+  };
+  const harness = coachComponentHarness("components/golf/TrainingDashboard.tsx", { fetch: noFetch, modules: chartMocks, props });
+  try {
+    for (const locale of ["fr", "en", "de", "it"] as const) {
+      harness.setLocale(locale);
+      const coach = harness.render(props);
+      assert.match(textContent(coach), /FTEM/);
+      const coachSeries = elements(coach).find(node => node.type === "chart" && node.props.option.series?.some((series: { type: string }) => series.type === "line"))!.props.option.series;
+      const player = harness.render({ ...props, playerView: true });
+      assert.doesNotMatch(textContent(player), /FTEM|Swiss Olympic|\bF2\b/i);
+      assert.ok(textContent(player).includes(messages[locale]["playerVolume.recommendedMinutes"]));
+      assert.ok(textContent(player).includes(messages[locale]["playerVolume.keepGoing"]));
+      const chart = elements(player).find(node => node.type === "chart" && node.props.ariaLabel === messages[locale]["playerVolume.weeklySourceChart"]);
+      assert.ok(chart);
+      assert.equal(chart.props.option.series.at(-1).name, messages[locale]["playerVolume.recommended"]);
+      assert.deepEqual(chart.props.option.series.map((series: { data: unknown }) => series.data), coachSeries.map((series: { data: unknown }) => series.data));
+      const missing = harness.render({ ...props, playerView: true, overviewObjective: 0, overviewFtemPercent: null, trainingVolumeTarget: null });
+      assert.ok(textContent(missing).includes(messages[locale]["playerVolume.unavailable"]));
+      assert.doesNotMatch(textContent(missing), /FTEM|Swiss Olympic/i);
+    }
+  } finally { harness.cleanup(); }
 });
