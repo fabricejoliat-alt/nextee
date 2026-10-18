@@ -6,7 +6,7 @@ import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { List, Plus } from "lucide-react";
+import { List, Plus, SlidersHorizontal } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { loadPlayerMarketplace } from "@/lib/playerMarketplaceRead";
 import styles from "./Marketplace.module.css";
@@ -194,7 +194,7 @@ export default function PlayerMarketplaceHome() {
 
   return (
     <div className="player-dashboard-bg player-marketplace-page">
-      <div className="app-shell marketplace-page">
+      <div className={`app-shell marketplace-page ${styles.page}`}>
         <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace") }]} />
         {/* Header */}
         <div className="glass-section">
@@ -214,9 +214,13 @@ export default function PlayerMarketplaceHome() {
             </div>
           </div>
 
+        </div>
+
+        <div className={`glass-section ${styles.filterSection}`}>
           {/* Filtre catégorie */}
-          <div className="marketplace-filter-row">
-            <label className="marketplace-filter-label" htmlFor="cat">
+          <div className={styles.filterRow}>
+            <label className={styles.filterTitle} htmlFor="cat">
+              <span><SlidersHorizontal size={16} aria-hidden="true" /></span>
               {t("marketplace.byCategory")}
             </label>
 
@@ -245,7 +249,7 @@ export default function PlayerMarketplaceHome() {
         </div>
 
         {/* Liste */}
-        <div className="glass-section">
+        <div ref={listTopRef} className={`glass-section ${styles.listSection}`}>
           {loading ? (
             <MarketplaceCardsSkeleton />
           ) : pagedItems.length === 0 ? (
@@ -254,9 +258,6 @@ export default function PlayerMarketplaceHome() {
             </div>
           ) : (
             <>
-              {/* ✅ Ancre au-dessus de la liste */}
-              <div ref={listTopRef} className="marketplace-list-top" />
-
               <div className="marketplace-list">
                 {pagedItems.map((it) => {
                   const img = mainImageByItemId[it.id] || placeholderSvg;

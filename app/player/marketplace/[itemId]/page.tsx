@@ -7,7 +7,8 @@ import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
-import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
+import MarketplaceContactForm from "@/components/player/MarketplaceContactForm";
+import styles from "../Marketplace.module.css";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
@@ -166,7 +167,7 @@ export default function MarketplaceDetailPage() {
   if (loading) {
     return (
       <div className="player-dashboard-bg">
-        <div className="app-shell marketplace-page">
+        <div className={`app-shell marketplace-page ${styles.detailPage}`}>
           <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace"), href: "/player/marketplace" }, { label: t("common.details") }]} />
           <div className="glass-section">
             <div className="marketplace-header">
@@ -177,7 +178,7 @@ export default function MarketplaceDetailPage() {
             </div>
           </div>
           <div className="glass-section">
-            <CompactLoadingBlock label={t("common.loading")} />
+            <div className={styles.detailLoading} role="status" aria-label={t("common.loading")}><div className={styles.loadingImage} /><div className={styles.loadingLine} /><div className={styles.loadingLine} /></div>
           </div>
         </div>
       </div>
@@ -187,7 +188,7 @@ export default function MarketplaceDetailPage() {
   if (!item) {
     return (
       <div className="player-dashboard-bg">
-        <div className="app-shell marketplace-page">
+        <div className={`app-shell marketplace-page ${styles.detailPage}`}>
           <div className="glass-section">
             <div className="glass-card" style={{ display: "grid", gap: 10 }}>
               <div className="card-title">{t("nav.marketplace")}</div>
@@ -212,7 +213,7 @@ export default function MarketplaceDetailPage() {
 
   return (
     <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
+      <div className={`app-shell marketplace-page ${styles.detailPage}`}>
         <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace"), href: "/player/marketplace" }, { label: t("common.details") }]} />
         {/* Header */}
         <div className="glass-section">
@@ -347,6 +348,7 @@ export default function MarketplaceDetailPage() {
                 </div>
               </div>
             </div>
+            <MarketplaceContactForm key={item.id} itemId={item.id} title={item.title} recipient={item.contact_email} />
           </div>
         </div>
 
