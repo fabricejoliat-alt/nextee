@@ -124,7 +124,8 @@ export default function MarketplaceNew() {
         const ctx = await resolveEffectivePlayerContext();
         const uid = ctx.effectiveUserId;
         setUserId(uid);
-        setContactEmail(authRes.user.email ?? "");
+        const profileEmail = String(authRes.user.email ?? "").trim();
+        setContactEmail(profileEmail.toLowerCase().endsWith("@noemail.local") ? "" : profileEmail);
 
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData.session?.access_token ?? "";
