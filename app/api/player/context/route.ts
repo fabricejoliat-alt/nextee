@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     let home;
     if (url.searchParams.get("home") === "1") {
       const [profile, organizations, performance] = await timing.measure("profile", () => Promise.all([
-        access.supabaseAdmin.from("profiles").select("id,first_name,last_name,handicap,avatar_url")
+        access.supabaseAdmin.from("profiles").select("id,first_name,last_name,handicap,avatar_url,nationality")
           .eq("id", access.subjectPlayerId).maybeSingle(),
         access.supabaseAdmin.from("organizations").select("id,name").in("id", access.organizationIds),
         access.supabaseAdmin.from("club_members").select("id").eq("user_id", access.subjectPlayerId)

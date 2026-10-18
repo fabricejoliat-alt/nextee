@@ -33,6 +33,7 @@ import HomeActivityCard from "@/components/dashboard/HomeActivityCard";
 import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import overviewStyles from "@/app/player/golf/PlayerGolfOverview.module.css";
 import styles from "./PlayerDashboard.module.css";
+import { nationalityFlag, nationalityName } from "@/lib/nationalities";
 
 type Profile = {
   id: string;
@@ -40,6 +41,7 @@ type Profile = {
   last_name: string | null;
   handicap: number | null;
   avatar_url: string | null;
+  nationality: string | null;
 };
 
 type Club = { id: string; name: string | null };
@@ -1125,26 +1127,34 @@ export default function PlayerHomePage() {
     <div className="player-dashboard-bg player-home-page">
       <div className="app-shell">
         <div className="player-hero">
-          <div className="avatar" aria-hidden="true" style={{ overflow: "hidden" }}>
-            {avatarUrl ? (
-              <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-            ) : (
-              <div
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontWeight: 900,
-                  fontSize: 28,
-                  letterSpacing: 1,
-                  color: "white",
-                  background: "linear-gradient(135deg, #14532d 0%, #064e3b 100%)",
-                }}
-              >
-                {getInitials(profile)}
-              </div>
+          <div className={styles.heroPortrait}>
+            <div className="avatar" aria-hidden="true" style={{ overflow: "hidden" }}>
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              ) : (
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontWeight: 900,
+                    fontSize: 28,
+                    letterSpacing: 1,
+                    color: "white",
+                    background: "linear-gradient(135deg, #14532d 0%, #064e3b 100%)",
+                  }}
+                >
+                  {getInitials(profile)}
+                </div>
+              )}
+            </div>
+            {nationalityFlag(profile?.nationality) && (
+              <span className={styles.heroFlag} role="img" aria-label={nationalityName(profile?.nationality, locale) ?? ""}
+                title={nationalityName(profile?.nationality, locale) ?? ""}>
+                {nationalityFlag(profile?.nationality)}
+              </span>
             )}
           </div>
 

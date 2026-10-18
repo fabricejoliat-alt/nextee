@@ -15,7 +15,7 @@ export type EffectivePlayerPayload = {
   organizationId: string;
   permissions: { view: boolean; edit: boolean };
   home?: {
-    profile: { id: string; first_name: string | null; last_name: string | null; handicap: number | null; avatar_url: string | null } | null;
+    profile: { id: string; first_name: string | null; last_name: string | null; handicap: number | null; avatar_url: string | null; nationality: string | null } | null;
     organizations: Array<{ id: string; name: string | null }>;
     performanceEnabled: boolean;
   };

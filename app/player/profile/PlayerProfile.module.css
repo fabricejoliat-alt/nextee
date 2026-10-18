@@ -31,13 +31,34 @@
   box-shadow: 0 10px 28px rgba(35, 54, 41, .05);
 }
 
-.avatarColumn {
+.avatarButton {
+  position: relative;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.avatarButton:focus-visible { outline: 3px solid #526d50; outline-offset: 5px; }
+.avatarButton:disabled { cursor: default; opacity: .6; }
+.photoEditBadge {
+  position: absolute;
+  right: -2px;
+  bottom: 0;
   display: grid;
-  justify-items: center;
-  gap: 7px;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: #35483b;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(34, 54, 40, .18);
 }
 
 .avatar {
+  display: block;
   position: relative;
   width: 82px;
   height: 82px;
@@ -65,26 +86,34 @@
   letter-spacing: .04em;
 }
 
-.photoButton,
-.removePhotoButton {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #526b50;
-  font-size: 10px;
-  font-weight: 800;
-  cursor: pointer;
+.photoDialog {
+  box-sizing: border-box;
+  width: 380px;
+  padding: 20px;
+  border: 1px solid #dce5da;
+  border-radius: 18px;
+  background: #fff;
+  color: #35483b;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .25);
 }
-
-.removePhotoButton { color: #a5534c; }
-.photoButton:disabled,
-.removePhotoButton:disabled { cursor: default; opacity: .55; }
+.photoDialog h2 { margin: 0 0 18px; font-size: 20px; line-height: 1.25; }
+.photoActions { display: grid; gap: 10px; }
+.photoAction { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 12px; border: 1px solid #e0e8de; border-radius: 10px; background: #f7f9f6; color: #35483b; text-align: left; font: inherit; font-size: 14px; font-weight: 650; cursor: pointer; }
+.photoAction svg { flex: none; }
+.photoActionDanger { color: #a44139; }
+.photoAction:disabled { cursor: default; opacity: .55; }
+.photoAction:focus-visible { outline: 2px solid #526d50; outline-offset: 2px; }
+.cropDialog { width: 520px; padding: 0; }
+.cropDialog h2 { margin: 0; padding: 18px; }
+.cropViewport { position: relative; height: min(340px, 45dvh); background: #25332a; }
+.cropControls { display: grid; gap: 14px; padding: 18px; }
+.cropZoom { display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 700; }
+.cropZoom input { width: 100%; min-width: 0; }
+.cropButtons { display: flex; gap: 10px; }
+.cropButtons button { width: 100%; }
+.cropControls p { margin: 0; }
 
 .identityContent { display: grid; gap: 8px; min-width: 0; }
-.identityEyebrow { color: #78906f; font-size: 9px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
 .identityTitle { color: #304438; font: 750 clamp(24px, 3vw, 36px) / 1.08 var(--font-inter-tight), var(--font-inter), sans-serif; letter-spacing: -.035em; }
 .identityMeta { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; color: #68776c; font-size: 11px; font-weight: 700; }
 .identityMeta span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
@@ -188,9 +217,14 @@
 @keyframes profileShimmer { to { background-position: -200% 0; } }
 
 @media (max-width: 760px) {
-  .identityCard { align-items: start; padding: 16px; }
-  .avatar { width: 68px; height: 68px; }
-  .identityTitle { font-size: 25px; }
+  .identityCard { grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 18px; padding: 24px 16px; text-align: center; }
+  .avatar { width: 132px; height: 132px; }
+  .avatarFallback { font-size: 42px; }
+  .photoEditBadge { width: 36px; height: 36px; right: 2px; bottom: 2px; }
+  .identityContent { width: 100%; gap: 12px; }
+  .identityTitle { font-size: 28px; overflow-wrap: anywhere; }
+  .identityMeta { justify-content: center; font-size: 12px; }
+  .identityMeta span { justify-content: center; }
   .contentHeading { align-items: start; flex-direction: column; gap: 5px; }
   .contentHeading p { text-align: left; }
   .cardGrid,
@@ -202,10 +236,6 @@
 }
 
 @media (max-width: 480px) {
-  .identityCard { grid-template-columns: 1fr; justify-items: start; }
-  .avatarColumn { grid-template-columns: auto auto; align-items: center; justify-items: start; }
-  .avatar { grid-row: 1 / span 2; }
-  .removePhotoButton { grid-column: 2; }
   .sectionCardBody { padding: 14px; }
   .handicapEntryRow { align-items: flex-start; }
   .saveBar :global(.cta-green) { width: 100% !important; }

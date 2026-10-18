@@ -379,13 +379,9 @@ export default function ScorecardPage() {
           </div>
         </div>
 
-        <div className="glass-section">
-          <HorizontalScorecard holes={holes} />
-        </div>
+        <HorizontalScorecard holes={holes} />
 
-        <div className="glass-section">
-          <RoundPerformanceInsights roundId={round.id} holes={holes} />
-        </div>
+        <RoundPerformanceInsights roundId={round.id} holes={holes} />
       </div>
     </div>
   );

@@ -701,11 +701,11 @@ export default function EditRoundWizardPage() {
   }
 
   async function finishAndGoScorecard() {
-    if (isManualCourse && (hole?.par == null || !Number.isFinite(hole.par))) {
+    if (entryView === "guided" && isManualCourse && (hole?.par == null || !Number.isFinite(hole.par))) {
       setUxError("Le PAR du trou est obligatoire.");
       return;
     }
-    if (useStats && !fairwayChosen) {
+    if (entryView === "guided" && useStats && !fairwayChosen) {
       setUxError(t("roundsEdit.chooseToContinue").replace("{label}", chooseLabel));
       return;
     }
@@ -1139,7 +1139,7 @@ export default function EditRoundWizardPage() {
                   })}</tbody>
                 </table>
               </div>
-              <button type="button" className={`${styles.actionButton} ${styles.primaryAction} ${styles.gridSaveButton}`} onClick={saveGrid} disabled={saving || !gridDirty}>{saving ? "Enregistrement…" : "Enregistrer tous les trous"}</button>
+              <button type="button" className={`${styles.actionButton} ${styles.primaryAction} ${styles.gridSaveButton}`} onClick={finishAndGoScorecard} disabled={saving}>{saving ? "Enregistrement…" : "Enregistrer tous les trous"}</button>
             </div>
           ) : (
           <div className={styles.holeCard}>
@@ -1596,7 +1596,7 @@ export default function EditRoundWizardPage() {
               <button
                 type="button"
                 className={`${styles.actionButton} ${styles.primaryAction} ${styles.saveMetaButton}`}
-                onClick={saveRoundMeta}
+                onClick={finishAndGoScorecard}
                 disabled={saving || !roundDate}
               >
                 Enregistrer

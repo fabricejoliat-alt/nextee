@@ -43,8 +43,7 @@
 .progressLine { display: grid; grid-template-columns: 76px 1fr auto; gap: 8px; align-items: center; color: #526056; font-size: 10px; font-weight: 700; }
 .bar { height: 6px; overflow: hidden; border-radius: 999px; background: #e9eee7; }
 .bar i { display: block; height: 100%; border-radius: inherit; background: #899d7d; }
-.scorecardArea { min-width: 0; padding: 12px; border: 1px solid #dfe7dd; border-radius: 15px; background: #fff; }
-.scrollHint { display: none; margin-bottom: 8px; color: #7b877e; font-size: 9px; font-weight: 750; text-align: right; }
+.scorecardArea { min-width: 0; }
 .tableWrap { max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; border: 1px solid #e2e9e0; border-radius: 12px; background: #fff; scrollbar-color: #b8c7b6 #edf1eb; scrollbar-width: thin; -webkit-overflow-scrolling: touch; }
 .table { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; color: #4e5f54; font-size: 10px; text-align: center; }
 .table th, .table td { box-sizing: border-box; min-width: 48px; height: 43px; padding: 7px 8px; border-right: 1px solid #edf1eb; border-bottom: 1px solid #edf1eb; white-space: nowrap; }
@@ -66,5 +65,25 @@
 @keyframes shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .skeleton, .roundCard, .chevron svg { animation: none; transition: none; } }
 @media (max-width: 900px) { .filters { grid-template-columns: 1fr 1fr; } .detailTop, .charts { grid-template-columns: 1fr; } }
-@media (max-width: 640px) { .workspace { gap: 12px; } .filters { grid-template-columns: 1fr; } .roundCard.roundCard { grid-template-columns: 76px minmax(0,1fr) 58px; gap: 8px; padding: 7px; } .roundDate { min-height: 88px; } .course { font-size: 16px; white-space: normal; } .meta, .quickStats { font-size: 9px; } .quickStats { flex-wrap: nowrap; gap: 5px 8px; } .score strong { font-size: 31px; } .metricGrid { grid-template-columns: repeat(2,minmax(0,1fr)); } .detail { padding: 9px; } .scorecardArea { padding: 7px; } .scrollHint { display: block; margin-bottom: 5px; } .table { font-size: 9px; } .table th, .table td { min-width: 38px; height: 34px; padding: 4px 5px; } .table th:first-child { min-width: 58px; } .scorecardSummary { min-width: 50px!important; } .scoreToken { min-width: 21px; min-height: 21px; } }
+@media (max-width: 640px) { .workspace { gap: 12px; } .filters { grid-template-columns: 1fr; } .roundCard.roundCard { grid-template-columns: 76px minmax(0,1fr) 58px; gap: 8px; padding: 7px; } .roundDate { min-height: 88px; } .course { font-size: 16px; white-space: normal; } .meta, .quickStats { font-size: 9px; } .quickStats { flex-wrap: nowrap; gap: 5px 8px; } .score strong { font-size: 31px; } .metricGrid { grid-template-columns: repeat(2,minmax(0,1fr)); } .detail { padding: 9px; } .table { font-size: 9px; } .table th, .table td { min-width: 38px; height: 34px; padding: 4px 5px; } .table th:first-child { min-width: 58px; } .scorecardSummary { min-width: 50px!important; } .scoreToken { min-width: 21px; min-height: 21px; } }
 @media (max-width: 420px) { .roundCard.roundCard { grid-template-columns: 72px minmax(0,1fr) 52px; gap: 7px; padding: 7px; } .roundDate { min-height: 84px; } .content { gap: 6px; } .quickStats { gap: 4px 7px; } }
+
+@media (max-width: 640px) {
+  .scorecardArea { container-type: inline-size; }
+  .table {
+    /* Keep the row label, all nine outward holes and their subtotal in view. */
+    --scorecard-label-width: 44px;
+    --scorecard-summary-width: 36px;
+    --scorecard-hole-width: calc((100cqw - 2px - var(--scorecard-label-width) - var(--scorecard-summary-width)) / 9);
+    width: calc(var(--scorecard-label-width) + var(--scorecard-hole-count) * var(--scorecard-hole-width) + var(--scorecard-summary-count) * var(--scorecard-summary-width));
+    table-layout: fixed;
+  }
+  .scorecardLabelColumn { width: var(--scorecard-label-width); }
+  .scorecardHoleColumn { width: var(--scorecard-hole-width); }
+  .scorecardSummaryColumn { width: var(--scorecard-summary-width); }
+  .table th, .table td { min-width: 0; padding: 4px 1px; }
+  .table th:first-child { min-width: 0; padding-inline: 4px; }
+  .table tr:first-child th { font-size: 8px; letter-spacing: 0; }
+  .scorecardSummary { min-width: 0!important; }
+  .scoreToken { box-sizing: border-box; min-width: 18px; min-height: 20px; }
+}

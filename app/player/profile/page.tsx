@@ -32,12 +32,15 @@ import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import styles from "./PlayerProfile.module.css";
 import { isValidPassword } from "@/lib/passwordPolicy";
 import BiometricLockSettings from "@/components/auth/BiometricLockSettings";
+import AccessibleDialog from "@/components/ui/AccessibleDialog";
+import { nationalityOptions, normalizeNationality } from "@/lib/nationalities";
 
 type ProfileRow = {
   id: string;
 
   first_name: string | null;
   last_name: string | null;
+  nationality: string | null;
   username: string | null;
   phone: string | null;
 
@@ -103,12 +106,6 @@ type TrainingVolumeTargetRow = {
   minutes_inseason: number;
   sort_order: number;
 };
-
-function displayHello(firstName: string | null | undefined, helloLabel: string) {
-  const f = (firstName ?? "").trim();
-  if (!f) return helloLabel;
-  return `${helloLabel} ${f}`;
-}
 
 function getInitials(firstName?: string | null, lastName?: string | null) {
   const f = (firstName ?? "").trim();
@@ -271,6 +268,8 @@ export default function PlayerProfilePage() {
   // form
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
+  const [nationality, setNationality] = useState("");
+  const countries = useMemo(() => nationalityOptions(locale), [locale]);
   const [phone, setPhone] = useState("");
 
   const [birthDate, setBirthDate] = useState(""); // YYYY-MM-DD
@@ -314,6 +313,7 @@ export default function PlayerProfilePage() {
   const [avatarRefreshKey, setAvatarRefreshKey] = useState<number>(() => Date.now());
 
   // Crop modal state
+  const [photoActionsOpen, setPhotoActionsOpen] = useState(false);
   const [cropOpen, setCropOpen] = useState(false);
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
 
@@ -466,6 +466,7 @@ export default function PlayerProfilePage() {
             "id",
             "first_name",
             "last_name",
+            "nationality",
             "username",
             "phone",
             "birth_date",
@@ -490,6 +491,7 @@ export default function PlayerProfilePage() {
       const row = (profRes.data ?? null) as unknown as ProfileRow | null;
       setFirstName(row?.first_name ?? "");
       setLastName(row?.last_name ?? "");
+      setNationality(normalizeNationality(row?.nationality) ?? row?.nationality ?? "");
       setUsername(row?.username ?? "");
       setPhone(row?.phone ?? "");
 
@@ -592,6 +594,7 @@ export default function PlayerProfilePage() {
       id: userId,
       ...(viewerRole === "parent" ? { first_name: firstName.trim() || null, last_name: lastName.trim() || null } : {}),
       phone: phone.trim() || null,
+      nationality: nationality.trim() || null,
       address: address.trim() || null,
       postal_code: postalCode.trim() || null,
       city: city.trim() || null,
@@ -787,6 +790,7 @@ export default function PlayerProfilePage() {
     if (loading || avatarBusy || !userId) return;
     setError(null);
     setInfo(null);
+    setPhotoActionsOpen(false);
     fileInputRef.current?.click();
   }
 
@@ -817,7 +821,7 @@ export default function PlayerProfilePage() {
   }
 
   async function uploadAvatarBlob(blob: Blob) {
-    if (!userId) return;
+    if (!userId) return false;
 
     setError(null);
     setInfo(null);
@@ -846,8 +850,10 @@ export default function PlayerProfilePage() {
       setAvatarRefreshKey(Date.now());
 
       setInfo(t("playerProfile.photoUpdated"));
+      return true;
     } catch (err: unknown) {
       setError(toErrorMessage(err, t("playerProfile.error.avatarUpload")));
+      return false;
     } finally {
       setAvatarBusy(false);
     }
@@ -871,7 +877,8 @@ export default function PlayerProfilePage() {
 
       setAvatarDbUrl(null);
       setAvatarRefreshKey(Date.now());
-      setInfo("Photo de profil supprimée.");
+      setPhotoActionsOpen(false);
+      setInfo(t("playerProfile.photoRemoved"));
     } catch (err: unknown) {
       setError(toErrorMessage(err, "Impossible de supprimer la photo de profil."));
     } finally {
@@ -914,56 +921,53 @@ export default function PlayerProfilePage() {
           <p>Gère tes informations personnelles et ton historique sportif.</p>
         </header>
         <div className={styles.identityCard}>
-          <div className={styles.avatarColumn}>
-            <div
-              className={styles.avatar}
-              aria-hidden="true"
-              role="button"
-              tabIndex={0}
-              onClick={openFilePicker}
-              onKeyDown={(ev) => {
-                if (ev.key === "Enter" || ev.key === " ") openFilePicker();
-              }}
-              style={{ cursor: loading || avatarBusy ? "default" : "pointer" }}
-              title={loading ? "" : t("playerProfile.changePhoto")}
-            >
+          <button
+            className={styles.avatarButton}
+            type="button"
+            aria-label={t("playerProfile.editPhoto")}
+            aria-haspopup="dialog"
+            onClick={() => { setError(null); setPhotoActionsOpen(true); }}
+            disabled={loading || avatarBusy || !userId}
+          >
+            <span className={styles.avatar}>
               {avatarDbUrl ? (
-                <NextImage
-                  src={avatarUrl}
-                  alt=""
-                  fill
-                  sizes="82px"
-                  unoptimized
-                  style={{ opacity: avatarBusy ? 0.65 : 1 }}
-                />
+                <NextImage src={avatarUrl} alt="" fill sizes="(max-width: 760px) 132px, 82px" unoptimized />
               ) : (
-                <div
-                  className={styles.avatarFallback}
-                >
-                  {getInitials(firstName, lastName)}
-                </div>
+                <span className={styles.avatarFallback}>{getInitials(firstName, lastName)}</span>
               )}
-            </div>
+            </span>
+            <span className={styles.photoEditBadge} aria-hidden="true"><Pencil size={17} /></span>
+          </button>
 
-            <button
-              className={styles.photoButton}
-              type="button"
-              onClick={openFilePicker}
-              disabled={loading || avatarBusy || !userId}
-            >
-              <Camera size={14} />{avatarBusy ? t("playerProfile.uploading") : t("common.change")}
-            </button>
-            {avatarDbUrl ? (
-              <button
-                className={styles.removePhotoButton}
-                type="button"
-                onClick={() => void removeAvatar()}
-                disabled={loading || avatarBusy || !userId}
-              >
-                Supprimer la photo
-              </button>
-            ) : null}
-          </div>
+          {photoActionsOpen && (
+            <AccessibleDialog portal label={t("playerProfile.photo")} className={styles.photoDialog}
+              onClose={() => { if (!avatarBusy) setPhotoActionsOpen(false); }}>
+              <h2>{t("playerProfile.photo")}</h2>
+              <div className={styles.photoActions}>
+                <button type="button" className={styles.photoAction} onClick={openFilePicker} disabled={avatarBusy}>
+                  <Camera size={19} aria-hidden="true" />
+                  {t(avatarDbUrl ? "playerProfile.changePhoto" : "playerProfile.addPhoto")}
+                </button>
+                {avatarDbUrl && <>
+                  <button type="button" className={styles.photoAction} disabled={avatarBusy} onClick={() => {
+                    setPhotoActionsOpen(false);
+                    setCropImageSrc(avatarUrl);
+                    setCropOpen(true);
+                  }}>
+                    <Pencil size={19} aria-hidden="true" />{t("playerProfile.cropTitle")}
+                  </button>
+                  <button type="button" className={`${styles.photoAction} ${styles.photoActionDanger}`}
+                    onClick={() => void removeAvatar()} disabled={avatarBusy}>
+                    <Trash2 size={19} aria-hidden="true" />{t("playerProfile.removePhoto")}
+                  </button>
+                </>}
+                {error && <div role="alert" className={styles.errorAlert}>{error}</div>}
+                <button type="button" className="btn" onClick={() => setPhotoActionsOpen(false)} disabled={avatarBusy}>
+                  {t("common.cancel")}
+                </button>
+              </div>
+            </AccessibleDialog>
+          )}
 
           {/* input hidden */}
           <input
@@ -979,26 +983,22 @@ export default function PlayerProfilePage() {
             open={cropOpen}
             imageSrc={cropImageSrc}
             busy={avatarBusy}
+            error={error}
             onClose={() => {
               setCropOpen(false);
               if (cropImageSrc?.startsWith("blob:")) URL.revokeObjectURL(cropImageSrc);
               setCropImageSrc(null);
             }}
-            onConfirm={async (croppedBlob) => {
-              await uploadAvatarBlob(croppedBlob);
-            }}
+            onConfirm={uploadAvatarBlob}
           />
 
           <div className={styles.identityContent}>
-            <div className={styles.identityEyebrow}>{viewerRole === "player" ? "Profil joueur" : "Profil parent"}</div>
             <div className={styles.identityTitle}>
-              {loading
-                ? `${t("playerProfile.hello")}…`
-                : displayHello(firstName, t("playerProfile.hello"))}
+              {loading ? "…" : [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") || t("common.profile")}
             </div>
             <div className={styles.identityMeta}>
-              {viewerRole === "player" ? <span><Gauge size={14} />Handicap {typeof handicapNumber === "number" ? handicapNumber.toFixed(1) : "—"}</span> : <span><UserRound size={14} />Parent</span>}
-              <span><Building2 size={14} />{heroClubLine}</span>
+              {viewerRole === "player" ? <span>Handicap {typeof handicapNumber === "number" ? handicapNumber.toFixed(1) : "—"}</span> : <span><UserRound size={14} />Parent</span>}
+              <span>{heroClubLine}</span>
             </div>
           </div>
         </div>
@@ -1026,6 +1026,15 @@ export default function PlayerProfilePage() {
                       {viewerRole === "player" ? <span className={styles.staticValue}>{staticDisplayValue(lastName)}</span> : <input value={lastName} onChange={(e) => setLastName(e.target.value)} />}
                     </Field>
                   </div>
+
+                  <Field label={t("playerProfile.nationality")}>
+                    <select aria-label={t("playerProfile.nationality")}
+                      value={nationality} onChange={(e) => setNationality(e.target.value)}>
+                      <option value="">{t("playerProfile.nationalityUnset")}</option>
+                      {nationality && !normalizeNationality(nationality) && <option value={nationality}>{nationality}</option>}
+                      {countries.map(({ code, label }) => <option key={code} value={code}>{label}</option>)}
+                    </select>
+                  </Field>
 
                   {viewerRole === "player" && (
                     <>
@@ -1426,12 +1435,16 @@ type CropAvatarModalProps = {
   open: boolean;
   imageSrc: string | null;
   busy: boolean;
+  error: string | null;
   onClose: () => void;
-  onConfirm: (blob: Blob) => Promise<void> | void;
+  onConfirm: (blob: Blob) => Promise<boolean>;
 };
 
-function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvatarModalProps) {
+function CropAvatarModal({ open, imageSrc, busy, error, onClose, onConfirm }: CropAvatarModalProps) {
   const { t } = useI18n();
+  const [preparing, setPreparing] = useState(false);
+  const [cropError, setCropError] = useState<string | null>(null);
+  const disabled = busy || preparing;
   const [crop, setCrop] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<{
@@ -1445,107 +1458,50 @@ function CropAvatarModal({ open, imageSrc, busy, onClose, onConfirm }: CropAvata
     setCrop({ x: 0, y: 0 });
     setZoom(1);
     setCroppedAreaPixels(null);
+    setCropError(null);
     onClose();
   }
 
   if (!open || !imageSrc) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 50,
-        background: "rgba(0,0,0,0.55)",
-        display: "grid",
-        placeItems: "center",
-        padding: 16,
-      }}
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !busy) handleClose();
-      }}
-    >
-      <div
-        style={{
-          width: "min(520px, 92vw)",
-          borderRadius: 18,
-          overflow: "hidden",
-          background: "rgba(255,255,255,0.10)",
-          border: "1px solid rgba(255,255,255,0.18)",
-          backdropFilter: "blur(10px)",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.35)",
-        }}
-      >
-        <div style={{ padding: 14, fontWeight: 900, color: "rgba(255,255,255,0.92)" }}>
-          {t("playerProfile.cropTitle")}
-        </div>
-
-        <div style={{ position: "relative", height: 340, background: "rgba(0,0,0,0.35)" }}>
-          <Cropper
-            image={imageSrc}
-            crop={crop}
-            zoom={zoom}
-            aspect={1}
-            cropShape="round"
-            showGrid={false}
-            onCropChange={setCrop}
-            onZoomChange={setZoom}
-            onCropComplete={(_, areaPixels) => setCroppedAreaPixels(areaPixels)}
-          />
-        </div>
-
-        <div style={{ padding: 14, display: "grid", gap: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ fontSize: 12, fontWeight: 900, color: "rgba(255,255,255,0.85)" }}>
-              {t("playerProfile.zoom")}
-            </div>
-            <input
-              type="range"
-              min={1}
-              max={3}
-              step={0.01}
-              value={zoom}
-              onChange={(e) => setZoom(Number(e.target.value))}
-              disabled={busy}
-              style={{ width: "100%" }}
-            />
-          </div>
-
-          <div style={{ display: "flex", gap: 10 }}>
-            <button
-              type="button"
-              onClick={handleClose}
-              disabled={busy}
-              className="btn"
-              style={{ width: "100%", opacity: busy ? 0.65 : 1 }}
-            >
-              {t("common.cancel")}
-            </button>
-
-            <button
-              type="button"
-              disabled={busy || !croppedAreaPixels}
-              className="btn"
-              style={{ width: "100%" }}
-              onClick={async () => {
-                if (!croppedAreaPixels) return;
-                const blob = await getCroppedImageBlob(imageSrc, croppedAreaPixels);
-                await onConfirm(blob);
-                handleClose();
-              }}
-            >
-              {busy ? t("playerProfile.saving") : t("playerProfile.validate")}
-            </button>
-          </div>
-
-          <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(255,255,255,0.7)" }}>
-            {t("playerProfile.cropHint")}
-          </div>
-        </div>
+    <AccessibleDialog portal label={t("playerProfile.cropTitle")} className={`${styles.photoDialog} ${styles.cropDialog}`}
+      onClose={() => { if (!disabled) handleClose(); }}>
+      <h2>{t("playerProfile.cropTitle")}</h2>
+      <div className={styles.cropViewport} style={{ pointerEvents: disabled ? "none" : "auto" }}>
+        <Cropper image={imageSrc} crop={crop} zoom={zoom} aspect={1} cropShape="round" showGrid={false}
+          onCropChange={setCrop} onZoomChange={setZoom}
+          onCropComplete={(_, areaPixels) => setCroppedAreaPixels(areaPixels)} />
       </div>
-    </div>
+      <div className={styles.cropControls}>
+        <label className={styles.cropZoom}>
+          {t("playerProfile.zoom")}
+          <input type="range" min={1} max={3} step={0.01} value={zoom}
+            onChange={(e) => setZoom(Number(e.target.value))} disabled={disabled} />
+        </label>
+        {(cropError || error) && <div role="alert" className={styles.errorAlert}>{cropError || error}</div>}
+        <div className={styles.cropButtons}>
+          <button type="button" onClick={handleClose} disabled={disabled} className="btn">{t("common.cancel")}</button>
+          <button type="button" disabled={disabled || !croppedAreaPixels} className="btn"
+            onClick={async () => {
+              if (!croppedAreaPixels || disabled) return;
+              setPreparing(true);
+              setCropError(null);
+              try {
+                const blob = await getCroppedImageBlob(imageSrc, croppedAreaPixels);
+                if (await onConfirm(blob)) handleClose();
+              } catch (err: unknown) {
+                setCropError(toErrorMessage(err, t("playerProfile.error.avatarUpload")));
+              } finally {
+                setPreparing(false);
+              }
+            }}>
+            {disabled ? t("playerProfile.saving") : t("playerProfile.validate")}
+          </button>
+        </div>
+        <p className={styles.helperText}>{t("playerProfile.cropHint")}</p>
+      </div>
+    </AccessibleDialog>
   );
 }
 
