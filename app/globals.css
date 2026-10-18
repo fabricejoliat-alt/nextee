@@ -4223,8 +4223,8 @@ body:has([data-design-system]){
 }
 
 .player-page-root .player-home-page .avatar{
-  width:88px;
-  height:88px;
+  width:112px;
+  height:112px;
 }
 
 /* Let the upcoming-activities section sit directly on the home background.
@@ -4264,7 +4264,7 @@ body:has([data-design-system]){
   gap:7px;
   font-size:clamp(34px,4vw,48px)!important;
   font-weight:750!important;
-  letter-spacing:-.045em !important;
+  letter-spacing:.015em !important;
   line-height:1;
 }
 
@@ -4292,13 +4292,13 @@ body:has([data-design-system]){
 
 @media (max-width: 540px){
   .player-page-root .player-home-page .player-hero{
-    gap:10px;
+    gap:14px;
     margin-bottom:18px;
   }
 
   .player-page-root .player-home-page .avatar{
-    width:54px;
-    height:54px;
+    width:96px;
+    height:96px;
     border-width:2px;
   }
 

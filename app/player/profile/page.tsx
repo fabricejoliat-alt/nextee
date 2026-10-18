@@ -260,10 +260,10 @@ export default function PlayerProfilePage() {
   const [clubs, setClubs] = useState<Club[]>([]);
   const [customFieldGroups, setCustomFieldGroups] = useState<ProfileCustomFieldGroup[]>([]);
   const heroClubLine = useMemo(() => {
-    const names = clubs.filter(c=>c.name).map(c=>`${c.name} · ${t(`organization.${c.org_type}`)}`);
+    const names = clubs.filter(c=>c.name).map(c=>c.name);
     if (names.length === 0) return "—";
     return names.join(" • ");
-  }, [clubs, t]);
+  }, [clubs]);
 
   // form
   const [firstName, setFirstName] = useState("");
