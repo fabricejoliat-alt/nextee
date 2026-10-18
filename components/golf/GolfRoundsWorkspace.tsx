@@ -161,8 +161,8 @@ function RoundDetail({ round, holes, readOnly = false }: { round: Round; holes: 
   const { locale } = useI18n();
   const rows = [...holes].sort((a,b) => a.hole_no-b.hole_no);
   return <div className={styles.detail} onClick={(event) => event.stopPropagation()}>
-    <RoundPerformanceInsights roundId={round.id} holes={rows} />
     <HorizontalScorecard holes={rows} />
+    <RoundPerformanceInsights roundId={round.id} holes={rows} />
     {!readOnly ? <div style={{ marginTop: 14, display: "flex", justifyContent: "flex-end", gap: 8 }}><Link className="btn" href={`/player/golf/rounds/${round.id}/edit`}>{roundText(locale, "Modifier", "Edit", "Bearbeiten")}</Link><Link className="btn" href={`/player/golf/rounds/${round.id}/scorecard`}>{roundText(locale, "Scorecard complète", "Full scorecard", "Vollständige Scorekarte")}</Link></div> : null}
   </div>;
 }

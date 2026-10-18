@@ -10,6 +10,7 @@ import { ArrowLeft, Pencil } from "lucide-react";
 import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { HorizontalScorecard, RoundPerformanceInsights } from "@/components/golf/GolfRoundsWorkspace";
+import roundStyles from "@/components/golf/GolfRoundsWorkspace.module.css";
 import { getRouteParam } from "@/lib/routeParams";
 
 type Round = {
@@ -379,9 +380,10 @@ export default function ScorecardPage() {
           </div>
         </div>
 
-        <HorizontalScorecard holes={holes} />
-
-        <RoundPerformanceInsights roundId={round.id} holes={holes} />
+        <div className={roundStyles.detail}>
+          <HorizontalScorecard holes={holes} />
+          <RoundPerformanceInsights roundId={round.id} holes={holes} />
+        </div>
       </div>
     </div>
   );
