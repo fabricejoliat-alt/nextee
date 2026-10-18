@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import type { DocumentUploadProgress as UploadState } from "@/lib/uploadDocumentWithProgress";
@@ -7,7 +8,13 @@ import styles from "./DocumentUploadProgress.module.css";
 
 export default function DocumentUploadProgress({ state }: { state: UploadState | null }) {
   const { locale } = useI18n();
-  if (!state) return null;
+  const [dismissedState, setDismissedState] = useState<UploadState | null>(null);
+  useEffect(() => {
+    if (state?.phase !== "complete") return;
+    const timer = window.setTimeout(() => setDismissedState(state), 3000);
+    return () => window.clearTimeout(timer);
+  }, [state]);
+  if (!state || dismissedState === state) return null;
   const labels = {
     preparing: pickLocaleText(locale, "Préparation du fichier…", "Preparing file…", "Datei wird vorbereitet…"),
     uploading: pickLocaleText(locale, "Envoi en cours…", "Uploading…", "Wird hochgeladen…"),
