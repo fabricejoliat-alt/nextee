@@ -996,6 +996,11 @@ export default function PlayerProfilePage() {
             <div className={styles.identityTitle}>
               {loading ? "…" : [firstName.trim(), lastName.trim()].filter(Boolean).join(" ") || t("common.profile")}
             </div>
+            {!loading && viewerRole === "player" && birthDate && (
+              <div className={styles.identityBirth}>
+                <time dateTime={birthDate}>{formatShortDate(birthDate)}</time> ({juniorCategory})
+              </div>
+            )}
             <div className={styles.identityMeta}>
               {viewerRole === "player" ? <span>Handicap {typeof handicapNumber === "number" ? handicapNumber.toFixed(1) : "—"}</span> : <span><UserRound size={14} />Parent</span>}
               <span>{heroClubLine}</span>
@@ -1017,15 +1022,17 @@ export default function PlayerProfilePage() {
             ) : (
               <>
                 <SectionCard title={t("playerProfile.identity")} icon={<UserRound size={17} />} wide>
-                  <div className="grid-2">
-                    <Field label={t("playerProfile.firstName")}>
-                      {viewerRole === "player" ? <span className={styles.staticValue}>{staticDisplayValue(firstName)}</span> : <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />}
-                    </Field>
+                  {viewerRole === "parent" && (
+                    <div className="grid-2">
+                      <Field label={t("playerProfile.firstName")}>
+                        <input value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                      </Field>
 
-                    <Field label={t("playerProfile.lastName")}>
-                      {viewerRole === "player" ? <span className={styles.staticValue}>{staticDisplayValue(lastName)}</span> : <input value={lastName} onChange={(e) => setLastName(e.target.value)} />}
-                    </Field>
-                  </div>
+                      <Field label={t("playerProfile.lastName")}>
+                        <input value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                      </Field>
+                    </div>
+                  )}
 
                   <Field label={t("playerProfile.nationality")}>
                     <select aria-label={t("playerProfile.nationality")}
@@ -1038,10 +1045,6 @@ export default function PlayerProfilePage() {
 
                   {viewerRole === "player" && (
                     <>
-                      <StaticField label={t("playerProfile.birthDate")} value={birthDate} />
-
-                      <StaticField label={t("playerProfile.category")} value={juniorCategory} />
-
                       <div className="grid-2">
                         <Field label={t("playerProfile.sex")}>
                           <select value={sex} onChange={(e) => setSex(e.target.value)}>

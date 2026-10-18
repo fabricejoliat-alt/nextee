@@ -115,6 +115,7 @@
 
 .identityContent { display: grid; gap: 8px; min-width: 0; }
 .identityTitle { color: #304438; font: 750 clamp(24px, 3vw, 36px) / 1.08 var(--font-inter-tight), var(--font-inter), sans-serif; letter-spacing: -.035em; }
+.identityBirth { color: #68776c; font-size: 14px; font-weight: 650; line-height: 1.4; }
 .identityMeta { display: flex; align-items: center; gap: 8px 18px; flex-wrap: wrap; color: #68776c; font-size: 11px; font-weight: 700; }
 .identityMeta span { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
 .identityMeta svg { flex: 0 0 auto; color: #718b6b; }

@@ -10,8 +10,8 @@ const button = (tree: Element, label: string) => {
   return found;
 };
 
-function profileFixture(nationality: string | null = null, avatar: string | null = null) {
-  const row = { id: "player", first_name: "Alex", last_name: "Test", nationality, avatar_url: avatar, handicap: 12.4 };
+function profileFixture(nationality: string | null = null, avatar: string | null = null, birthDate: string | null = "2013-10-31") {
+  const row = { id: "player", first_name: "Alex", last_name: "Test", nationality, avatar_url: avatar, handicap: 12.4, birth_date: birthDate };
   const { db } = managerDatabase({ profiles: [row], club_members: [] });
   const writes: Record<string, unknown>[] = [];
   const avatarRequests: string[] = [];
@@ -58,6 +58,33 @@ async function loaded(fixture: ReturnType<typeof profileFixture>) {
 }
 
 // All writes below stay in the fixture; no profile, photo or nationality is changed remotely.
+test("player birth date and category appear under the name without duplicate identity fields", async () => {
+  const fixture = profileFixture();
+  try {
+    const tree = await loaded(fixture);
+    const date = elements(tree).find(node => node.type === "time" && node.props.dateTime === "2013-10-31");
+    assert.ok(date);
+    assert.equal(textContent(date), "31.10.2013");
+    const birthLine = elements(tree).find(node => elements(node).includes(date) && textContent(node).replace(/\s+/g, " ").trim() === "31.10.2013 ( U14 )");
+    assert.ok(birthLine);
+    const identity = elements(tree).find(node => node.props.title === "Identité");
+    assert.ok(identity);
+    const labels = elements(identity).map(node => node.props.label).filter(Boolean);
+    assert.ok(labels.includes("Nationalité"));
+    assert.ok(!labels.some(label => ["Prénom", "Nom", "Date de naissance", "Catégorie"].includes(label)));
+    assert.equal(fixture.writes.length, 0);
+  } finally { fixture.harness.cleanup(); }
+});
+
+test("a missing birth date does not invent a date or junior category in the profile header", async () => {
+  const fixture = profileFixture(null, null, null);
+  try {
+    const tree = await loaded(fixture);
+    assert.ok(!elements(tree).some(node => node.type === "time"));
+    assert.ok(!textContent(tree).includes("U14"));
+  } finally { fixture.harness.cleanup(); }
+});
+
 test("country options cover all ISO countries plus Kosovo, localize and sort without duplicates", () => {
   for (const locale of ["fr", "en", "de", "it"]) {
     const options = nationalityOptions(locale);

@@ -215,7 +215,6 @@ function getInitials(p?: Profile | null) {
   const l = (p?.last_name ?? "").trim();
   const fi = f ? f[0].toUpperCase() : "";
   const li = l ? l[0].toUpperCase() : "";
-  if (!fi && !li) return "J";
   return `${fi}${li}`;
 }
 
@@ -1129,7 +1128,9 @@ export default function PlayerHomePage() {
         <div className="player-hero">
           <div className={styles.heroPortrait}>
             <div className="avatar" aria-hidden="true" style={{ overflow: "hidden" }}>
-              {avatarUrl ? (
+              {heroLoading ? (
+                <div className={styles.heroAvatarLoading} />
+              ) : avatarUrl ? (
                 <img src={avatarUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
               ) : (
                 <div
