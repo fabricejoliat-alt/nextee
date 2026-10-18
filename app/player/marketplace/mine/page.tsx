@@ -184,7 +184,7 @@ export default function MarketplaceMine() {
                     <span className="toggle-label">{it.is_active ? t("coachGroups.active") : t("coachGroups.inactive")}</span>
                   </label>
                   <div className={styles.mineItemActions}>
-                    <Link href={`/player/marketplace/edit/${it.id}`} className={playerUi.iconButton} aria-label={`${t("common.edit")} ${it.title}`} title={t("common.edit")}><Pencil size={17} aria-hidden="true" /></Link>
+                    <a href={`/player/marketplace/edit/${it.id}`} className={playerUi.iconButton} aria-label={`${t("common.edit")} ${it.title}`} title={t("common.edit")}><Pencil size={17} aria-hidden="true" /></a>
                     <button className={`${playerUi.iconButton} ${playerUi.dangerIcon}`} type="button" onClick={() => void remove(it.id)} disabled={busy} aria-label={`${t("common.delete")} ${it.title}`} title={t("common.delete")}><Trash2 size={17} aria-hidden="true" /></button>
                   </div>
                 </div>

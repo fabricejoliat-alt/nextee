@@ -4,6 +4,8 @@ import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { Eye, List } from "lucide-react";
+import styles from "../../Marketplace.module.css";
 import { useParams, usePathname, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
@@ -472,30 +474,30 @@ export default function MarketplaceEditPage() {
   /* -------------------- RENDER -------------------- */
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
+    <div className="player-dashboard-bg player-marketplace-page">
+      <div className={`app-shell marketplace-page ${styles.page}`}>
         <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace"), href: "/player/marketplace" }, { label: t("common.edit") }]} />
         {/* Header */}
         <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 10 }}>
-              <h1 className="section-title" style={{ marginBottom: 0 }}>
+          <div className={`marketplace-header ${styles.mineHeader}`}>
+            <div>
+              <h1 className="section-title">
                 Modifier une annonce
               </h1>
-              <div className="marketplace-filter-label" style={{ marginTop: 6, marginBottom: 8 }}>
+              <div className="section-subtitle">
                 {item?.title ?? "—"}
               </div>
             </div>
 
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
+            <div className={styles.mineHeaderActions}>
               <Link
-                className="cta-green cta-green-inline"
+                className="btn"
                 href={item ? `/player/marketplace/${item.id}` : "/player/marketplace"}
               >
-                Voir l’annonce
+                <Eye size={15} aria-hidden="true" />Voir l’annonce
               </Link>
-              <Link className="cta-green cta-green-inline" href="/player/marketplace/mine">
-                Mes annonces
+              <Link className="btn" href="/player/marketplace/mine">
+                <List size={15} aria-hidden="true" />Mes annonces
               </Link>
             </div>
           </div>

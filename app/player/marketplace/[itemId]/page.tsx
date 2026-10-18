@@ -229,9 +229,9 @@ export default function MarketplaceDetailPage() {
 
             <div className="marketplace-actions">
               {isMine && (
-                <Link className="cta-green cta-green-inline" href={`/player/marketplace/edit/${item.id}`}>
+                <a className="btn" href={`/player/marketplace/edit/${item.id}`}>
                   {t("common.edit")}
-                </Link>
+                </a>
               )}
               <Link className="cta-green cta-green-inline" href="/player/marketplace">
                 {t("common.back")}
