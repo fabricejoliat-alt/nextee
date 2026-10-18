@@ -208,26 +208,23 @@ export default function MarketplaceDetailPage() {
   const meta = compactMeta(item, locale);
   const mainImg = images[0] ?? placeholderSvg;
 
-  // ✅ Header title: Marketplace - Catégorie
-  const headerTitle = `${t("nav.marketplace")}${item.category ? ` - ${item.category}` : ""}`;
-
   return (
     <div className="player-dashboard-bg">
       <div className={`app-shell marketplace-page ${styles.detailPage}`}>
         <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace"), href: "/player/marketplace" }, { label: t("common.details") }]} />
         {/* Header */}
         <div className="glass-section">
-          <div className="marketplace-header">
+          <div className={`marketplace-header ${styles.detailHeader}`}>
             <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
               <h1 className="section-title" style={{ marginBottom: 0 }}>
-                {headerTitle}
+                {t("nav.marketplace")}
               </h1>
               <div className="marketplace-filter-label" style={{ marginTop: 0 }}>
                 {fmtDate(item.created_at, dateLocale)}
               </div>
             </div>
 
-            <div className="marketplace-actions">
+            <div className={`marketplace-actions ${styles.detailActions}`}>
               {isMine && (
                 <a className="btn" href={`/player/marketplace/edit/${item.id}`}>
                   {t("common.edit")}

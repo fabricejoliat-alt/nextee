@@ -254,7 +254,7 @@ export default function CoachPlayerStructurePage() {
           <div className="marketplace-header">
             <div style={{ display: "grid", gap: 6 }}>
               <div className="section-title" style={{ marginBottom: 0 }}>Structure planifiée individuelle</div>
-              <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.65)" }}>
+              <div className="section-subtitle" style={{ fontSize: 12, fontWeight: 800 }}>
                 {player ? nameOf(player.first_name, player.last_name) : "Joueur"} • {event ? fmtDateTime(event.starts_at) : ""}
               </div>
             </div>

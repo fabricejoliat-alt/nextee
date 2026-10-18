@@ -11,12 +11,10 @@ final class BiometricLockController {
     private var locale: String
     private weak var window: UIWindow?
     private var cover: UIView?
-    private var messageLabel: UILabel?
     private var unlockButton: UIButton?
     private var context: LAContext?
     private var attemptedAutomatically = false
     private var inactive = true
-    private var errorKey: String?
 
     private init() {
         state = BiometricLockState(ownerID: UserDefaults.standard.string(forKey: "activitee.biometric-lock.owner.v1"))
@@ -51,7 +49,6 @@ final class BiometricLockController {
         attemptedAutomatically = false
         context?.invalidate()
         context = nil
-        errorKey = nil
         refreshCover()
     }
 
@@ -122,7 +119,6 @@ final class BiometricLockController {
         let auth = LAContext()
         var error: NSError?
         guard auth.canEvaluatePolicy(.deviceOwnerAuthentication, error: &error) else {
-            errorKey = "unavailable"
             refreshCover()
             return
         }
@@ -130,7 +126,6 @@ final class BiometricLockController {
         auth.localizedFallbackTitle = text("passcode")
         let generation = state.generation
         context = auth
-        errorKey = nil
         refreshCover()
         auth.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: text("unlockReason")) { [weak self] success, error in
             DispatchQueue.main.async {
@@ -138,9 +133,6 @@ final class BiometricLockController {
                 self.context = nil
                 if self.state.completeUnlock(success: success, generation: generation) {
                     self.persist()
-                    self.errorKey = nil
-                } else {
-                    self.errorKey = self.errorCode(error) == "CANCELLED" ? "cancelled" : "failed"
                 }
                 self.refreshCover()
             }
@@ -155,7 +147,6 @@ final class BiometricLockController {
         guard concealed else {
             cover?.removeFromSuperview()
             cover = nil
-            messageLabel = nil
             unlockButton = nil
             return
         }
@@ -174,32 +165,31 @@ final class BiometricLockController {
             icon.tintColor = .white
             icon.contentMode = .scaleAspectFit
             icon.heightAnchor.constraint(equalToConstant: 52).isActive = true
-            let title = UILabel()
-            title.text = "ActiviTee"
-            title.font = .preferredFont(forTextStyle: .largeTitle)
-            title.adjustsFontForContentSizeCategory = true
-            title.textColor = .white
-            title.textAlignment = .center
-            let message = UILabel()
-            message.font = .preferredFont(forTextStyle: .body)
-            message.adjustsFontForContentSizeCategory = true
-            message.numberOfLines = 0
-            message.textColor = .white
-            message.textAlignment = .center
-            let button = UIButton(type: .system)
+            // Vector outlines match the header's Inter Tight weights and proportions.
+            let title = UIImageView(image: UIImage(named: "ActiviTeeWordmark"))
+            title.contentMode = .scaleAspectFit
+            title.heightAnchor.constraint(equalToConstant: 44).isActive = true
+            title.isAccessibilityElement = true
+            title.accessibilityLabel = "ActiviTee"
+            title.accessibilityTraits = .header
+            let button = UIButton(type: .custom)
             button.backgroundColor = .white
-            button.setTitleColor(panel.backgroundColor, for: .normal)
+            button.tintColor = .black
+            button.setTitleColor(.black, for: .normal)
+            button.setTitleColor(.black, for: .disabled)
+            button.setTitleColor(.black, for: .highlighted)
             button.titleLabel?.font = .preferredFont(forTextStyle: .headline)
             button.titleLabel?.adjustsFontForContentSizeCategory = true
             button.titleLabel?.numberOfLines = 0
             button.titleLabel?.textAlignment = .center
             button.layer.cornerRadius = 14
-            var buttonConfiguration = UIButton.Configuration.plain()
-            buttonConfiguration.contentInsets = NSDirectionalEdgeInsets(top: 16, leading: 16, bottom: 16, trailing: 16)
-            button.configuration = buttonConfiguration
+            // A custom button keeps its text readable while Face ID disables taps.
+            // System configurations otherwise apply their own disabled appearance.
+            button.heightAnchor.constraint(greaterThanOrEqualToConstant: 56).isActive = true
+            button.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
             button.addTarget(self, action: #selector(unlock), for: .touchUpInside)
             button.accessibilityIdentifier = "biometric-unlock"
-            [icon, title, message, button].forEach(stack.addArrangedSubview)
+            [icon, title, button].forEach(stack.addArrangedSubview)
             panel.addSubview(stack)
             window.addSubview(panel)
             NSLayoutConstraint.activate([
@@ -214,12 +204,10 @@ final class BiometricLockController {
                 stack.bottomAnchor.constraint(lessThanOrEqualTo: panel.safeAreaLayoutGuide.bottomAnchor, constant: -20)
             ])
             cover = panel
-            messageLabel = message
             unlockButton = button
         }
         if let cover { window.bringSubviewToFront(cover) }
-        messageLabel?.text = text(errorKey ?? "locked")
-        unlockButton?.setTitle(text(context == nil ? "unlock" : "checking"), for: .normal)
+        unlockButton?.setTitle(text("unlock"), for: .normal)
         unlockButton?.isEnabled = context == nil && !inactive
     }
 }
