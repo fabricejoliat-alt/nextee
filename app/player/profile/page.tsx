@@ -21,7 +21,6 @@ import {
   History,
   Settings,
   KeyRound,
-  MapPin,
   Pencil,
   Save,
   ShieldCheck,
@@ -1220,7 +1219,7 @@ export default function PlayerProfilePage() {
                   </SectionCard>
                 ) : null}
 
-                <SectionCard title={t("playerProfile.contact")} icon={<ContactRound size={17} />} wide>
+                <SectionCard title={t("playerProfile.contactAndAddress")} icon={<ContactRound size={17} />} wide>
                   <div className="grid-2">
                     <Field label={t("playerProfile.phone")}>
                       <input value={phone} onChange={(e) => setPhone(e.target.value)} />
@@ -1239,6 +1238,20 @@ export default function PlayerProfilePage() {
                   {viewerRole === "parent" ? (
                     <StaticField label="Username" value={username} />
                   ) : null}
+
+                  <Field label={t("playerProfile.address")}>
+                    <input value={address} onChange={(e) => setAddress(e.target.value)} />
+                  </Field>
+
+                  <div className="grid-2">
+                    <Field label={t("playerProfile.postalCode")}>
+                      <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
+                    </Field>
+
+                    <Field label={t("playerProfile.city")}>
+                      <input value={city} onChange={(e) => setCity(e.target.value)} />
+                    </Field>
+                  </div>
                 </SectionCard>
 
                 {customFieldSections.map((section) => (
@@ -1277,22 +1290,6 @@ export default function PlayerProfilePage() {
                     </div>
                   </SectionCard>
                 ))}
-
-                <SectionCard title={t("playerProfile.addressSection")} icon={<MapPin size={17} />}>
-                  <Field label={t("playerProfile.address")}>
-                    <input value={address} onChange={(e) => setAddress(e.target.value)} />
-                  </Field>
-
-                  <div className="grid-2">
-                    <Field label={t("playerProfile.postalCode")}>
-                      <input value={postalCode} onChange={(e) => setPostalCode(e.target.value)} />
-                    </Field>
-
-                    <Field label={t("playerProfile.city")}>
-                      <input value={city} onChange={(e) => setCity(e.target.value)} />
-                    </Field>
-                  </div>
-                </SectionCard>
 
                 {(viewerRole === "player" || viewerRole === "parent") ? (
                   <SectionCard title="Mot de passe" icon={<KeyRound size={17} />}>
@@ -1408,9 +1405,8 @@ function ProfileSkeleton() {
   const cards = [
     { key: "identity", wide: true, tall: true, fields: 5 },
     { key: "handicap", wide: true, tall: true, fields: 4 },
-    { key: "contact", wide: true, fields: 3 },
+    { key: "contact", wide: true, fields: 5 },
     { key: "organization", wide: true, fields: 3 },
-    { key: "address", fields: 4 },
     { key: "password", fields: 3 },
     { key: "administrative", wide: true, fields: 3 },
   ];
