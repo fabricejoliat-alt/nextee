@@ -33,3 +33,17 @@
   .contactPanel { padding: 12px; }
 }
 @media(max-width:420px) { .filterRow { grid-template-columns: minmax(0, 1fr); } }
+
+.mineHeader { width: 100%; }
+.mineHeaderActions { display: flex; gap: 8px; align-items: center; }
+.mineHeaderActions > a { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
+.mineFooter { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; margin-top: 12px; border-top: 1px solid #e9eee7; }
+.mineItemActions { display: flex; flex: 0 0 auto; gap: 7px; }
+.mineItemActions > :is(a, button) { color: #35483b; }
+.mineItemActions > button { color: #ad3d35; }
+@media(max-width:640px) {
+  :global(.player-page-root) .page .mineHeader { display: grid !important; gap: 15px; }
+  .mineHeaderActions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); width: 100%; }
+  :global(.player-page-root) .page .mineHeaderActions > a { box-sizing: border-box; width: 100% !important; min-width: 0; min-height: 42px !important; padding: 6px 8px !important; white-space: normal; text-align: center; }
+  .mineHeaderActions svg { flex: 0 0 auto; }
+}

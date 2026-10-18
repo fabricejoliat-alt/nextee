@@ -1,5 +1,7 @@
 "use client";
 
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams, usePathname, useRouter } from "next/navigation";
@@ -12,7 +14,6 @@ import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { getRouteParam } from "@/lib/routeParams";
 import { MARKETPLACE_CONDITIONS, marketplaceConditionLabel } from "@/lib/marketplaceLabels";
 
-const BUCKET = "marketplace";
 const MAX_IMAGES = 5;
 
 const CATEGORIES = [
@@ -79,11 +80,6 @@ function getIdFromPathname(pathname: string): string | null {
   const last = parts[parts.length - 1];
   if (!last || last === "edit") return null;
   return last;
-}
-
-function safeExtFromFileName(name: string) {
-  const ext = (name.split(".").pop() || "jpg").toLowerCase();
-  return ext.replace(/[^a-z0-9]/g, "") || "jpg";
 }
 
 export default function MarketplaceEditPage() {
@@ -156,7 +152,8 @@ export default function MarketplaceEditPage() {
     setError(null);
 
     try {
-      const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
+      const context = await resolveEffectivePlayerContext();
+      const uid = context.effectiveUserId;
 
       const itRes = await supabase
         .from("marketplace_items")
@@ -188,26 +185,13 @@ export default function MarketplaceEditPage() {
         is_active: !!it.is_active,
       });
 
-      const imgRes = await supabase
-        .from("marketplace_images")
-        .select("id,item_id,path,sort_order")
-        .eq("item_id", it.id)
-        .order("sort_order", { ascending: true });
-
-      if (imgRes.error) throw new Error(imgRes.error.message);
-
-      const list = (imgRes.data ?? []) as DbImage[];
-
-      // Convert to UI images (existing)
-      const ui: UIImg[] = list.map((r) => {
-        const { data } = supabase.storage.from(BUCKET).getPublicUrl(r.path);
-        return {
-          kind: "existing",
-          id: r.id,
-          path: r.path,
-          url: data?.publicUrl || "",
-        };
-      });
+      const { data: session } = await supabase.auth.getSession();
+      const query = new URLSearchParams();
+      if (context.role === "parent") query.set("child_id", uid);
+      const imagesResponse = await fetch(`/api/player/marketplace/${encodeURIComponent(it.id)}?${query}`, { headers: { Authorization: `Bearer ${session.session?.access_token ?? ""}` }, cache: "no-store" });
+      const imagesJson = await imagesResponse.json().catch(() => ({}));
+      if (!imagesResponse.ok) throw new Error(String(imagesJson.error ?? "Chargement des images impossible."));
+      const ui: UIImg[] = ((imagesJson.imageRows ?? []) as Array<DbImage & { url: string }>).map(row => ({ kind: "existing", id: row.id, path: row.path, url: row.url }));
 
       // reset deletion list + set images
       setDeletedExisting([]);
@@ -378,6 +362,11 @@ export default function MarketplaceEditPage() {
     setError(null);
 
     try {
+      const context = await resolveEffectivePlayerContext();
+      const { data: session } = await supabase.auth.getSession();
+      const token = session.session?.access_token ?? "";
+      if (!token) throw new Error("Session invalide.");
+      const imagesEndpoint = `/api/player/marketplace/${encodeURIComponent(item.id)}/images`;
       // 1) update item
       const payload: Omit<Item, "id" | "user_id"> = {
         title,
@@ -399,15 +388,9 @@ export default function MarketplaceEditPage() {
       // 2) delete removed existing images (DB + storage best-effort)
       if (deletedExisting.length > 0) {
         for (const d of deletedExisting) {
-          // fetch path from db (in case)
-          const rowRes = await supabase.from("marketplace_images").select("path").eq("id", d.id).maybeSingle();
-          const path = (rowRes.data as { path?: string } | null)?.path ?? d.path;
-
-          if (path) {
-            await supabase.storage.from(BUCKET).remove([path]); // best effort
-          }
-          const delDb = await supabase.from("marketplace_images").delete().eq("id", d.id);
-          if (delDb.error) throw new Error(delDb.error.message);
+          const response = await fetch(imagesEndpoint, { method: "DELETE", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ image_id: d.id, child_id: context.role === "parent" ? context.effectiveUserId : null }) });
+          const result = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(String(result.error ?? "Suppression d’image impossible."));
         }
       }
 
@@ -429,22 +412,13 @@ export default function MarketplaceEditPage() {
         if (img.kind !== "new") continue;
 
         const file = await optimizeUploadFile(img.file);
-        const ext = safeExtFromFileName(file.name);
-        const filename = `${Date.now()}_${i}.${ext}`;
-        const path = `${item.user_id}/${item.id}/${filename}`;
-
-        const up = await supabase.storage.from(BUCKET).upload(path, file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-        if (up.error) throw new Error(`Upload image impossible: ${up.error.message}`);
-
-        const ins = await supabase.from("marketplace_images").insert({
-          item_id: item.id,
-          path,
-          sort_order: i,
-        });
-        if (ins.error) throw new Error(`DB image impossible: ${ins.error.message}`);
+        const data = new FormData();
+        data.append("file", file);
+        data.append("sort_order", String(i));
+        if (context.role === "parent") data.append("child_id", context.effectiveUserId);
+        const response = await fetch(imagesEndpoint, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: data });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(`Upload image impossible: ${String(result.error ?? "Erreur inconnue.")}`);
       }
 
       // 3c) Normalize sort_order from DB according to current UI order:

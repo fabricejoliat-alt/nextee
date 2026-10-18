@@ -4,10 +4,11 @@ import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { List, Plus } from "lucide-react";
+import { List, Plus, Pencil, Trash2 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
-import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import styles from "../Marketplace.module.css";
+import playerUi from "@/components/player/PlayerUI.module.css";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { marketplaceConditionLabel } from "@/lib/marketplaceLabels";
@@ -31,12 +32,6 @@ type Item = {
   model: string | null;
   delivery: string | null;
 };
-
-function truncate(s: string, max: number) {
-  const t = (s ?? "").trim();
-  if (t.length <= max) return t;
-  return t.slice(0, max - 1) + "…";
-}
 
 function compactMeta(it: Item, locale: AppLocale) {
   const parts: string[] = [];
@@ -145,161 +140,57 @@ export default function MarketplaceMine() {
   }
 
   return (
-    <div className="player-dashboard-bg">
-      <div className="app-shell marketplace-page">
+    <div className="player-dashboard-bg player-marketplace-page">
+      <div className={`app-shell marketplace-page ${styles.page}`}>
         <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace"), href: "/player/marketplace" }, { label: t("player.myListings") }]} />
-
-        {/* Header */}
         <div className="glass-section">
-          <div className="marketplace-header">
-            <div style={{ display: "grid", gap: 10 }}>
-              <h1 className="section-title" style={{ marginBottom: 0 }}>
-                {t("player.myListings")}
-              </h1>
-              <div className="marketplace-filter-label" style={{ marginTop: 6, marginBottom: 8 }}>
-                {t("marketplace.mineSubtitle")}
-              </div>
+          <div className={`marketplace-header ${styles.mineHeader}`}>
+            <div>
+              <h1 className="section-title">{t("player.myListings")}</h1>
+              <p className="section-subtitle">{t("marketplace.mineSubtitle")}</p>
             </div>
-
-            <div className="marketplace-actions" style={{ marginTop: 2 }}>
-              <Link className="btn" href="/player/marketplace">
-                <List size={15} aria-hidden="true" />
-                {t("player.allListings")}
-              </Link>
-              <Link className="cta-green cta-green-inline" href="/player/marketplace/new">
-                <Plus size={15} aria-hidden="true" />
-                {t("common.add")}
-              </Link>
+            <div className={styles.mineHeaderActions}>
+              <Link className="btn" href="/player/marketplace"><List size={15} aria-hidden="true" />{t("player.allListings")}</Link>
+              <Link className="btn btn-primary" href="/player/marketplace/new"><Plus size={15} aria-hidden="true" />{t("common.add")}</Link>
             </div>
           </div>
-
-          {error && <div className="marketplace-error">{error}</div>}
+          {error && <div className="marketplace-error" role="alert">{error}</div>}
         </div>
-
-        {/* List */}
-        <div className="glass-section">
-          {loading ? (
-            <div className="glass-card"><ListLoadingBlock label={t("common.loading")} /></div>
-          ) : items.length === 0 ? (
-            <div className="glass-card marketplace-empty">
-              {t("marketplace.mineEmpty")}
-            </div>
-          ) : (
-            <div className="marketplace-list">
-              {items.map((it) => {
-                const img = mainImageByItemId[it.id] || placeholderSvg;
-                const meta = compactMeta(it, locale);
-
-                return (
-                  <div key={it.id} className="marketplace-item" style={{ opacity: it.is_active ? 1 : 0.75 }}>
-                    <div className="marketplace-row">
-
-                      <div className="marketplace-thumb">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={img} alt={it.title} loading="lazy" />
-                      </div>
-
-                      <div className="marketplace-body">
-
-                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                          <div className="marketplace-item-title">{it.title}</div>
-                          {!it.is_active && (
-                            <div style={{
-                              padding: "5px 10px",
-                              borderRadius: 999,
-                              fontSize: 12,
-                              fontWeight: 900,
-                              background: "rgba(0,0,0,0.06)",
-                              border: "1px solid rgba(0,0,0,0.08)"
-                            }}>
-                              {t("coachGroups.inactive")}
-                            </div>
-                          )}
-                        </div>
-
-                        {meta && <div className="marketplace-meta">{meta}</div>}
-
-                        {it.description && (
-                          <div className="marketplace-meta">
-                            {truncate(it.description, 120)}
-                          </div>
-                        )}
-
-                        <div className="marketplace-price-row">
-                          <div className="marketplace-price-pill">{priceLabel(it, t)}</div>
-                        </div>
-
-                        <div className="hr-soft" style={{ marginTop: 10, marginBottom: 10 }} />
-
-                        {/* Ligne 1 — Toggle seul */}
-                        <div style={{
-                          display: "flex",
-                          justifyContent: "flex-end",
-                          marginBottom: 8
-                        }}>
-                          <label className={`toggle ${it.is_active ? "on" : ""}`}>
-                            <input
-                              type="checkbox"
-                              checked={it.is_active}
-                              onChange={() => toggleActive(it)}
-                              disabled={busy}
-                            />
-                            <span className="toggle-track">
-                              <span className="toggle-thumb" />
-                            </span>
-                            <span className="toggle-label">
-                              {it.is_active ? t("coachGroups.active") : t("coachGroups.inactive")}
-                            </span>
-                          </label>
-                        </div>
-
-                        {/* Ligne 2 — Boutons compacts */}
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "flex-end",
-                            gap: 8,
-                            flexWrap: "wrap",
-                          }}
-                        >
-                          <Link
-                            href={`/player/marketplace/edit/${it.id}`}
-                            className="btn"
-                            style={{
-                              height: 34,
-                              padding: "0 12px",
-                              fontSize: 13,
-                              fontWeight: 800,
-                              borderRadius: 10,
-                            }}
-                          >
-                            {t("common.edit")}
-                          </Link>
-
-                          <button
-                            className="btn btn-danger"
-                            onClick={() => remove(it.id)}
-                            disabled={busy}
-                            type="button"
-                            style={{
-                              height: 34,
-                              padding: "0 12px",
-                              fontSize: 13,
-                              fontWeight: 800,
-                              borderRadius: 10,
-                            }}
-                          >
-                            {t("common.delete")}
-                          </button>
-                        </div>
-
-                      </div>
+        <div className={`glass-section ${styles.listSection}`}>
+          {loading ? <div className={styles.detailLoading} role="status" aria-label={t("common.loading")}><div className={styles.loadingImage} /><div className={styles.loadingLine} /></div> : items.length === 0 ? (
+            <div className="glass-card marketplace-empty">{t("marketplace.mineEmpty")}</div>
+          ) : <div className="marketplace-list">
+            {items.map(it => {
+              const img = mainImageByItemId[it.id] || placeholderSvg;
+              const meta = compactMeta(it, locale);
+              return <div key={it.id} className="marketplace-item" style={{ opacity: it.is_active ? 1 : 0.75 }}>
+                <Link href={`/player/marketplace/${it.id}`} className="marketplace-link">
+                  <div className="marketplace-row">
+                    <div className="marketplace-thumb">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={img} alt={it.title} loading="lazy" decoding="async" width={240} height={180} />
+                    </div>
+                    <div className="marketplace-body">
+                      <div className="marketplace-item-title">{it.title}</div>
+                      {meta && <div className="marketplace-meta">{meta}</div>}
+                      <div className="marketplace-price-row"><div className="marketplace-price-pill">{priceLabel(it, t)}</div></div>
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          )}
+                </Link>
+                <div className={styles.mineFooter}>
+                  <label className={`toggle ${it.is_active ? "on" : ""}`}>
+                    <input type="checkbox" checked={it.is_active} onChange={() => void toggleActive(it)} disabled={busy} />
+                    <span className="toggle-track"><span className="toggle-thumb" /></span>
+                    <span className="toggle-label">{it.is_active ? t("coachGroups.active") : t("coachGroups.inactive")}</span>
+                  </label>
+                  <div className={styles.mineItemActions}>
+                    <Link href={`/player/marketplace/edit/${it.id}`} className={playerUi.iconButton} aria-label={`${t("common.edit")} ${it.title}`} title={t("common.edit")}><Pencil size={17} aria-hidden="true" /></Link>
+                    <button className={`${playerUi.iconButton} ${playerUi.dangerIcon}`} type="button" onClick={() => void remove(it.id)} disabled={busy} aria-label={`${t("common.delete")} ${it.title}`} title={t("common.delete")}><Trash2 size={17} aria-hidden="true" /></button>
+                  </div>
+                </div>
+              </div>;
+            })}
+          </div>}
         </div>
       </div>
     </div>

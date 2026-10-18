@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient, resolveMarketplaceAccess, uniq } from "../_lib";
 
-const BUCKET = "marketplace";
+import { signMarketplaceImagePaths } from "@/lib/marketplaceStorage";
 
 type ImageRow = { item_id: string | null; path: string | null; sort_order: number | null };
 
@@ -32,12 +32,15 @@ export async function GET(req: NextRequest) {
       : ({ data: [], error: null } as const);
     if (imagesRes.error) return NextResponse.json({ error: imagesRes.error.message }, { status: 400 });
 
+    const owners = new Map((items as Array<{ id: string; user_id: string }>).map(item => [item.id, item.user_id]));
+    const imageUrls = await signMarketplaceImagePaths(supabaseAdmin, imagesRes.data ?? [], owners);
     const mainImageByItemId: Record<string, string> = {};
     ((imagesRes.data ?? []) as ImageRow[]).forEach((row) => {
       const itemId = String(row.item_id ?? "").trim();
       const path = String(row.path ?? "").trim();
       if (!itemId || !path) return;
-      mainImageByItemId[itemId] = supabaseAdmin.storage.from(BUCKET).getPublicUrl(path).data.publicUrl;
+      const url = imageUrls.get(path);
+      if (url) mainImageByItemId[itemId] = url;
     });
 
     return NextResponse.json({
@@ -46,7 +49,7 @@ export async function GET(req: NextRequest) {
       preferredClubId: access.preferredClubId,
       items,
       mainImageByItemId,
-    });
+    }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error: unknown) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }

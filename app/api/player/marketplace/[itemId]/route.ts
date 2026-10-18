@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient, resolveMarketplaceAccess } from "../_lib";
 
-const BUCKET = "marketplace";
+import { signMarketplaceImagePaths } from "@/lib/marketplaceStorage";
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ itemId: string }> }) {
   try {
@@ -34,21 +34,21 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ itemId: str
 
     const imgRes = await supabaseAdmin
       .from("marketplace_images")
-      .select("path,sort_order")
+      .select("id,item_id,path,sort_order")
       .eq("item_id", itemId)
       .order("sort_order", { ascending: true });
     if (imgRes.error) return NextResponse.json({ error: imgRes.error.message }, { status: 400 });
 
-    const images = ((imgRes.data ?? []) as Array<{ path: string | null; sort_order: number | null }>)
-      .map((row) => String(row.path ?? "").trim())
-      .filter(Boolean)
-      .map((path) => supabaseAdmin.storage.from(BUCKET).getPublicUrl(path).data.publicUrl);
+    const imageUrls = await signMarketplaceImagePaths(supabaseAdmin, imgRes.data ?? [], new Map([[itemId, ownerId]]));
+    const imageRows = (imgRes.data ?? []).filter(row => imageUrls.has(row.path)).map(row => ({ ...row, url: imageUrls.get(row.path) }));
+    const images = imageRows.map(row => row.url);
 
     return NextResponse.json({
       item: itemRes.data,
       images,
+      imageRows,
       isMine: ownerId === access.effectiveUserId,
-    });
+    }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error: unknown) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "Server error" }, { status: 500 });
   }
