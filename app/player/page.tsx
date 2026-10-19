@@ -15,6 +15,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { savePlayerAttendance } from "@/lib/playerAttendanceWrite";
+import { loadPlayerMarketplace } from "@/lib/playerMarketplaceRead";
 import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import type { PlayerHomeSummary } from "@/lib/playerHomeSummary";
 import { AlertTriangle, ArrowDown, ArrowRight, ArrowUp, CheckCircle2, ClipboardCheck, Newspaper, ShieldCheck, Target, type LucideIcon } from "lucide-react";
@@ -85,12 +86,6 @@ type TrainingItemRow = {
     | "fitness"
     | "other";
   minutes: number;
-};
-
-type MarketplaceImageRow = {
-  item_id: string;
-  path: string;
-  sort_order: number;
 };
 
 type HomeSessionRow = {
@@ -520,8 +515,6 @@ export default function PlayerHomePage() {
   const [showProfilePhotoPrompt, setShowProfilePhotoPrompt] = useState(false);
   const [hidePhotoPromptForever, setHidePhotoPromptForever] = useState(false);
 
-  const bucket = "marketplace";
-
   useEffect(() => {
     if (!homeContext) return;
     const controller = new AbortController();
@@ -794,58 +787,26 @@ export default function PlayerHomePage() {
     }
   }
 
-  async function loadLatestMarketplace(clubIds: string[], signal: AbortSignal) {
+  async function loadLatestMarketplace(userId: string, role: "player" | "parent", signal: AbortSignal) {
     if (latestItems.length === 0) setMarketplaceLoading(true);
     try {
-      const dedupedClubIds = Array.from(new Set(clubIds.filter(Boolean)));
-      if (dedupedClubIds.length === 0) {
-        setLatestItems([]);
-        setThumbByItemId({});
-        return;
-      }
-
-      const itemsRes = await supabase
-        .from("marketplace_items")
-        .select("id,title,created_at,price,is_free,category,condition,brand,model,club_id")
-        .in("club_id", dedupedClubIds)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false })
-        .limit(3).abortSignal(signal);
+      const { data: sessionData } = await supabase.auth.getSession();
       if (signal.aborted) return;
-
-      if (itemsRes.error) {
-        setLatestItems([]);
-        setThumbByItemId({});
-        return;
-      }
-
-      const list = (itemsRes.data ?? []) as Item[];
-      setLatestItems(list);
-
-      const ids = list.map((x) => x.id);
-      if (ids.length === 0) {
-        setThumbByItemId({});
-        return;
-      }
-
-      const imgRes = await supabase
-        .from("marketplace_images")
-        .select("item_id,path,sort_order")
-        .in("item_id", ids)
-        .eq("sort_order", 0).abortSignal(signal);
-      if (signal.aborted) return;
-
-      if (imgRes.error) {
-        setThumbByItemId({});
-        return;
-      }
-
-      const map: Record<string, string> = {};
-      (imgRes.data ?? []).forEach((r: MarketplaceImageRow) => {
-        const { data } = supabase.storage.from(bucket).getPublicUrl(r.path);
-        if (data?.publicUrl) map[r.item_id] = data.publicUrl;
+      const payload = await loadPlayerMarketplace<{
+        items: Item[];
+        mainImageByItemId: Record<string, string>;
+      }>({
+        token: sessionData.session?.access_token ?? "",
+        explicitChildId: role === "parent" ? userId : "",
+        fetcher: fetch,
       });
-      setThumbByItemId(map);
+      if (signal.aborted) return;
+      const latest = payload.items.slice(0, 3);
+      setLatestItems(latest);
+      setThumbByItemId(Object.fromEntries(latest.flatMap(item => {
+        const url = payload.mainImageByItemId[item.id];
+        return url ? [[item.id, url]] : [];
+      })));
     } catch (e) {
       if (signal.aborted) return;
       console.warn("player home marketplace load failed:", e);
@@ -886,7 +847,7 @@ export default function PlayerHomePage() {
           performanceEnabled: ctx.home.performanceEnabled, handicap: ctx.home.profile?.handicap ?? null });
         void loadUpcomingPreview(userId, viewerId, signal);
         void loadLatestNews(userId, role, signal);
-        void loadLatestMarketplace(organizationIds, signal);
+        void loadLatestMarketplace(userId, role, signal);
       } catch (cause) {
         if (signal.aborted) return;
         setError(cause instanceof Error ? cause.message : t("common.errorLoading"));
@@ -1381,7 +1342,16 @@ export default function PlayerHomePage() {
                 <div className={"marketplace-list " + styles.marketplaceGrid}>
                   {latestItems.map((item) => <Link key={item.id} href={"/player/marketplace/" + item.id} className="marketplace-link"><div className="marketplace-item"><div className="marketplace-row">
                     <div className="marketplace-thumb">
-                      <img src={thumbByItemId[item.id] || placeholderThumb} alt={item.title} loading="lazy" />
+                      <img
+                        src={thumbByItemId[item.id] || placeholderThumb}
+                        alt={item.title}
+                        loading="lazy"
+                        onError={(event) => {
+                          if (event.currentTarget.src !== placeholderThumb) {
+                            event.currentTarget.src = placeholderThumb;
+                          }
+                        }}
+                      />
                     </div>
                     <div className="marketplace-body"><div className="marketplace-item-title">{truncate(item.title, 80)}</div>{compactMeta(item, locale) ? <div className="marketplace-meta">{compactMeta(item, locale)}</div> : null}<div className="marketplace-price-row"><div className="marketplace-price-pill">{priceLabel(item, t)}</div></div></div>
                   </div></div></Link>)}
