@@ -6,12 +6,13 @@ import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { List, Plus, SlidersHorizontal } from "lucide-react";
+import { Ban, List, Mail, Plus, SlidersHorizontal } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { loadPlayerMarketplace } from "@/lib/playerMarketplaceRead";
 import styles from "./Marketplace.module.css";
 import { marketplaceSafetyText } from "@/lib/marketplaceSafetyLabels";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import MarketplaceRulesButton from "@/components/player/MarketplaceRulesButton";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { marketplaceConditionLabel } from "@/lib/marketplaceLabels";
 import type { AppLocale } from "@/lib/i18n/messages";
@@ -246,7 +247,11 @@ export default function PlayerMarketplaceHome() {
             )}
           </div>
 
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16 }}><Link href="/player/marketplace/messages">{marketplaceSafetyText(locale, "messages")}</Link><Link href="/player/marketplace/blocked">{marketplaceSafetyText(locale, "blockedUsers")}</Link><Link href="/legal/marketplace">{marketplaceSafetyText(locale, "rules")}</Link></div>
+          <nav className={styles.supportNav} aria-label={t("nav.marketplace")}>
+            <Link href="/player/marketplace/messages"><Mail size={15} aria-hidden="true" />{marketplaceSafetyText(locale, "messages")}</Link>
+            <Link href="/player/marketplace/blocked"><Ban size={15} aria-hidden="true" />{marketplaceSafetyText(locale, "blockedUsers")}</Link>
+            <MarketplaceRulesButton />
+          </nav>
           {error && <div className="marketplace-error">{error}</div>}
         </div>
 

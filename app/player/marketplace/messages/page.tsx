@@ -1,12 +1,18 @@
 "use client";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { ArrowLeft, Inbox as InboxIcon, Mail } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import MarketplaceSafetyActions from "@/components/player/MarketplaceSafetyActions";
 import { marketplaceSafetyText } from "@/lib/marketplaceSafetyLabels";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
+import InlineNotice from "@/components/ui/InlineNotice";
+import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
+import playerUi from "@/components/player/PlayerUI.module.css";
+import styles from "../Marketplace.module.css";
 
 function Inbox() {
   const { locale, t } = useI18n();
@@ -28,19 +34,24 @@ function Inbox() {
     } catch { setError(true); } finally { setBusy(false); }
   }, [messageId]);
   useEffect(() => { void load(); }, [load]);
-  return <div className="player-dashboard-bg"><div className="app-shell marketplace-page">
-    <div className="glass-section"><h1 className="section-title">{marketplaceSafetyText(locale, "messages")}</h1>
-      <Link className="btn" href="/player/marketplace">{t("common.back")}</Link></div>
-    <div className="glass-section">
-      {error && <p role="alert">{marketplaceSafetyText(locale, "error")}</p>}
-      {busy && <p role="status">{t("common.loading")}</p>}
-      {!busy && !messages.length && <p>{marketplaceSafetyText(locale, "noMessages")}</p>}
-      {messages.map(row => <article className="glass-card" key={row.id} style={{ display: "grid", gap: 12, marginBottom: 16, overflowWrap: "anywhere" }}>
-        <h2>{row.subject}</h2><p>{row.reply_email} · {new Date(row.created_at).toLocaleDateString(locale)}</p>
-        <p style={{ whiteSpace: "pre-wrap" }}>{row.message}</p>
-        <MarketplaceSafetyActions messageId={row.id} />
-      </article>)}
-    </div>
+  return <div className="player-dashboard-bg player-marketplace-page"><div className={`app-shell marketplace-page ${styles.page} ${styles.secondaryPage}`}>
+    <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace"), href: "/player/marketplace" }, { label: marketplaceSafetyText(locale, "messages") }]} />
+    <div className="glass-section"><div className={`marketplace-header ${styles.header}`}>
+      <div><h1 className={`section-title ${styles.title}`}>{marketplaceSafetyText(locale, "messages")}</h1>
+        <p className="section-subtitle">{marketplaceSafetyText(locale, "messagesIntro")}</p></div>
+      <Link className={playerUi.secondary} href="/player/marketplace"><ArrowLeft size={16} aria-hidden="true" />{t("common.back")}</Link>
+    </div></div>
+    {error && <InlineNotice variant="error" title={marketplaceSafetyText(locale, "error")} />}
+    {busy ? <div className={playerUi.panel}><ListLoadingBlock label={t("common.loading")} /></div>
+      : !error && !messages.length ? <div className={playerUi.panel}><div className={playerUi.empty}><InboxIcon size={20} aria-hidden="true" />{marketplaceSafetyText(locale, "noMessages")}</div></div>
+      : <div className={styles.messageList}>{messages.map(row => <article className={`${playerUi.panel} ${styles.messageCard}`} key={row.id}>
+          <header className={playerUi.panelHeader}><div><h2>{row.subject}</h2>
+            <div className={styles.messageMeta}><span><Mail size={14} aria-hidden="true" />{row.reply_email}</span>
+              <time dateTime={row.created_at}>{new Date(row.created_at).toLocaleDateString(locale)}</time></div>
+          </div></header>
+          <p className={styles.messageBody}>{row.message}</p>
+          <MarketplaceSafetyActions messageId={row.id} />
+        </article>)}</div>}
   </div></div>;
 }
 export default function Page() { return <Suspense><Inbox /></Suspense>; }

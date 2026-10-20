@@ -1,9 +1,11 @@
-.panel { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid rgba(20,50,35,.14); color: #243e30; }
-.panel p { margin: 0; line-height: 1.55; font-size: 14px; }
+.panel { --player-primary: #35483b; display: grid; gap: 14px; padding-top: 16px; border-top: 1px solid #e7ece5; color: #35483b; min-width: 0; }
+.panel p { margin: 0; line-height: 1.6; font-size: 13px; }
 .actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.actions button { min-height: 44px; display: inline-flex; gap: 7px; align-items: center; }
-.form { display: grid; gap: 12px; padding: 16px; border-radius: 12px; background: #f1f6f2; }
-.form label { display: grid; gap: 7px; font-size: 14px; font-weight: 600; }
-.form textarea, .form select { width: 100%; background: white; color: #203a2c; padding: 10px; border: 1px solid #b8c8bd; border-radius: 8px; }
-.status { padding: 10px 12px; border-radius: 9px; background: #f5f1e5; color: #4c421c; font-size: 14px; line-height: 1.5; }
-.status p { margin: 4px 0; }
+.actions button { min-height: 42px; padding-block: 10px; }
+.actions svg { flex-shrink: 0; }
+.form { display: grid; gap: 14px; padding: 16px; border: 1px solid #e0e7dd; border-radius: 12px; background: #f6f9f4; }
+.form label { display: grid; gap: 7px; min-width: 0; font-size: 12px; font-weight: 750; }
+.form textarea, .form select { box-sizing: border-box; width: 100%; min-width: 0; background: white; color: #35483b; padding: 11px 12px; border: 1px solid #dce3dc; border-radius: 9px; font: 500 13px/1.5 var(--font-inter), sans-serif; }
+.form textarea { resize: vertical; }
+.form :is(textarea, select):focus-visible { outline: 3px solid rgba(137,157,125,.3); outline-offset: 1px; border-color: #899d7d; }
+@media(max-width:640px) { .actions { display: grid; grid-template-columns: 1fr; }.actions button { width: 100%; }.form { padding: 12px; } }

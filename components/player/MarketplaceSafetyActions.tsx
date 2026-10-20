@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Flag, Ban } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { marketplaceSafetyText } from "@/lib/marketplaceSafetyLabels";
 import styles from "./MarketplaceSafety.module.css";
+import playerUi from "./PlayerUI.module.css";
+import MarketplaceRulesButton from "./MarketplaceRulesButton";
+import InlineNotice from "@/components/ui/InlineNotice";
 
 export async function marketplaceSafetyRequest(input: Record<string, unknown>) {
   const context = await resolveEffectivePlayerContext();
@@ -44,10 +46,10 @@ export default function MarketplaceSafetyActions({ itemId, messageId }: { itemId
   }
   return <section className={styles.panel} aria-label={text("rules")}>
     <div className={styles.actions}>
-      <button type="button" className="btn" onClick={() => { setMode("report"); setError(false); }} disabled={busy || sent}><Flag size={16} />{text(messageId ? "reportMessage" : "report")}</button>
-      <button type="button" className="btn" onClick={() => { setMode("block"); setError(false); }} disabled={busy}><Ban size={16} />{text(messageId ? "blockSender" : "block")}</button>
+      <button type="button" className={playerUi.secondary} onClick={() => { setMode("report"); setError(false); }} disabled={busy || sent}><Flag size={16} aria-hidden="true" />{text(messageId ? "reportMessage" : "report")}</button>
+      <button type="button" className={playerUi.secondary} onClick={() => { setMode("block"); setError(false); }} disabled={busy}><Ban size={16} aria-hidden="true" />{text(messageId ? "blockSender" : "block")}</button>
     </div>
-    {sent && <p role="status">{text("sent")}</p>}
+    {sent && <InlineNotice variant="success" title={text("sent")} />}
     {mode && <form className={styles.form} onSubmit={submit}>
       {mode === "block" ? <p>{text("blockConfirm")}</p> : <>
         <label>{text("reason")}<select value={reason} onChange={event => setReason(event.target.value)} disabled={busy}>
@@ -55,12 +57,12 @@ export default function MarketplaceSafetyActions({ itemId, messageId }: { itemId
         </select></label>
         <label>{text("details")}<textarea value={details} onChange={event => setDetails(event.target.value)} rows={4} maxLength={2000} disabled={busy} /></label>
       </>}
-      {error && <p role="alert">{text("error")}</p>}
+      {error && <InlineNotice variant="error" title={text("error")} />}
       <div className={styles.actions}>
-        <button className="btn btn-primary" type="submit" disabled={busy}>{text(mode === "report" ? "send" : "confirm")}</button>
-        <button className="btn" type="button" onClick={() => setMode(null)} disabled={busy}>{text("cancel")}</button>
+        <button className={playerUi.primary} type="submit" disabled={busy}>{text(mode === "report" ? "send" : "confirm")}</button>
+        <button className={playerUi.secondary} type="button" onClick={() => setMode(null)} disabled={busy}>{text("cancel")}</button>
       </div>
     </form>}
-    <Link href="/legal/marketplace">{text("rules")}</Link>
+    <MarketplaceRulesButton />
   </section>;
 }

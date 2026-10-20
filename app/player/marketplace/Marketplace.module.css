@@ -73,3 +73,36 @@
   }
   .detailActions > a:only-child { grid-column: 1 / -1; }
 }
+
+/* The global nested app shell reset otherwise removes the space after the card. */
+:global(.player-page-root) :global(.player-dashboard-bg) .detailPage.detailPage,
+:global(.player-page-root) :global(.player-dashboard-bg) .secondaryPage.secondaryPage { padding-bottom: 36px !important; }
+.secondaryPage { --player-primary: #35483b; --player-accent: #899d7d; }
+.secondaryPage .header > a { flex: 0 0 auto; }
+.supportNav { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 22px; padding-top: 16px; border-top: 1px solid #e7ece5; }
+.supportNav > a { display: inline-flex; align-items: center; gap: 7px; color: #35483b; font-size: 12px; font-weight: 750; line-height: 1.5; text-decoration: none; }
+.supportNav > a:hover { color: #557751; }
+.supportNav > a:focus-visible { outline: 3px solid rgba(137,157,125,.4); outline-offset: 4px; border-radius: 4px; }
+.supportNav svg { flex-shrink: 0; }
+.memberList, .messageList { display: grid; gap: 0; min-width: 0; }
+.blockedRow { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 16px 0; min-width: 0; }
+.blockedRow:first-child { padding-top: 0; }
+.blockedRow:last-child { padding-bottom: 0; }
+.blockedRow + .blockedRow { border-top: 1px solid #e7ece5; }
+.memberIdentity { display: flex; align-items: center; gap: 12px; min-width: 0; overflow-wrap: anywhere; }
+.memberIdentity h2 { margin: 0; color: #35483b; font: 750 15px/1.3 var(--font-inter-tight), var(--font-inter), sans-serif; }
+.memberIdentity time { display: block; margin-top: 5px; color: #778278; font-size: 11px; }
+.memberIcon { display: grid; place-items: center; flex: 0 0 40px; width: 40px; height: 40px; border-radius: 11px; background: #edf3ea; color: #557751; }
+.blockedRow > button { flex-shrink: 0; }
+.messageList { gap: 16px; }
+.messageCard { min-width: 0; overflow-wrap: anywhere; }
+.messageMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; margin-top: 10px; color: #778278; font-size: 11px; line-height: 1.5; }
+.messageMeta span { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.messageMeta svg { flex-shrink: 0; }
+.messageBody { margin: 0; color: #526056; font-size: 13px; line-height: 1.65; white-space: pre-wrap; }
+@media(max-width:640px) {
+  .secondaryPage .header > a { align-self: flex-start; }
+  .blockedRow { flex-direction: column; align-items: stretch; gap: 12px; }
+  .blockedRow > button { align-self: flex-end; }
+  .messageMeta { flex-direction: column; align-items: flex-start; }
+}

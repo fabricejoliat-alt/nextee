@@ -1,0 +1,11 @@
+.trigger { display: inline-flex; align-items: center; gap: 7px; width: fit-content; padding: 0; border: 0; background: transparent; color: #35483b; font: 750 12px/1.5 var(--font-inter), sans-serif; text-align: left; cursor: pointer; }
+.trigger svg, .email svg { flex-shrink: 0; }
+.trigger:hover, .email:hover { color: #557751; }
+.trigger:focus-visible, .email:focus-visible { outline: 3px solid rgba(137,157,125,.4); outline-offset: 4px; border-radius: 4px; }
+.dialog { --player-primary: #35483b; color: #35483b; border: 1px solid #e3e9e2; scrollbar-width: none; }
+.dialog::-webkit-scrollbar { display: none; width: 0; height: 0; }
+.dialog h2 { color: #35483b; }
+.introduction { margin: 0; color: #526056; font-size: 13px; line-height: 1.6; }
+.sectionTitle { margin: 0; color: #678463; font: 850 10px/1.5 var(--font-inter), sans-serif; letter-spacing: .06em; text-transform: uppercase; }
+.contact { display: grid; justify-items: start; gap: 12px; padding: 16px; border: 1px solid #dfe7dc; border-radius: 12px; background: #f4f8f1; }
+.email { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; color: #35483b; font-size: 13px; font-weight: 750; text-decoration: none; overflow-wrap: anywhere; }

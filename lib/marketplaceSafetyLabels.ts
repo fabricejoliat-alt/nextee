@@ -1,6 +1,14 @@
 import type { AppLocale } from "@/lib/i18n/messages";
 
 const labels = {
+  messagesIntro: ["Les échanges reçus au sujet de tes annonces.", "Messages received about your listings.", "Nachrichten zu deinen Anzeigen.", "I messaggi ricevuti sui tuoi annunci."],
+  blocksIntro: ["Gère les membres avec lesquels les échanges Marketplace sont bloqués.", "Manage members whose Marketplace contact is blocked.", "Verwalte Mitglieder, deren Marktplatzkontakte blockiert sind.", "Gestisci i membri con cui i contatti nel Marketplace sono bloccati."],
+  rulesConduct: ["Des annonces respectueuses", "Respectful listings", "Respektvolle Anzeigen", "Annunci rispettosi"],
+  rulesReview: ["Validation et modération", "Review and moderation", "Prüfung und Moderation", "Verifica e moderazione"],
+  rulesSafety: ["Signaler ou bloquer", "Report or block", "Melden oder blockieren", "Segnalare o bloccare"],
+  rulesHelp: ["Besoin d’aide ?", "Need help?", "Brauchst du Hilfe?", "Hai bisogno di aiuto?"],
+  rulesJuniors: ["Pour les juniors", "For juniors", "Für Junioren", "Per gli junior"],
+  contactActiviTee: ["Contacter ActiviTee", "Contact ActiviTee", "ActiviTee kontaktieren", "Contatta ActiviTee"],
   listings: ["Annonces", "Listings", "Anzeigen", "Annunci"],
   queuePending: ["À valider", "Awaiting review", "Zu prüfen", "Da verificare"],
   queueApproved: ["Validées", "Approved", "Freigegeben", "Approvati"],
