@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowUpRight, BookOpen, Mail, X } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
-import { marketplaceRulesContent } from "@/lib/marketplaceRulesContent";
+import { marketplaceLegalPaths, marketplaceRulesContent } from "@/lib/marketplaceRulesContent";
 import { marketplaceSafetyText } from "@/lib/marketplaceSafetyLabels";
 import ruleStyles from "@/components/rules/PlayerRulesWorkspace.module.css";
 import playerUi from "./PlayerUI.module.css";
@@ -16,7 +16,7 @@ function MarketplaceRulesDialog({ onClose }: { onClose: () => void }) {
   const titleId = useId();
   const [email, setEmail] = useState<string | null>(null);
   const [title, introduction, ...paragraphs] = marketplaceRulesContent[locale];
-  const headings = ["rulesConduct", "rulesReview", "rulesSafety", "rulesHelp", "rulesJuniors"] as const;
+  const headings = ["rulesConduct", "rulesReview", "rulesSafety", "rulesMessages", "rulesHelp", "rulesJuniors"] as const;
   useEffect(() => {
     const controller = new AbortController();
     async function loadContact() {
@@ -40,6 +40,11 @@ function MarketplaceRulesDialog({ onClose }: { onClose: () => void }) {
       {paragraphs.map((paragraph, index) => <section className={ruleStyles.dialogSection} key={headings[index]}>
         <h3 className={styles.sectionTitle}>{marketplaceSafetyText(locale, headings[index])}</h3><p>{paragraph}</p>
       </section>)}
+      <div className={styles.documents}>
+        <p>{marketplaceSafetyText(locale, "rulesDocuments")}</p>
+        <Link href={`${marketplaceLegalPaths.terms}?lang=${locale}`} onClick={onClose}>{marketplaceSafetyText(locale, "termsLink")}<ArrowUpRight size={15} aria-hidden="true" /></Link>
+        <Link href={`${marketplaceLegalPaths.privacy}?lang=${locale}`} onClick={onClose}>{marketplaceSafetyText(locale, "privacyLink")}<ArrowUpRight size={15} aria-hidden="true" /></Link>
+      </div>
       <div className={styles.contact}>
         {email && <a className={styles.email} href={`mailto:${email}`}><Mail size={16} aria-hidden="true" />{email}</a>}
         <Link className={playerUi.secondary} href="/contact"><ArrowUpRight size={16} aria-hidden="true" />{marketplaceSafetyText(locale, "contactActiviTee")}</Link>

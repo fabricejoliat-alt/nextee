@@ -23,7 +23,7 @@ export function loadManagerModule<T = any>(path: string, mocks: Record<string, u
 }
 
 export function managerDatabase(tables: Record<string, Row[]> = {}, options: {
-  caller?: string | null; users?: Row[]; failureTable?: string; rpcError?: Row; rpcResult?: Row; maxRows?: number; applyOrder?: boolean;
+  caller?: string | null; users?: Row[]; failureTable?: string; rpcError?: Row; rpcResult?: Row | string; maxRows?: number; applyOrder?: boolean;
   schemaColumns?: Record<string, string[]>;
 } = {}) {
   const writes: Array<{ table: string; method: string; values: any; rows: Row[] }> = [];
