@@ -1,7 +1,8 @@
 export const accountDeletionMessages = {
   fr: {
     title: "Supprimer mon compte", lead: "Cette demande concerne votre propre compte ActiviTee, dans tous vos clubs.",
-    consequences: "Votre accès, profil, historique sportif personnel, annonces, messages et fichiers associés seront supprimés. Les comptes de vos enfants et des autres membres restent ouverts. Les activités partagées du club sont conservées sans vous attribuer leur création.",
+    consequences: "Votre accès, profil, historique sportif personnel, annonces, messages et fichiers associés seront supprimés. Les activités partagées du club sont conservées sans vous attribuer leur création.",
+    parentConsequences: "Les comptes de vos enfants et des autres membres restent ouverts.",
     timing: "La suppression est traitée au plus tard dans les 30 jours suivant votre confirmation. Vous pouvez annuler tant que le traitement n’a pas commencé.",
     retention: "Le reçu de suivi et l’adresse utilisée pour la confirmation sont conservés 90 jours après la suppression, puis effacés. Les éventuelles copies de sauvegarde suivent les durées indiquées dans la politique de confidentialité. Les copies déjà reçues par d’autres personnes ne peuvent pas être rappelées.",
     login: "Connectez-vous à votre compte pour confirmer votre identité.", loginButton: "Se connecter",
@@ -18,7 +19,8 @@ export const accountDeletionMessages = {
   },
   en: {
     title: "Delete my account", lead: "This request concerns your own ActiviTee account across all your clubs.",
-    consequences: "Your access, profile, personal sports history, listings, messages and associated files will be deleted. Your children’s and other members’ accounts remain open. Shared club activities are retained without attributing their creation to you.",
+    consequences: "Your access, profile, personal sports history, listings, messages and associated files will be deleted. Shared club activities are retained without attributing their creation to you.",
+    parentConsequences: "Your children’s and other members’ accounts remain open.",
     timing: "Deletion will be completed within 30 days of your confirmation. You can cancel until processing starts.",
     retention: "The tracking receipt and confirmation address are kept for 90 days after deletion, then erased. Any backup copies follow the retention periods in the privacy policy. Copies already received by others cannot be recalled.",
     login: "Sign in to your account to confirm your identity.", loginButton: "Sign in",
@@ -35,7 +37,8 @@ export const accountDeletionMessages = {
   },
   de: {
     title: "Mein Konto löschen", lead: "Dieser Antrag betrifft dein eigenes ActiviTee-Konto in allen deinen Clubs.",
-    consequences: "Dein Zugang, Profil, persönlicher Sportverlauf, Anzeigen, Nachrichten und zugehörige Dateien werden gelöscht. Konten deiner Kinder und anderer Mitglieder bleiben bestehen. Gemeinsame Clubaktivitäten bleiben ohne Zuordnung zu dir als Ersteller erhalten.",
+    consequences: "Dein Zugang, Profil, persönlicher Sportverlauf, Anzeigen, Nachrichten und zugehörige Dateien werden gelöscht. Gemeinsame Clubaktivitäten bleiben ohne Zuordnung zu dir als Ersteller erhalten.",
+    parentConsequences: "Konten deiner Kinder und anderer Mitglieder bleiben bestehen.",
     timing: "Die Löschung erfolgt innerhalb von 30 Tagen nach deiner Bestätigung. Bis zum Beginn der Bearbeitung kannst du den Antrag zurückziehen.",
     retention: "Statusbeleg und Bestätigungsadresse werden 90 Tage nach der Löschung aufbewahrt und danach gelöscht. Für Sicherungskopien gelten die Fristen der Datenschutzerklärung. Bereits empfangene Kopien können nicht zurückgerufen werden.",
     login: "Melde dich an, um deine Identität zu bestätigen.", loginButton: "Anmelden",
@@ -52,7 +55,8 @@ export const accountDeletionMessages = {
   },
   it: {
     title: "Elimina il mio account", lead: "Questa richiesta riguarda il tuo account ActiviTee in tutti i tuoi club.",
-    consequences: "Accesso, profilo, storico sportivo personale, annunci, messaggi e file associati saranno eliminati. Gli account dei tuoi figli e degli altri membri restano attivi. Le attività condivise del club restano senza attribuirtene la creazione.",
+    consequences: "Accesso, profilo, storico sportivo personale, annunci, messaggi e file associati saranno eliminati. Le attività condivise del club restano senza attribuirtene la creazione.",
+    parentConsequences: "Gli account dei tuoi figli e degli altri membri restano attivi.",
     timing: "L’eliminazione avverrà entro 30 giorni dalla conferma. Puoi annullare la richiesta finché il trattamento non è iniziato.",
     retention: "La ricevuta e l’indirizzo di conferma sono conservati per 90 giorni dopo l’eliminazione, poi cancellati. Le eventuali copie di backup seguono i tempi di conservazione dell’informativa privacy. Le copie già ricevute da altri non possono essere ritirate.",
     login: "Accedi al tuo account per confermare la tua identità.", loginButton: "Accedi",

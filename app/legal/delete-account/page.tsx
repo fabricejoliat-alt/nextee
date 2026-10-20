@@ -12,6 +12,7 @@ type Deletion = { id: string; status: "requested" | "processing" | "completed" |
 export default function DeleteAccountPage() {
   const { locale } = useI18n(), copy = accountDeletionMessages[locale];
   const [signedIn, setSignedIn] = useState(false), [ready, setReady] = useState(false);
+  const [isParent, setIsParent] = useState(false);
   const [password, setPassword] = useState(""), [confirmed, setConfirmed] = useState(false);
   const [request, setRequest] = useState<Deletion | null>(null), [receipt, setReceipt] = useState("");
   const [ownRequestId, setOwnRequestId] = useState("");
@@ -21,14 +22,21 @@ export default function DeleteAccountPage() {
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
       setSignedIn(Boolean(token));
+      setIsParent(false);
       let ownRequest: Deletion | null = null;
       if (token) {
-        const ownResponse = await fetch("/api/legal/account-deletion", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        const options = { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" as const };
+        const [ownResponse, actor] = await Promise.all([
+          fetch("/api/legal/account-deletion", options),
+          fetch("/api/auth/me", options).then(async (response) => response.ok ? response.json() : null).catch(() => null),
+        ]);
+        setIsParent(actor?.membership?.role === "parent" || actor?.roles?.includes("parent") === true);
         if (ownResponse.ok) {
           ownRequest = (await ownResponse.json()).request;
           setOwnRequestId(ownRequest?.id ?? "");
         } else if (ownResponse.status === 401) {
           setSignedIn(false);
+          setIsParent(false);
           setOwnRequestId("");
         } else if (!window.location.hash) throw new Error(copy.error);
       }
@@ -79,7 +87,7 @@ export default function DeleteAccountPage() {
   return <main className={styles.page}>
     <span className={styles.eyebrow}><Trash2 size={17} aria-hidden="true" /> ActiviTee</span>
     <h1 className={styles.heading}>{copy.title}</h1><p className={styles.lead}>{copy.lead}</p>
-    <section className={styles.section}><p>{copy.consequences}</p><p>{copy.timing}</p><p>{copy.retention}</p></section>
+    <section className={styles.section}><p>{copy.consequences}</p>{isParent && <p>{copy.parentConsequences}</p>}<p>{copy.timing}</p><p>{copy.retention}</p></section>
     {request && <section className={styles.section} aria-live="polite">
       <h2>{request.status === "completed" ? copy.completed : request.status === "processing" ? copy.processing : request.status === "cancelled" ? copy.cancelled : copy.pending}</h2>
       {["requested", "processing"].includes(request.status) && <p>{copy.deadline} {new Date(request.due_at).toLocaleDateString(locale)}.</p>}

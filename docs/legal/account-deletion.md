@@ -89,8 +89,8 @@ Vous pouvez demander la suppression définitive de votre compte depuis
 « Profil → Supprimer mon compte ». Après confirmation de votre identité par
 votre mot de passe, la demande concerne tous vos accès ActiviTee, dans tous vos
 clubs. Elle est traitée dans les 30 jours. Vous pouvez l’annuler avant le début
-du traitement. Les comptes de vos enfants et des autres membres ne sont pas
-supprimés avec le vôtre.
+du traitement. Pour un compte Parent, les comptes de vos enfants et des autres
+membres ne sont pas supprimés avec le vôtre.
 
 Votre accès, profil, historique sportif personnel, annonces, messages et fichiers
 associés sont supprimés. Les structures et contenus institutionnels des clubs

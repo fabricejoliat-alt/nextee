@@ -48,10 +48,10 @@ export async function sendDeletionConfirmation(db: SupabaseClient, id: string, t
   if (!row.contact_email || row.confirmation_sent_at) return;
   if (!process.env.BREVO_API_KEY) throw new Error("Confirmation mail is not configured");
   const copy = {
-    fr: ["Votre compte ActiviTee a été supprimé", "La suppression de votre compte ActiviTee et de ses données personnelles dans le service est terminée. Les comptes des autres membres et de vos enfants ne sont pas supprimés. Les copies déjà reçues par des destinataires ne peuvent pas être rappelées. Votre reçu de suivi reste consultable pendant 90 jours."],
-    en: ["Your ActiviTee account has been deleted", "Deletion of your ActiviTee account and its personal data in the service is complete. Other members’ and children’s accounts have not been deleted. Copies already received by recipients cannot be recalled. Your tracking receipt remains available for 90 days."],
-    de: ["Dein ActiviTee-Konto wurde gelöscht", "Dein ActiviTee-Konto und seine personenbezogenen Daten im Dienst wurden gelöscht. Konten anderer Mitglieder und deiner Kinder wurden nicht gelöscht. Bereits empfangene Kopien können nicht zurückgerufen werden. Dein Statusbeleg bleibt 90 Tage verfügbar."],
-    it: ["Il tuo account ActiviTee è stato eliminato", "L’eliminazione del tuo account ActiviTee e dei suoi dati personali nel servizio è completata. Gli account degli altri membri e dei tuoi figli non sono stati eliminati. Le copie già ricevute dai destinatari non possono essere ritirate. La ricevuta resta disponibile per 90 giorni."],
+    fr: ["Votre compte ActiviTee a été supprimé", "La suppression de votre compte ActiviTee et de ses données personnelles dans le service est terminée. Les copies déjà reçues par des destinataires ne peuvent pas être rappelées. Votre reçu de suivi reste consultable pendant 90 jours."],
+    en: ["Your ActiviTee account has been deleted", "Deletion of your ActiviTee account and its personal data in the service is complete. Copies already received by recipients cannot be recalled. Your tracking receipt remains available for 90 days."],
+    de: ["Dein ActiviTee-Konto wurde gelöscht", "Dein ActiviTee-Konto und seine personenbezogenen Daten im Dienst wurden gelöscht. Bereits empfangene Kopien können nicht zurückgerufen werden. Dein Statusbeleg bleibt 90 Tage verfügbar."],
+    it: ["Il tuo account ActiviTee è stato eliminato", "L’eliminazione del tuo account ActiviTee e dei suoi dati personali nel servizio è completata. Le copie già ricevute dai destinatari non possono essere ritirate. La ricevuta resta disponibile per 90 giorni."],
   }[row.locale as "fr" | "en" | "de" | "it"];
   const sender = process.env.LEGAL_MAIL_FROM ?? process.env.MAIL_FROM ?? "noreply@activitee.golf";
   const address = sender.match(/<([^>]+)>/)?.[1] ?? sender;
