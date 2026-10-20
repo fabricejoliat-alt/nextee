@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import DeleteAccountLink from "@/components/legal/DeleteAccountLink";
 import { ArrowRight, Check, ChevronDown, Download, FileText, Globe2, LockKeyhole, LogOut, ShieldCheck, X } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import type { OrganizationAccessSummary } from "@/lib/organizationPolicy";
@@ -231,7 +232,7 @@ export default function MyLegalPage() {
         <div className={styles.childTabs}>{verifiedChildren.map((child) => <button type="button" key={`${child.child_id}-${child.club_id}`} className={historyChild === `${child.child_id}:${child.club_id}` ? styles.activeChild : styles.childButton} onClick={() => showChildHistory(child)}>{child.child_name ?? "Mon enfant"} <span>· {child.club_name ?? t("organization.context")}</span></button>)}</div>
         {historyChild && <div className={styles.childHistory}><h3>{currentHistoryChild?.child_name ?? "Mon enfant"}</h3><DecisionHistory rows={childHistory} onDownload={download} empty="Aucune décision enregistrée pour cet enfant." /></div>}
       </section>}
-      <footer className={styles.footer}><div><Link href="/legal">Textes publics</Link><Link href="/legal/request">Demande relative à mes données</Link></div><button type="button" onClick={async () => { await supabase.auth.signOut(); window.location.assign("/"); }}><LogOut size={16} aria-hidden="true" /> Se déconnecter</button></footer>
+      <footer className={styles.footer}><div><Link href="/legal">Textes publics</Link><Link href="/legal/request">Demande relative à mes données</Link><DeleteAccountLink /></div><button type="button" onClick={async () => { await supabase.auth.signOut(); window.location.assign("/"); }}><LogOut size={16} aria-hidden="true" /> Se déconnecter</button></footer>
     </div>
   </div>
   {presentation && <div className={styles.modalBackdrop} onMouseDown={(event) => { if (event.target === event.currentTarget) closePresentation(); }}><section role="dialog" aria-modal="true" aria-labelledby="legal-title" className={styles.modal}>

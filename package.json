@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "test:account-deletion": "node --experimental-strip-types --test tests/account-deletion.test.ts tests/account-deletion-sql.test.mjs tests/account-deletion-ui.test.ts",
     "dev": "next dev",
     "build": "next build --webpack",
     "start": "next start",

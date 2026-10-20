@@ -2,6 +2,7 @@
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 import Link from "next/link";
+import DeleteAccountLink from "@/components/legal/DeleteAccountLink";
 
 import ProfileCustomFieldControl from "@/components/ProfileCustomFieldControl";
 
@@ -1011,7 +1012,7 @@ export default function PlayerProfilePage() {
 
         {info && <div className={styles.successAlert}>{info}</div>}
 
-        <nav className={styles.legalCard} aria-label="Documents et données personnelles"><ShieldCheck size={19} aria-hidden="true" /><div><strong>Documents et données personnelles</strong><Link href="/legal/my">Documents et consentements →</Link><Link href="/legal/request">Mes données →</Link></div></nav>
+        <nav className={styles.legalCard} aria-label="Documents et données personnelles"><ShieldCheck size={19} aria-hidden="true" /><div><strong>Documents et données personnelles</strong><Link href="/legal/my">Documents et consentements →</Link><Link href="/legal/request">Mes données →</Link><DeleteAccountLink /></div></nav>
         <section className={styles.profileContent}>
           <div className={styles.contentHeading}><div><span>Mon compte</span><h2>Informations personnelles</h2></div></div>
 

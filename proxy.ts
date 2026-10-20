@@ -70,6 +70,12 @@ async function checkedProxy(req: NextRequest, timing: ReturnType<typeof createRe
     ? database.auth.getUser(bearerToken)
     : supabase.auth.getUser());
 
+  // Read current Auth metadata, not stale JWT claims, while physical erasure runs.
+  if (data.user?.app_metadata?.account_deletion_started === true) {
+    if (path.startsWith("/api/")) return NextResponse.json({ error: "Account deletion in progress", code: "ACCOUNT_DELETION_IN_PROGRESS" },
+      { status: 403, headers: adminNoStore });
+    return NextResponse.redirect(new URL("/legal/delete-account", req.url), { headers: adminNoStore });
+  }
   // Enforce the initial-password flag from trusted app_metadata, before business reads.
   if (data.user && initialPasswordRequired(data.user)) {
     if (path.startsWith("/api/")) return NextResponse.json({ error: "Choose your own password first", code: "INITIAL_PASSWORD_REQUIRED" },
@@ -270,6 +276,6 @@ export const config = {
     "/api/messages/:path*",
     "/api/rules/:path*",
     "/api/etiquette/:path*",
-    "/api/profile/custom-fields",
+    "/api/profile/:path*",
   ],
 };

@@ -3,6 +3,7 @@
 import { isValidPassword } from "@/lib/passwordPolicy";
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 import Link from "next/link";
+import DeleteAccountLink from "@/components/legal/DeleteAccountLink";
 
 import ProfileCustomFieldControl from "@/components/ProfileCustomFieldControl";
 
@@ -578,7 +579,7 @@ export default function CoachProfilePage() {
 
         {info && <div className={styles.success} role="status">{t(info)}</div>}
 
-        <p style={{ margin: "12px 0" }}><Link href="/legal/my">Documents et consentements</Link> · <Link href="/legal/request">Mes données</Link></p>
+        <p style={{ margin: "12px 0" }}><Link href="/legal/my">Documents et consentements</Link> · <Link href="/legal/request">Mes données</Link> · <DeleteAccountLink /></p>
         {/* ===== GLASS ===== */}
         <section className="glass-section" style={{ marginTop: 14 }}>
           <div className="section-title">{t("coach.profile.title")}</div>

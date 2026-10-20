@@ -1,6 +1,7 @@
 "use client";
 import { isValidPassword } from "@/lib/passwordPolicy";
 import Link from "next/link";
+import DeleteAccountLink from "@/components/legal/DeleteAccountLink";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -563,7 +564,7 @@ export default function ManagerProfilePage() {
         {info && <div style={{ marginTop: 10, color: "#d1fae5", fontWeight: 800 }}>{info}</div>}
 
         {/* ===== GLASS ===== */}
-        <p style={{ margin: "12px 0" }}><Link href="/legal/my">Documents et consentements</Link> · <Link href="/legal/request">Mes données</Link></p>
+        <p style={{ margin: "12px 0" }}><Link href="/legal/my">Documents et consentements</Link> · <Link href="/legal/request">Mes données</Link> · <DeleteAccountLink /></p>
         <section className="glass-section" style={{ marginTop: 14 }}>
           <div className="section-title">{t("manager.profile.title")}</div>
 

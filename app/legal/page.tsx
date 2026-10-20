@@ -1,4 +1,5 @@
 import Link from "next/link";
+import DeleteAccountLink from "@/components/legal/DeleteAccountLink";
 import { ArrowRight, FileText, ShieldCheck, UserRound } from "lucide-react";
 import { legalDb } from "@/lib/server/legalAccess";
 import styles from "./LegalPublic.module.css";
@@ -24,7 +25,7 @@ export default async function LegalLanding() {
     </article>)}</div> : <p className={styles.empty}>Les documents publics seront disponibles après leur activation. Vous pouvez nous contacter pour toute question.</p>}
     <div className={styles.cards}><article className={`${styles.card} ${styles.cardWide}`}>
       <span className={styles.icon}><UserRound size={21} aria-hidden="true" /></span><h2>Vos données personnelles</h2>
-      <p>Demandez l’accès, la rectification ou la suppression de vos données.</p><Link href="/legal/request">Faire une demande <ArrowRight size={16} aria-hidden="true" /></Link>
+      <p>Demandez l’accès, la rectification ou la suppression de vos données.</p><DeleteAccountLink /><Link href="/legal/request">Faire une demande <ArrowRight size={16} aria-hidden="true" /></Link>
     </article></div>
     <footer className={styles.footer}><Link href="/contact">Contact</Link><Link href="/">Connexion</Link></footer>
   </main>;

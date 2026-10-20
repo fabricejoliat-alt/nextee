@@ -68,6 +68,18 @@ test("initial-password flag blocks business data and mutations before first pass
   assert.equal(h.writes.length, 0);
 });
 
+test("account deletion in progress blocks business and avatar writes using current Auth metadata", async () => {
+  const h = fixture(claims(), "player", { account_deletion_started: true });
+  for (const path of ["/api/profile/avatar", "/api/player/documents", "/api/messages/threads", "/api/coach/events"]) {
+    const response = await proxyResult(path, h, "POST");
+    assert.equal(response.status, 403);
+    assert.equal((await response.json()).code, "ACCOUNT_DELETION_IN_PROGRESS");
+  }
+  const response = await proxyResult("/player/profile", h);
+  assert.match(response.headers.get("location")!, /legal\/delete-account/);
+  assert.equal(h.writes.length, 0);
+});
+
 test("Admin pages carry a nonce CSP and Admin replies cannot be cached", async () => {
   const response = await proxyResult("/admin");
   const csp = response.headers.get("Content-Security-Policy")!;

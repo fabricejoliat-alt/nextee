@@ -8,7 +8,7 @@ Ce module ne certifie aucune conformité Store. Refaire l'inventaire sur le bina
 | Apple App Privacy / Google Data Safety | Inventaire données collectées, partage, suivi, finalités, SDK, mesures de sécurité, suppression et transferts ; comparer avec réseau réel de l'app et web/PWA. |
 | Âge et enfants | Définir audience, capacité et parcours parent/junior par pays et base ; vérifier restrictions enfants/familles et fiches Store. |
 | IA | Documenter données envoyées, prestataire, conservation, contrôles et choix ; vérifier fonction réelle et déclaration. |
-| Compte et suppression | Une demande persistée existe mais n'exécute pas la suppression. Concevoir et tester l'exécution réelle, les exceptions de conservation, la route externe et le suivi avant de revendiquer cette capacité. |
+| Compte et suppression | Parcours authentifié, exécution, suivi et tests locaux ajoutés dans [account-deletion.md](account-deletion.md). Appliquer la migration et valider les suppressions fictives sur TEST puis la mise en service avant de revendiquer cette capacité en production. |
 | Permissions et WebView | Examiner photos, caméra, notifications, localisation éventuelle ; cases juridiques distinctes des permissions système. Vérifier Capacitor, cookies, cache hors ligne, safe areas iOS. |
 | Messagerie/modération | Vérifier signalement, blocage, modération, contacts et contenus générés par utilisateurs selon les fonctionnalités effectives. |
 

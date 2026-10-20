@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import DeleteAccountLink from "@/components/legal/DeleteAccountLink";
 import { ArrowRight, ShieldCheck } from "lucide-react";
 import styles from "../LegalPublic.module.css";
 
@@ -25,6 +26,7 @@ export default function LegalRequestPage() {
     <span className={styles.eyebrow}><ShieldCheck size={17} aria-hidden="true" /> Protection des données</span>
     <h1 className={styles.heading}>Mes données personnelles</h1>
     <p className={styles.lead}>Vous pouvez demander l’accès, la rectification ou la suppression de vos données. Nous vérifions votre identité avant de traiter une demande.</p>
+    <section className={styles.section}><h2>Suppression du compte</h2><p>Pour supprimer votre compte et tous vos accès ActiviTee, utilisez le parcours sécurisé.</p><DeleteAccountLink /></section>
     <section className={styles.section} aria-labelledby="request-title"><h2 id="request-title">Faire une demande</h2>
       <p>Une demande de suppression est examinée avant toute suppression effective. Elle ne supprime pas immédiatement le compte ou les données.</p>
       <form className={styles.form} onSubmit={submit}>

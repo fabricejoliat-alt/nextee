@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import AccountDeletionAdmin from "./AccountDeletionAdmin";
 import { ChevronRight, FileText, Plus, Search } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -313,6 +314,7 @@ export default function LegalAdminWorkspace() {
         <p>Acteur : {row.actor_id} · Bénéficiaire : {row.beneficiary_id} · langue : {row.rendered_snapshot.locale}</p>
         <pre style={{ whiteSpace: "pre-wrap" }}>{row.rendered_snapshot.body}</pre></details>)}
     </section>
+    <AccountDeletionAdmin />
     <section className={styles.panel}>
       <h2>Demandes relatives aux données</h2><button onClick={async () => { try { const token = (await supabase.auth.getSession()).data.session?.access_token;
         const response = await fetch("/api/admin/legal/requests", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
