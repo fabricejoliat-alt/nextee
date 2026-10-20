@@ -1,7 +1,7 @@
-:global(.player-page-root) :global(.player-marketplace-page) .header.header{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:space-between!important;gap:16px!important}
+:global(.player-page-root) :global(.player-marketplace-page) :global(.marketplace-page) .header.header{display:flex!important;flex-direction:row!important;align-items:center!important;justify-content:space-between!important;gap:16px!important}
 :global(.player-page-root) .header .title{order:0;flex:1 1 auto;min-width:0;text-align:left!important;margin:0!important}
-:global(.player-page-root) .header .actions{order:1;display:flex;flex:0 0 auto!important;justify-content:flex-end!important;gap:8px;margin-left:auto!important}
-@media(max-width:640px){:global(.player-page-root) :global(.player-marketplace-page) .header.header{flex-direction:column!important;align-items:stretch!important}:global(.player-page-root) .header .actions{width:100%;justify-content:flex-end!important}}
+:global(.player-page-root) .header .actions{order:1;display:flex;flex:0 0 auto!important;width:auto;justify-content:flex-end!important;gap:8px;margin-left:auto!important}
+@media(max-width:640px){:global(.player-page-root) :global(.player-marketplace-page) :global(.marketplace-page) .header.header{flex-direction:column!important;align-items:stretch!important}:global(.player-page-root) .header .actions{width:100%;justify-content:flex-end!important}}
 
 @media(max-width:640px){:global(.player-page-root) .header .title{align-self:stretch!important;width:100%!important}}
 
@@ -49,19 +49,22 @@
   .mineHeaderActions svg { flex: 0 0 auto; }
 }
 
-:global(.player-page-root) .detailPage.detailPage .detailHeader {
-  display: grid !important;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
-}
-:global(.player-page-root) .detailPage.detailPage .detailActions > a {
-  display: inline-flex !important;
-  align-items: center;
-  justify-content: center;
+.detailHeading { display: grid; gap: 6px; }
+.detailImageButton {
+  display: block;
   box-sizing: border-box;
-  min-height: 44px !important;
-  margin: 0 !important;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #e3e9e2;
+  border-radius: 16px;
+  background: #f6f8f4;
+  cursor: zoom-in;
 }
+.detailImageButton:disabled { cursor: default; }
+.detailImageButton:focus-visible { outline: 3px solid #899d7d; outline-offset: 3px; }
+.detailImage { display: block; width: 100%; height: clamp(260px, 40vw, 460px); object-fit: contain; }
 @media (max-width: 640px) {
   :global(.player-page-root) .detailPage.detailPage .detailActions {
     display: grid !important;

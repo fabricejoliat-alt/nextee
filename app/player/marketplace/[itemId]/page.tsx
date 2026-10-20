@@ -4,6 +4,7 @@ import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { ArrowLeft, Pencil } from "lucide-react";
 import { useParams, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
@@ -170,12 +171,12 @@ export default function MarketplaceDetailPage() {
 
   if (loading) {
     return (
-      <div className="player-dashboard-bg">
+      <div className="player-dashboard-bg player-marketplace-page">
         <div className={`app-shell marketplace-page ${styles.detailPage}`}>
           <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace"), href: "/player/marketplace" }, { label: t("common.details") }]} />
           <div className="glass-section">
-            <div className="marketplace-header">
-              <div>
+            <div className={`marketplace-header ${styles.header}`}>
+              <div className={`${styles.title} ${styles.detailHeading}`}>
                 <h1 className="section-title">{t("nav.marketplace")}</h1>
                 <div className="section-subtitle">{t("common.loading")}</div>
               </div>
@@ -191,7 +192,7 @@ export default function MarketplaceDetailPage() {
 
   if (!item) {
     return (
-      <div className="player-dashboard-bg">
+      <div className="player-dashboard-bg player-marketplace-page">
         <div className={`app-shell marketplace-page ${styles.detailPage}`}>
           <div className="glass-section">
             <div className="glass-card" style={{ display: "grid", gap: 10 }}>
@@ -213,28 +214,30 @@ export default function MarketplaceDetailPage() {
   const mainImg = images[0] ?? placeholderSvg;
 
   return (
-    <div className="player-dashboard-bg">
+    <div className="player-dashboard-bg player-marketplace-page">
       <div className={`app-shell marketplace-page ${styles.detailPage}`}>
         <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("nav.marketplace"), href: "/player/marketplace" }, { label: t("common.details") }]} />
         {/* Header */}
         <div className="glass-section">
-          <div className={`marketplace-header ${styles.detailHeader}`}>
-            <div style={{ minWidth: 0, display: "grid", gap: 6 }}>
-              <h1 className="section-title" style={{ marginBottom: 0 }}>
+          <div className={`marketplace-header ${styles.header}`}>
+            <div className={`${styles.title} ${styles.detailHeading}`}>
+              <h1 className="section-title">
                 {t("nav.marketplace")}
               </h1>
-              <div className="marketplace-filter-label" style={{ marginTop: 0 }}>
+              <div className="section-subtitle">
                 {fmtDate(item.created_at, dateLocale)}
               </div>
             </div>
 
-            <div className={`marketplace-actions ${styles.detailActions}`}>
+            <div className={`marketplace-actions marketplace-header-actions ${styles.actions} ${styles.detailActions}`}>
               {isMine && (
                 <a className="btn" href={`/player/marketplace/edit/${item.id}`}>
+                  <Pencil size={15} aria-hidden="true" />
                   {t("common.edit")}
                 </a>
               )}
-              <Link className="cta-green cta-green-inline" href="/player/marketplace">
+              <Link className="btn" href="/player/marketplace">
+                <ArrowLeft size={15} aria-hidden="true" />
                 {t("common.back")}
               </Link>
             </div>
@@ -252,21 +255,14 @@ export default function MarketplaceDetailPage() {
               type="button"
               onClick={() => openAt(0)}
               disabled={images.length === 0}
-              style={{
-                border: "1px solid rgba(0,0,0,0.10)",
-                borderRadius: 16,
-                overflow: "hidden",
-                padding: 0,
-                background: "transparent",
-                cursor: images.length === 0 ? "default" : "zoom-in",
-              }}
+              className={styles.detailImageButton}
               aria-label="Agrandir l’image"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={mainImg}
                 alt={item.title}
-                style={{ width: "100%", height: 260, objectFit: "cover", display: "block" }}
+                className={styles.detailImage}
               />
             </button>
 
