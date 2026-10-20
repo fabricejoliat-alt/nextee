@@ -2,10 +2,13 @@
 /* eslint-disable @next/next/no-img-element -- Private listing photos use expiring signed URLs. */
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { marketplaceSafetyText, type MarketplaceSafetyLabel } from "@/lib/marketplaceSafetyLabels";
 import styles from "./MarketplaceModerationWorkspace.module.css";
+import pageStyles from "@/components/admin/AdminHomeStats.module.css";
 
 type Listing = {
   id: string; club_id: string; user_id: string; title: string; description: string | null; category: string | null;
@@ -18,7 +21,7 @@ type Suspension = { user_id: string; club_id: string; reason: string; name: stri
 type Payload = { clubs: Array<{ id: string; name: string }>; items: Listing[]; reports: Report[]; suspensions: Suspension[]; messages: Array<{ id: string; subject: string; message: string; reply_email: string }> };
 const empty: Payload = { clubs: [], items: [], reports: [], suspensions: [], messages: [] };
 
-export default function MarketplaceModerationWorkspace() {
+export default function MarketplaceModerationWorkspace({ audience = "admin" }: { audience?: "manager" | "admin" }) {
   const { locale, t } = useI18n();
   const text = (key: MarketplaceSafetyLabel) => marketplaceSafetyText(locale, key);
   const params = useSearchParams();
@@ -82,8 +85,18 @@ export default function MarketplaceModerationWorkspace() {
       </div>
     </article>;
   }
-  return <div className={styles.page}>
-    <header className={styles.header}><h1>{text("moderation")}</h1><p>{text("reviewInstructions")}</p></header>
+  return <div className={`${pageStyles.page} ${styles.page}`}>
+    {audience === "manager" && <nav className={styles.breadcrumb} aria-label={t("manager.content.breadcrumb")}>
+      <Link href={`/manager${club ? `?club=${encodeURIComponent(club)}` : ""}`}>{t("manager.content.manager")}</Link>
+      <span aria-hidden="true">/</span><span>{text("moderation")}</span>
+    </nav>}
+    <header className={pageStyles.topline}>
+      <div><h1>{text("moderation")}</h1><p className={pageStyles.lead}>{text("reviewInstructions")}</p></div>
+      <button type="button" className={pageStyles.refreshButton} disabled={busy} onClick={() => void load()}>
+        <RefreshCw size={16} aria-hidden="true" className={busy ? pageStyles.spin : undefined} />{text("refresh")}
+      </button>
+    </header>
+    <section className={pageStyles.quickPanel}>
     <div className={styles.toolbar}>
       <select aria-label={text("allClubs")} value={club} disabled={busy} onChange={event => setClub(event.target.value)}>
         <option value="">{text("allClubs")}</option>{data.clubs.map(row => <option value={row.id} key={row.id}>{row.name}</option>)}
@@ -91,12 +104,12 @@ export default function MarketplaceModerationWorkspace() {
       <select aria-label={text("moderation")} value={status} disabled={busy} onChange={event => setStatus(event.target.value)}>
         {(["pending", "approved", "rejected"] as const).map(value => <option key={value} value={value}>{text(value)}</option>)}
       </select>
-      <button className="btn" disabled={busy} onClick={() => void load()}>{text("refresh")}</button>
     </div>
-    {error && <p className={styles.error} role="alert">{error}</p>}
+    {error && <p className={pageStyles.errorAlert} role="alert">{error}</p>}
     {saved && <p role="status">{text("saved")}</p>}
     {busy && <p role="status">{t("common.loading")}</p>}
-    <h2>{text("reports")} ({data.reports.length})</h2>
+    {!error && <>
+    <div className={pageStyles.sectionHeading}><h2>{text("reports")} ({data.reports.length})</h2></div>
     {data.items.filter(item => data.reports.some(report => report.item_id === item.id)).map(listing)}
     {data.reports.filter(report => !report.item_id).map(report => {
       const message = data.messages.find(message => message.id === report.message_id);
@@ -112,12 +125,14 @@ export default function MarketplaceModerationWorkspace() {
         </div>
       </article>;
     })}
-    <h2>{text(status as "pending" | "approved" | "rejected")}</h2>
-    {!busy && !data.items.some(item => item.moderation_status === status) && <p>{text("noItems")}</p>}
+    <div className={pageStyles.sectionHeading}><h2>{text(status as "pending" | "approved" | "rejected")}</h2></div>
+    {!busy && !data.items.some(item => item.moderation_status === status) && <p className={pageStyles.attentionEmpty}>{text("noItems")}</p>}
     {data.items.filter(item => item.moderation_status === status && !data.reports.some(report => report.item_id === item.id)).map(listing)}
-    {data.suspensions.length > 0 && <><h2>{text("suspensions")}</h2>{data.suspensions.map(row => <article className={styles.card} key={`${row.club_id}/${row.user_id}`}>
+    {data.suspensions.length > 0 && <><div className={pageStyles.sectionHeading}><h2>{text("suspensions")}</h2></div>{data.suspensions.map(row => <article className={styles.card} key={`${row.club_id}/${row.user_id}`}>
       <strong>{row.name} · {data.clubs.find(club => club.id === row.club_id)?.name}</strong><p>{row.reason}</p>
       <button className="btn" disabled={busy} onClick={() => void action({ action: "unsuspend", user_id: row.user_id, club_id: row.club_id })}>{text("restore")}</button>
     </article>)}</>}
+    </>}
+    </section>
   </div>;
 }

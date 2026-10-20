@@ -27,6 +27,14 @@ ou réactiver une annonce ne permet pas de contourner un refus.
 
 ## Exploitation
 
+Appliquer les migrations sur chaque base utilisée par l'application, y compris
+la base TEST de localhost : `20261203_account_deletion.sql` (prérequis),
+`20261204_marketplace_moderation.sql`, puis
+`20261205_marketplace_private_bucket.sql`. Ne pas rejouer les deux premières
+si elles sont déjà présentes. La troisième rend privé un ancien bucket public
+sans supprimer les photos. Vérifier les tables de modération, les permissions
+et le chargement connecté de la file avant de déclarer l'environnement prêt.
+
 Le code ne remplace pas le travail de modération. L'Admin et les Managers doivent
 consulter régulièrement la file et répondre rapidement aux signalements. Avant
 la soumission App Store, désigner les personnes chargées de ce suivi et traiter

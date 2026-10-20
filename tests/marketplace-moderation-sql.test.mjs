@@ -6,10 +6,27 @@ import { PGlite } from "@electric-sql/pglite";
 const schema = JSON.parse(readFileSync(new URL("./fixtures/account-deletion-schema.json", import.meta.url)));
 const migration = readFileSync(new URL("../supabase/migrations/20261204_marketplace_moderation.sql", import.meta.url), "utf8");
 const deletion = readFileSync(new URL("../supabase/migrations/20261203_account_deletion.sql", import.meta.url), "utf8");
+const privateBucket = readFileSync(new URL("../supabase/migrations/20261205_marketplace_private_bucket.sql", import.meta.url), "utf8");
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`;
 const quote = name => `"${name.replaceAll('"', '""')}"`;
 const sqlType = raw => raw === "uuid" || raw === "uuid[]" ? raw : raw?.endsWith("[]") || raw === "array" ? "text[]" :
   ["boolean", "integer", "bigint", "smallint", "numeric", "double precision", "real", "date", "timestamp with time zone", "timestamp without time zone", "time without time zone", "json", "jsonb"].includes(raw) ? raw : "text";
+
+test("existing public Marketplace buckets become private without changing other buckets or upload limits", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(`create schema storage;
+      create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+      insert into storage.buckets values ('marketplace','marketplace',true,1234,array['image/jpeg']),
+        ('other','other',true,5678,array['image/png']);`);
+    await db.exec(privateBucket);
+    await db.exec(privateBucket);
+    assert.deepEqual((await db.query("select id,public,file_size_limit::integer,allowed_mime_types from storage.buckets order by id")).rows, [
+      { id: "marketplace", public: false, file_size_limit: 1234, allowed_mime_types: ["image/jpeg"] },
+      { id: "other", public: true, file_size_limit: 5678, allowed_mime_types: ["image/png"] },
+    ]);
+  } finally { await db.close(); }
+});
 
 async function fixture() {
   const db = new PGlite();
