@@ -43,6 +43,7 @@ export async function resolveMarketplaceAccess(
       preferredClubId: access.organizationId,
       phone: String((profileRes.data as { phone?: string | null } | null)?.phone ?? "").trim(),
       isParent: access.isGuardianContext,
+      canEdit: access.permissions.edit,
     };
   } catch (error: unknown) {
     if (error instanceof PlayerAccessError) return { error: error.message, status: error.status };

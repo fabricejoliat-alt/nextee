@@ -7,6 +7,14 @@ export type NotificationTemplate = Record<NotificationLocale, TemplatePair> & {
 };
 export const NOTIFICATION_LOCALES: NotificationLocale[] = ["fr", "en", "de", "it"];
 export const notificationTemplateDefaults: Record<string, NotificationTemplate> = {
+  "notif.marketplaceMessage": {
+    label: "Message du Marketplace", kind: "marketplace_message", roles: ["player"], variables: [],
+    trigger: "Après la réception d’un message ou d’une réponse dans le Marketplace, selon les préférences du destinataire et de ses parents autorisés.",
+    fr: { title: "Nouveau message du Marketplace", body: "Un nouveau message est disponible dans le Marketplace." },
+    en: { title: "New Marketplace message", body: "A new message is available in the Marketplace." },
+    de: { title: "Neue Marketplace-Nachricht", body: "Im Marketplace ist eine neue Nachricht verfügbar." },
+    it: { title: "Nuovo messaggio del Marketplace", body: "È disponibile un nuovo messaggio nel Marketplace." },
+  },
   "notif.coachEventCreated": {
     "label": "Nouvelle activité",
     "kind": "coach_event_created",

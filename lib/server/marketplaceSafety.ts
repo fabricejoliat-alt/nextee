@@ -17,6 +17,11 @@ export async function marketplaceSafetyContext(db: SupabaseClient, access: Acces
   ]);
   const suspended = suspensions.data ?? [];
   return {
+    canMessage(userId: string, clubId: string, actorId?: string | null) {
+      const others = [...new Set([userId, actorId].filter((id): id is string => Boolean(id)))];
+      return !others.some(id => blocked.has(id))
+        && !suspended.some(row => row.club_id === clubId && [...ids, ...others].includes(row.user_id));
+    },
     visible(item: MarketplaceListing) {
       return item.is_active && item.moderation_status === "approved" && !blocked.has(item.user_id)
         && !suspended.some(row => row.club_id === item.club_id && [...ids, item.user_id].includes(row.user_id));

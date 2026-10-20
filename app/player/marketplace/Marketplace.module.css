@@ -110,3 +110,17 @@
   .blockedRow > button { align-self: flex-end; }
   .messageMeta { flex-direction: column; align-items: flex-start; }
 }
+
+.messageToolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.messageTabs { display: flex; align-items: center; gap: 4px; padding: 4px; max-width: 100%; overflow-x: auto; scrollbar-width: none; border: 1px solid #dfe7dd; border-radius: 12px; background: #f0f4ed; }
+.messageTabs::-webkit-scrollbar { display: none; }
+.messageTabs > a { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 7px; min-height: 36px; padding: 0 16px; border-radius: 9px; color: #526056; font-size: 12px; font-weight: 750; text-decoration: none; }
+.messageTabs > a[aria-current] { color: #fff; background: #35483b; box-shadow: 0 2px 6px #35483b18; }
+.messageTabs > a:focus-visible { outline: 3px solid #899d7d; outline-offset: 2px; }
+.messageActions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.messageActions .messageDelete { color: #a13b30; }
+.messageReply { display: grid; gap: 12px; padding: 16px; border: 1px solid #dfe7dd; border-radius: 12px; background: #f6f9f4; }
+.messageReply label { color: #35483b; font-size: 12px; font-weight: 750; }
+.messageReply textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 12px; border: 1px solid #dce3dc; border-radius: 9px; background: #fff; color: #35483b; line-height: 1.6 !important; resize: vertical; }
+.messageAll { display: inline-flex; align-items: center; gap: 7px; color: #35483b; font-size: 12px; font-weight: 700; }
+@media(max-width:640px) { .messageReply { padding: 12px; } }

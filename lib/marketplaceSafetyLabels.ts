@@ -1,7 +1,7 @@
 import type { AppLocale } from "@/lib/i18n/messages";
 
 const labels = {
-  messagesIntro: ["Les échanges reçus au sujet de tes annonces.", "Messages received about your listings.", "Nachrichten zu deinen Anzeigen.", "I messaggi ricevuti sui tuoi annunci."],
+  messagesIntro: ["Tes échanges avec les membres du club au sujet des annonces.", "Your exchanges with club members about listings.", "Dein Austausch mit Clubmitgliedern zu den Anzeigen.", "I tuoi scambi con i membri del club sugli annunci."],
   blocksIntro: ["Gère les membres avec lesquels les échanges Marketplace sont bloqués.", "Manage members whose Marketplace contact is blocked.", "Verwalte Mitglieder, deren Marktplatzkontakte blockiert sind.", "Gestisci i membri con cui i contatti nel Marketplace sono bloccati."],
   rulesConduct: ["Des annonces respectueuses", "Respectful listings", "Respektvolle Anzeigen", "Annunci rispettosi"],
   rulesReview: ["Validation et modération", "Review and moderation", "Prüfung und Moderation", "Verifica e moderazione"],
@@ -15,7 +15,7 @@ const labels = {
   queueRejected: ["Refusées", "Declined", "Abgelehnt", "Rifiutati"],
   publicationStatus: ["Statut de publication", "Publication status", "Veröffentlichungsstatus", "Stato di pubblicazione"],
   decision: ["Décision de modération", "Moderation decision", "Moderationsentscheidung", "Decisione di moderazione"],
-  messages: ["Messages reçus", "Received messages", "Empfangene Nachrichten", "Messaggi ricevuti"],
+  messages: ["Messages", "Messages", "Nachrichten", "Messaggi"],
   noMessages: ["Aucun message reçu pour l’enfant ou le compte sélectionné.", "No messages for the selected child or account.", "Keine Nachrichten für das ausgewählte Kind oder Konto.", "Nessun messaggio per il figlio o l’account selezionato."],
   reportMessage: ["Signaler le message", "Report message", "Nachricht melden", "Segnala messaggio"],
   blockSender: ["Bloquer cet expéditeur", "Block this sender", "Absender blockieren", "Blocca mittente"],

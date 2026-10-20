@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { randomUUID } from "node:crypto";
 import { createAdminClient, resolveMarketplaceAccess } from "../../_lib";
 import { marketplaceContactEmail, marketplaceContactTextAllowed } from "@/lib/marketplaceContact";
-import { marketplaceSafetyContext } from "@/lib/server/marketplaceSafety";
+import { marketplaceSafetyContext, marketplaceUuid } from "@/lib/server/marketplaceSafety";
+import { processMarketplaceMessagePushes } from "@/lib/server/marketplaceMessageNotifications";
 
 export const runtime = "nodejs";
-const attempts = new Map<string, number[]>();
-const windowMs = 10 * 60 * 1000;
 const reply = (body: object, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ itemId: string }> }) {
@@ -28,6 +28,7 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ itemId: st
       return reply({ error: "invalid_message" }, 400);
     }
     if (!marketplaceContactTextAllowed(subject, message)) return reply({ error: "content_not_allowed" }, 400);
+    if (input.request_id != null && !marketplaceUuid(input.request_id)) return reply({ error: "invalid_message" }, 400);
     const { itemId } = await ctx.params;
     if (!itemId) return reply({ error: "not_found" }, 404);
     const db = createAdminClient();
@@ -41,37 +42,34 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ itemId: st
     if (!safety.visible(item.data)) return reply({ error: "inactive" }, 409);
     const recipient = marketplaceContactEmail(item.data.contact_email);
     if (!recipient) return reply({ error: "no_email" }, 409);
-    const apiKey = process.env.BREVO_API_KEY;
-    if (!apiKey || (process.env.NODE_ENV !== "production" && process.env.MARKETPLACE_MAIL_TRANSPORT !== "brevo")) {
-      return reply({ error: "unavailable" }, 503);
-    }
-    const now = Date.now();
-    for (const [key, dates] of attempts) if (!dates.some(date => date > now - windowMs)) attempts.delete(key);
-    const recent = (attempts.get(access.viewerUserId) ?? []).filter(date => date > now - windowMs);
-    if (recent.length >= 3 || (!attempts.has(access.viewerUserId) && attempts.size >= 5000)) return reply({ error: "rate_limited" }, 429);
-    attempts.set(access.viewerUserId, [...recent, now]);
-    const stored = await db.rpc("reserve_marketplace_contact", {
+    const stored = await db.rpc("send_marketplace_contact_v2", {
       p_actor: access.viewerUserId, p_subject: access.effectiveUserId, p_item: itemId,
-      p_email: email, p_subject_text: subject, p_message: message,
+      p_email: email, p_subject_text: subject, p_message: message, p_request_id: input.request_id ?? randomUUID(),
     });
     if (stored.error || !stored.data) return reply({ error: stored.error?.code === "P0001" ? "rate_limited" : "inactive" }, stored.error?.code === "P0001" ? 429 : 409);
+    // The message and in-app alert are committed. Provider failure must not invite
+    // a duplicate message; scheduled recovery handles unclaimed push work.
+    await processMarketplaceMessagePushes(db, stored.data).catch(() => {});
+    const apiKey = process.env.BREVO_API_KEY;
+    if (!apiKey || (process.env.NODE_ENV !== "production" && process.env.MARKETPLACE_MAIL_TRANSPORT !== "brevo"))
+      return reply({ ok: true, message_id: stored.data, email_sent: false });
+    const claimed = await db.from("marketplace_contact_messages").update({ email_claimed_at: new Date().toISOString() })
+      .eq("id", stored.data).is("email_claimed_at", null).select("id").maybeSingle();
+    if (claimed.error || !claimed.data) return reply({ ok: true, message_id: stored.data });
     const from = process.env.MAIL_FROM || "ActiviTee <noreply@activitee.golf>";
     const match = from.match(/^(.+?)\s*<([^>]+)>$/);
     const sender = match ? { name: match[1].trim(), email: match[2].trim() } : { name: "ActiviTee", email: from.trim() };
     const link = new URL(`/player/marketplace/${encodeURIComponent(itemId)}`, req.url).toString();
-    const safetyLink = new URL(`/player/marketplace/messages?message=${encodeURIComponent(stored.data)}`, req.url).toString();
+    const safetyLink = new URL(`/player/marketplace/messages?message=${encodeURIComponent(stored.data)}&child_id=${encodeURIComponent(item.data.user_id)}`, req.url).toString();
     const sent = await fetch("https://api.brevo.com/v3/smtp/email", {
       method: "POST", headers: { "api-key": apiKey, "Content-Type": "application/json" },
       cache: "no-store", signal: AbortSignal.timeout(15000),
       body: JSON.stringify({ sender, to: [{ email: recipient }], replyTo: { email },
         subject: `[ActiviTee Marketplace] ${subject}`,
-        textContent: [`Annonce : ${item.data.title}`, link, "", message, "", `Adresse de réponse : ${email}`, "", "Consulter, signaler ou bloquer cet expéditeur dans ActiviTee :", safetyLink].join("\n"),
+        textContent: [`Annonce : ${item.data.title}`, link, "", message, "", `Adresse de réponse : ${email}`, "", "Consulter le message et répondre dans ActiviTee :", safetyLink].join("\n"),
       }),
-    });
-    const recorded = await db.from("marketplace_contact_messages").update({ status: sent.ok ? "sent" : "failed" }).eq("id", stored.data);
-    if (!sent.ok) return reply({ error: "send_failed" }, 502);
-    // The message is retained even when the delivery-status update fails.
-    if (recorded.error) return reply({ ok: true });
-    return reply({ ok: true });
+    }).catch(() => null);
+    await db.from("marketplace_contact_messages").update({ status: sent?.ok ? "sent" : "failed" }).eq("id", stored.data);
+    return reply({ ok: true, message_id: stored.data, email_sent: sent?.ok === true });
   } catch { return reply({ error: "send_failed" }, 503); }
 }

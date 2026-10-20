@@ -13,12 +13,13 @@ function setup(options: { club?: string; email?: string; active?: boolean; denie
   const compiled = { exports: {} as { POST: (req: Request, ctx: { params: Promise<{ itemId: string }> }) => Promise<Response> } };
   const mocks: Record<string, unknown> = {
     "@/lib/marketplaceContact": { marketplaceContactEmail, marketplaceContactTextAllowed },
-    "@/lib/server/marketplaceSafety": { marketplaceSafetyContext: async () => ({
+    "@/lib/server/marketplaceSafety": { marketplaceUuid: (value: unknown) => typeof value === "string" && /^[0-9a-f-]{36}$/.test(value), marketplaceSafetyContext: async () => ({
       visible: () => !options.blocked && (options.status ?? "approved") === "approved",
     }) },
+    "@/lib/server/marketplaceMessageNotifications": { processMarketplaceMessagePushes: async () => ({ processed: 1 }) },
     "../../_lib": {
       createAdminClient: () => ({ rpc: async () => (options.recentCount ?? 0) >= 3 ? { data: null, error: { code: "P0001" } } : { data: "stored-message", error: null }, from: (table: string) => { const query = {
-        select: () => query, eq: () => query, gte: () => query, insert: () => query, update: () => query,
+        is: () => query, select: () => query, eq: () => query, gte: () => query, insert: () => query, update: () => query,
         single: async () => ({ data: { id: "stored-message" }, error: null }),
         then: (resolve: (value: unknown) => unknown) => Promise.resolve({ count: table === "marketplace_contact_messages" ? options.recentCount ?? 0 : 0, error: null }).then(resolve),
         maybeSingle: async () => ({ data: { id: "listing", user_id: "seller", title: "Putter", club_id: options.club ?? "club-a", is_active: options.active ?? true, contact_email: options.email ?? "seller@example.com" }, error: null }),
@@ -71,13 +72,14 @@ test("missing seller email, inactive listings and invalid forms never send mail"
   assert.equal(sent.length, 0);
 });
 
-test("provider failures are not reported as sent and repeated sends are limited", async () => {
+test("email failures preserve the successfully stored in-app message and durable limits are enforced", async () => {
   const failed = setup({ providerOk: false });
-  assert.equal((await failed.call()).status, 502);
-  const limited = setup();
-  for (let index = 0; index < 3; index++) assert.equal((await limited.call()).status, 200);
+  const response = await failed.call();
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, message_id: "stored-message", email_sent: false });
+  const limited = setup({ recentCount: 3 });
   assert.equal((await limited.call()).status, 429);
-  assert.equal(limited.sent.length, 3);
+  assert.equal(limited.sent.length, 0);
 });
 
 test("blocked sellers and pending or rejected listings cannot be contacted, including by direct URL", async () => {

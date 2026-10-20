@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { Mail, Send } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
@@ -13,6 +13,7 @@ import styles from "@/app/player/marketplace/Marketplace.module.css";
 export default function MarketplaceContactForm({ itemId, title, recipient }: { itemId: string; title: string; recipient: string | null }) {
   const { locale } = useI18n();
   const id = useId();
+  const sending = useRef(false), requestId = useRef<string | null>(null);
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [subject, setSubject] = useState("");
@@ -36,7 +37,8 @@ export default function MarketplaceContactForm({ itemId, title, recipient }: { i
 
   async function send(event: React.FormEvent) {
     event.preventDefault();
-    if (busy) return;
+    if (sending.current) return;
+    sending.current = true; requestId.current ??= crypto.randomUUID();
     setBusy(true); setError("");
     try {
       const context = await resolveEffectivePlayerContext();
@@ -45,7 +47,7 @@ export default function MarketplaceContactForm({ itemId, title, recipient }: { i
       if (!token) throw new Error("unauthorized");
       const response = await organizationFetch(`/api/player/marketplace/${encodeURIComponent(itemId)}/contact`, {
         method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ reply_email: email, subject, message, child_id: context.role === "parent" ? context.effectiveUserId : null }),
+        body: JSON.stringify({ request_id: requestId.current, reply_email: email, subject, message, child_id: context.role === "parent" ? context.effectiveUserId : null }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(String(result.error ?? "send_failed"));
@@ -62,7 +64,7 @@ export default function MarketplaceContactForm({ itemId, title, recipient }: { i
         unavailable: text("Le service d’envoi est temporairement indisponible.", "Email service is temporarily unavailable.", "Der E-Mail-Dienst ist vorübergehend nicht verfügbar.", "Il servizio e-mail non è temporaneamente disponibile."),
       };
       setError(errors[code] || text("Envoi non confirmé. Vérifie ta connexion avant de réessayer.", "Sending could not be confirmed. Check your connection before trying again.", "Der Versand konnte nicht bestätigt werden. Prüfe deine Verbindung.", "Invio non confermato. Controlla la connessione prima di riprovare."));
-    } finally { setBusy(false); }
+    } finally { sending.current = false; setBusy(false); }
   }
 
   return <div className={styles.contact}>
@@ -70,10 +72,10 @@ export default function MarketplaceContactForm({ itemId, title, recipient }: { i
       <Mail size={16} aria-hidden="true" />{text("Contacter", "Contact", "Kontaktieren", "Contatta")}
     </button>
     {open ? <div id={id} className={styles.contactPanel}>
-      {sent ? <p role="status" className={styles.contactSuccess}>{text("Ton message a été envoyé. La réponse arrivera à l’adresse indiquée.", "Your message has been sent. Replies will go to the address you entered.", "Deine Nachricht wurde gesendet. Die Antwort geht an die angegebene Adresse.", "Il messaggio è stato inviato. La risposta arriverà all’indirizzo indicato.")}</p> : <form onSubmit={event => void send(event)} className={styles.contactForm}>
-        <label>{text("Ton adresse e-mail de réponse", "Your reply email", "Deine Antwort-E-Mail-Adresse", "La tua e-mail per la risposta")}<input type="email" autoComplete="email" value={email} onChange={event => setEmail(event.target.value)} maxLength={254} required disabled={busy} /></label>
-        <label>{text("Objet", "Subject", "Betreff", "Oggetto")}<input value={subject} onChange={event => setSubject(event.target.value)} minLength={3} maxLength={160} required disabled={busy} /></label>
-        <label>{text("Message", "Message", "Nachricht", "Messaggio")}<textarea value={message} onChange={event => setMessage(event.target.value)} minLength={10} maxLength={4000} rows={7} required disabled={busy} /></label>
+      {sent ? <p role="status" className={styles.contactSuccess}>{text("Ton message a été envoyé. Retrouve tes échanges dans les messages du Marketplace.", "Your message has been sent. Find your exchanges in Marketplace messages.", "Deine Nachricht wurde gesendet. Du findest den Austausch in den Marketplace-Nachrichten.", "Il messaggio è stato inviato. Ritrova gli scambi nei messaggi del Marketplace.")}</p> : <form onSubmit={event => void send(event)} className={styles.contactForm}>
+        <label>{text("Ton adresse e-mail de réponse", "Your reply email", "Deine Antwort-E-Mail-Adresse", "La tua e-mail per la risposta")}<input type="email" autoComplete="email" value={email} onChange={event => { setEmail(event.target.value); requestId.current = null; }} maxLength={254} required disabled={busy} /></label>
+        <label>{text("Objet", "Subject", "Betreff", "Oggetto")}<input value={subject} onChange={event => { setSubject(event.target.value); requestId.current = null; }} minLength={3} maxLength={160} required disabled={busy} /></label>
+        <label>{text("Message", "Message", "Nachricht", "Messaggio")}<textarea value={message} onChange={event => { setMessage(event.target.value); requestId.current = null; }} minLength={10} maxLength={4000} rows={7} required disabled={busy} /></label>
         {error ? <p role="alert" className={styles.contactError}>{error}</p> : null}
         <button className="btn btn-primary" type="submit" disabled={busy || !marketplaceContactEmail(email) || subject.trim().length < 3 || message.trim().length < 10}><Send size={15} aria-hidden="true" />{busy ? text("Envoi en cours…", "Sending…", "Wird gesendet…", "Invio in corso…") : text("Envoyer", "Send", "Senden", "Invia")}</button>
       </form>}

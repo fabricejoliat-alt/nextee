@@ -33,6 +33,7 @@ export const coachFinishingRows = {
   "coach.home.evaluationProgress": ["{completed} / {total} évaluations terminées", "{completed} / {total} evaluations complete", "{completed} / {total} Bewertungen abgeschlossen", "{completed} / {total} valutazioni completate"],
   "notifications.kind.manager_news": ["Actualités du club", "Club news", "Clubneuigkeiten", "Novità del club"],
   "notifications.kind.thread_message": ["Nouveaux messages", "New messages", "Neue Nachrichten", "Nuovi messaggi"],
+  "notifications.kind.marketplace_message": ["Messages du Marketplace", "Marketplace messages", "Marketplace-Nachrichten", "Messaggi del Marketplace"],
   "notifications.kind.coach_event_created": ["Nouveaux entraînements/événements", "New trainings/events", "Neue Trainings/Veranstaltungen", "Nuovi allenamenti/eventi"],
   "notifications.kind.competition_reminder": ["Rappels de compétitions", "Competition reminders", "Wettkampferinnerungen", "Promemoria delle gare"],
   "notifications.kind.coach_event_updated": ["Modifications d’événements", "Event updates", "Änderungen an Veranstaltungen", "Modifiche agli eventi"],
