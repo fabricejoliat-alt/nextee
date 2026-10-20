@@ -111,8 +111,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid club_id" }, { status: 400 });
     }
     const safety = await marketplaceSafetyContext(supabaseAdmin, access);
-    if (!safety.canPublish(clubId)) return NextResponse.json({ error: "Publication suspendue dans la Marketplace de ce club." }, { status: 403 });
-    if (body.rules_accepted !== true) return NextResponse.json({ error: "Acceptez les règles de la Marketplace." }, { status: 400 });
+    if (!safety.canPublish(clubId)) return NextResponse.json({ error: "Publication suspendue dans le Marketplace de ce club." }, { status: 403 });
+    if (body.rules_accepted !== true) return NextResponse.json({ error: "Acceptez les règles du Marketplace." }, { status: 400 });
 
     const title = String(body?.title ?? "").trim();
     const category = String(body?.category ?? "").trim();
