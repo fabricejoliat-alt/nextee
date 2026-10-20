@@ -1,18 +1,51 @@
+.page { --accent: #899d7d; }
 .page, .page > *, .page section > * { min-width: 0; }
-.breadcrumb { display: flex; align-items: center; gap: 8px; color: #53675a; font-size: 12px; font-weight: 700; }
-.toolbar { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
-.toolbar select { width: 100%; min-width: 0; min-height: 42px; background: #fff; color: var(--primary); border: 1px solid #dce3dc; border-radius: 9px; padding: 10px; }
-.actions { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0; }
-.card { background: #fff; border: 1px solid #d7e1da; border-radius: 16px; padding: 20px; margin: 16px 0; box-shadow: 0 4px 16px #203e2b08; overflow-wrap: anywhere; }
-.cardHeader { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; }
-.cardHeader h2 { margin: 0; font-size: 20px; }
-.card p { line-height: 1.6; font-size: 14px; }
-.description { white-space: pre-wrap; }
-.photos { display: flex; gap: 10px; overflow-x: auto; margin: 14px 0; padding-bottom: 5px; }
-.photos a { flex: 0 0 180px; }
-.photos img { width: 180px; height: 150px; border-radius: 10px; object-fit: contain; background: #f3f6f3; }
-.label { display: grid; gap: 8px; font-size: 14px; font-weight: 600; margin-top: 16px; }
-.label textarea { width: 100%; background: #fff; border: 1px solid #b6c8ba; color: #203e2b; border-radius: 8px; padding: 10px; }
-.report { border-left: 4px solid #bd832e; background: #fcf6e9; padding: 14px; margin-top: 12px; }
-.actions button { min-height: 44px; }
-@media (max-width: 600px) { .toolbar { grid-template-columns: 1fr; } .card { padding: 14px; } .cardHeader { display: grid; gap: 6px; } }
+.breadcrumb { display: flex; align-items: center; gap: 8px; min-height: 22px; color: #53675a; font-size: 11px; font-weight: 700; }
+.page .panelHeader { gap: 18px; align-items: center; }
+.clubFilter { width: min(100%, 280px); }
+.statusTabs { display: flex; gap: 22px; overflow-x: auto; border-bottom: 1px solid #e2e7e1; }
+.statusTabs button { flex: 0 0 auto; padding: 0 2px 13px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #758078; font: 600 13px/1.3 var(--font-inter), sans-serif; white-space: nowrap; cursor: pointer; }
+.statusTabs button[aria-pressed="true"] { color: var(--primary); border-bottom-color: var(--primary); }
+.statusTabs button:disabled { cursor: wait; opacity: .6; }
+.statusTabs button:focus-visible, .photos a:focus-visible { outline: 2px solid var(--secondary); outline-offset: 3px; }
+.list { display: grid; min-width: 0; }
+.listing { display: grid; gap: 16px; min-width: 0; padding: 22px 0; overflow-wrap: anywhere; }
+.listing:first-child { padding-top: 0; }
+.listing:last-child { padding-bottom: 0; }
+.listing + .listing { border-top: 1px solid #e7ece6; }
+.listingHeader { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; min-width: 0; }
+.listingHeader > div { min-width: 0; }
+.listingHeader h3 { margin: 0; color: var(--primary); font: 750 16px/1.3 var(--font-inter-tight), var(--font-inter), sans-serif; }
+.clubName { margin: 0 0 6px; color: #778178; font-size: 10px; font-weight: 700; }
+.meta { margin: 5px 0 0; color: #778178; font-size: 12px; line-height: 1.5; }
+.listingBadges { display: grid; justify-items: end; gap: 7px; flex: 0 0 auto; }
+.price { color: var(--primary); font: 750 18px/1.2 var(--font-inter-tight), var(--font-inter), sans-serif; }
+.badge { display: inline-flex; align-items: center; width: max-content; max-width: 100%; padding: 5px 9px; border-radius: 999px; font: 750 10px/1.3 var(--font-inter), sans-serif; }
+.pending { background: #fff7e7; color: #9b6b19; }
+.approved { background: #edf7ee; color: #397343; }
+.rejected { background: #fdf0ef; color: #b54842; }
+.listingContent { display: grid; gap: 16px; min-width: 0; }
+.photos { display: flex; gap: 10px; min-width: 0; overflow-x: auto; padding: 2px 0 5px; }
+.photos a { flex: 0 0 148px; display: block; border: 1px solid #e3e9e2; border-radius: 11px; overflow: hidden; }
+.photos img { display: block; width: 146px; height: 116px; object-fit: contain; background: #f8faf7; }
+.details { display: grid; gap: 13px; min-width: 0; }
+.description { margin: 0; white-space: pre-wrap; color: #526053; font-size: 13px; line-height: 1.6; }
+.contact { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0; color: #6d786e; font-size: 12px; line-height: 1.5; }
+.contact span { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.contact svg { flex-shrink: 0; color: #819379; }
+.decision { display: grid; gap: 14px; padding: 16px; border: 1px solid #e3e9e2; border-radius: 12px; background: #f8faf7; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.actions button { min-height: 42px; height: auto; padding-block: 10px; }
+.actions svg { flex-shrink: 0; }
+.report { display: grid; justify-items: start; gap: 10px; }
+.report > div { width: 100%; box-sizing: border-box; }
+@media (max-width: 640px) {
+  .page .panelHeader { align-items: stretch; flex-direction: column; }
+  .clubFilter { width: 100%; }
+  .listingHeader { flex-direction: column; gap: 10px; }
+  .listingBadges { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+  .decision { padding: 12px; }
+  .actions { display: grid; grid-template-columns: 1fr; }
+  .actions button { width: 100%; }
+  .contact { flex-direction: column; }
+}

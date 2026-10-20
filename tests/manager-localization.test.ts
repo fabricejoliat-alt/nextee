@@ -125,8 +125,18 @@ for (const [name,data,tabValues] of [["Junior",juniorData,["overview","attendanc
 test("dashboard changes language with plural counts, preserving authored event titles and destinations", async () => {
   const stats={clubsCount:1,activeUsersCount:2,usersCount:2,playersCount:1,girlsCount:1,boysCount:0,activeGroupsCount:1,archivedGroupsCount:0,pastEventsCount:3,plannedEventsCount:1,unreadNotificationsCount:0,juniorsWithoutParentCount:1,usersWithoutUsernameCount:0,groupsWithoutHeadCoachCount:0,pendingAttendanceCount:0,activitiesAwaitingCoachEvaluationCount:0,inactiveMemberships:0};
   let activeLocale: AppLocale="fr"; const translators=Object.fromEntries(locales.map((locale)=>[locale,translate(locale)]));
-  const harness=coachComponentHarness("app/manager/page.tsx",{fetch:async()=>Response.json({stats,me:{first_name:"Zoé"},upcomingEvents:[{id:"event",group_id:"group",event_type:"training",starts_at:"2026-10-03T10:00:00Z",label:"Entraînement Élite",href:"/manager/calendar"}],groupNameById:{}}),modules:{"@/lib/clientPageCache":{readClientPageCache:()=>null,writeClientPageCache(){}},"@/components/i18n/AppI18nProvider":{useI18n:()=>({locale:activeLocale,t:translators[activeLocale]})}}});
-  for(const locale of locales) { activeLocale=locale; harness.render(); await flush(); const tree=harness.render(); const text=textContent(tree); assert.match(text,/Zoé/);assert.match(text,/Entraînement Élite/);assert.doesNotMatch(text,/manager\./);assert.ok(text.includes(managerCount(translate(locale),locale,"manager.home.withoutParent",1)));assert.ok(elements(tree).some((node)=>node.props.href === "/manager/calendar")); }
+  const harness=coachComponentHarness("app/manager/page.tsx",{fetch:async()=>Response.json({stats,me:{first_name:"Zoé"},upcomingEvents:[{id:"event",group_id:"group",event_type:"training",starts_at:"2026-10-03T10:00:00Z",label:"Entraînement Élite",href:"/manager/calendar"}],groupNameById:{}}),modules:{"@/lib/clientPageCache":{readClientPageCache:()=>null,writeClientPageCache(){}},"@/components/i18n/AppI18nProvider":{useI18n:()=>({locale:activeLocale,t:translators[activeLocale]})},"@/components/marketplace/MarketplaceModerationAlert":{useMarketplaceModerationCounts:()=>({pending:2,reports:1})}}});
+  for(const locale of locales) {
+    activeLocale=locale; harness.render(); await flush(); const tree=harness.render(); const text=textContent(tree);
+    assert.match(text,/Zoé/);assert.match(text,/Entraînement Élite/);assert.doesNotMatch(text,/manager\./);
+    assert.ok(text.includes(managerCount(translate(locale),locale,"manager.home.withoutParent",1)));
+    assert.ok(elements(tree).some((node)=>node.props.href === "/manager/calendar"));
+    const attention=elements(tree).find((node)=>node.props["aria-labelledby"] === "manager-attention-title");
+    const marketplace=elements(attention).find((node)=>node.props.href === "/manager/marketplace");
+    assert.ok(marketplace, `${locale}: moderation belongs to the attention card`);
+    assert.match(textContent(marketplace), /: 2.*: 1/);
+    assert.equal(elements(tree).filter((node)=>node.props.href === "/manager/marketplace").length,1);
+  }
   harness.cleanup();
 });
 

@@ -3,13 +3,14 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { Bell, CalendarCheck2, CalendarDays, ChevronRight, ClipboardCheck, Layers3, Link2Off, Newspaper, Plus, RefreshCw, UserCheck, Users } from "lucide-react";
+import { Bell, CalendarCheck2, CalendarDays, ChevronRight, ClipboardCheck, Layers3, Link2Off, Newspaper, Plus, RefreshCw, ShieldCheck, UserCheck, Users } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { managerActivityLabel, managerCount, managerFormat, managerLocaleTag } from "@/lib/managerLocale";
 import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import styles from "@/components/admin/AdminHomeStats.module.css";
-import MarketplaceModerationAlert from "@/components/marketplace/MarketplaceModerationAlert";
+import { useMarketplaceModerationCounts } from "@/components/marketplace/MarketplaceModerationAlert";
+import { marketplaceSafetyText } from "@/lib/marketplaceSafetyLabels";
 
 type EventLite = {
   id: string;
@@ -117,6 +118,7 @@ export default function ManagerHomePage() {
   const dateLocale = managerLocaleTag(locale);
   const [loading, setLoading] = useState(true);
   const [refreshNonce, setRefreshNonce] = useState(0);
+  const marketplaceCounts = useMarketplaceModerationCounts(refreshNonce);
   const [statsError, setStatsError] = useState<string | null>(null);
   const assiduityWindow = "6m" as const;
   const [groupNameById, setGroupNameById] = useState<Record<string, string>>({});
@@ -236,17 +238,20 @@ export default function ManagerHomePage() {
   ];
 
   const attentionItems = [
+    marketplaceCounts.pending > 0 || marketplaceCounts.reports > 0 ? {
+      href: "/manager/marketplace", icon: ShieldCheck, label: marketplaceSafetyText(locale, "moderation"),
+      detail: `${marketplaceSafetyText(locale, "pending")} : ${marketplaceCounts.pending} · ${marketplaceSafetyText(locale, "reports")} : ${marketplaceCounts.reports}`,
+    } : null,
     stats.juniorsWithoutParentCount > 0 ? { href: "/manager/user-management/players", icon: Link2Off, label: count("withoutParent", stats.juniorsWithoutParentCount), detail: t("manager.home.openJuniors") } : null,
     stats.usersWithoutUsernameCount > 0 ? { href: "/manager/access", icon: Users, label: count("incompleteAccounts", stats.usersWithoutUsernameCount), detail: t("manager.home.completeAccess") } : null,
     stats.groupsWithoutHeadCoachCount > 0 ? { href: "/manager/groups", icon: Users, label: count("withoutHead", stats.groupsWithoutHeadCoachCount), detail: t("manager.home.reviewStaffing") } : null,
     stats.pendingAttendanceCount > 0 ? { href: "/manager/performance/coaches", icon: CalendarCheck2, label: count("attendance", stats.pendingAttendanceCount), detail: t("manager.home.reviewActivities") } : null,
     stats.activitiesAwaitingCoachEvaluationCount > 0 ? { href: "/manager/performance/coaches", icon: ClipboardCheck, label: count("evaluations", stats.activitiesAwaitingCoachEvaluationCount), detail: t("manager.home.reviewEvaluations") } : null,
     stats.inactiveMemberships > 0 ? { href: "/manager/access", icon: UserCheck, label: count("inactiveAccess", stats.inactiveMemberships), detail: t("manager.home.reviewFamilies") } : null,
-  ].filter((item): item is NonNullable<typeof item> => item !== null).slice(0, 6);
+  ].filter((item): item is NonNullable<typeof item> => item !== null);
 
   return (
     <div className={styles.page}>
-      <MarketplaceModerationAlert role="manager" />
       <nav aria-label={t("common.breadcrumb")} style={{ display: "flex", alignItems: "center", minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>
         {t("manager.home.workspace")}
       </nav>

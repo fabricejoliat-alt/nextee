@@ -38,6 +38,7 @@
 .mineHeaderActions { display: flex; gap: 8px; align-items: center; }
 .mineHeaderActions > a { display: inline-flex; align-items: center; justify-content: center; gap: 7px; }
 .mineFooter { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-top: 12px; margin-top: 12px; border-top: 1px solid #e9eee7; }
+.mineReviewStatus { margin-top: 16px; }
 .mineItemActions { display: flex; flex: 0 0 auto; gap: 7px; }
 .mineItemActions > :is(a, button) { color: #35483b; }
 .mineItemActions > button { color: #ad3d35; }

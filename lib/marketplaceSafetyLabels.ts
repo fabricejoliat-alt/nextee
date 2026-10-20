@@ -1,6 +1,12 @@
 import type { AppLocale } from "@/lib/i18n/messages";
 
 const labels = {
+  listings: ["Annonces", "Listings", "Anzeigen", "Annunci"],
+  queuePending: ["À valider", "Awaiting review", "Zu prüfen", "Da verificare"],
+  queueApproved: ["Validées", "Approved", "Freigegeben", "Approvati"],
+  queueRejected: ["Refusées", "Declined", "Abgelehnt", "Rifiutati"],
+  publicationStatus: ["Statut de publication", "Publication status", "Veröffentlichungsstatus", "Stato di pubblicazione"],
+  decision: ["Décision de modération", "Moderation decision", "Moderationsentscheidung", "Decisione di moderazione"],
   messages: ["Messages reçus", "Received messages", "Empfangene Nachrichten", "Messaggi ricevuti"],
   noMessages: ["Aucun message reçu pour l’enfant ou le compte sélectionné.", "No messages for the selected child or account.", "Keine Nachrichten für das ausgewählte Kind oder Konto.", "Nessun messaggio per il figlio o l’account selezionato."],
   reportMessage: ["Signaler le message", "Report message", "Nachricht melden", "Segnala messaggio"],

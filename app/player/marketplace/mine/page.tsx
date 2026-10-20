@@ -180,7 +180,7 @@ export default function MarketplaceMine() {
                     </div>
                   </div>
                 </Link>
-                <MarketplaceReviewStatus status={it.moderation_status} note={it.moderation_note} />
+                <MarketplaceReviewStatus className={styles.mineReviewStatus} status={it.moderation_status} note={it.moderation_note} />
                 <div className={styles.mineFooter}>
                   <label className={`toggle ${it.is_active ? "on" : ""}`}>
                     <input type="checkbox" checked={it.is_active} onChange={() => void toggleActive(it)} disabled={busy} />
