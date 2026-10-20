@@ -10,6 +10,7 @@ import { List, Plus, SlidersHorizontal } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { loadPlayerMarketplace } from "@/lib/playerMarketplaceRead";
 import styles from "./Marketplace.module.css";
+import { marketplaceSafetyText } from "@/lib/marketplaceSafetyLabels";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { marketplaceConditionLabel } from "@/lib/marketplaceLabels";
@@ -245,6 +246,7 @@ export default function PlayerMarketplaceHome() {
             )}
           </div>
 
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 16 }}><Link href="/player/marketplace/messages">{marketplaceSafetyText(locale, "messages")}</Link><Link href="/player/marketplace/blocked">{marketplaceSafetyText(locale, "blockedUsers")}</Link><Link href="/legal/marketplace">{marketplaceSafetyText(locale, "rules")}</Link></div>
           {error && <div className="marketplace-error">{error}</div>}
         </div>
 

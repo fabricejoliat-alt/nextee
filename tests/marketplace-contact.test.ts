@@ -3,18 +3,26 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
 import ts from "typescript";
-import { marketplaceContactEmail } from "../lib/marketplaceContact.ts";
+import { marketplaceContactEmail, marketplaceContactTextAllowed } from "../lib/marketplaceContact.ts";
 
 const require = createRequire(import.meta.url);
-function setup(options: { club?: string; email?: string; active?: boolean; denied?: boolean; providerOk?: boolean } = {}) {
+function setup(options: { club?: string; email?: string; active?: boolean; denied?: boolean; providerOk?: boolean; blocked?: boolean; status?: string; recentCount?: number } = {}) {
   const sent: Record<string, unknown>[] = [];
   const source = readFileSync(new URL("../app/api/player/marketplace/[itemId]/contact/route.ts", import.meta.url), "utf8");
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   const compiled = { exports: {} as { POST: (req: Request, ctx: { params: Promise<{ itemId: string }> }) => Promise<Response> } };
   const mocks: Record<string, unknown> = {
-    "@/lib/marketplaceContact": { marketplaceContactEmail },
+    "@/lib/marketplaceContact": { marketplaceContactEmail, marketplaceContactTextAllowed },
+    "@/lib/server/marketplaceSafety": { marketplaceSafetyContext: async () => ({
+      visible: () => !options.blocked && (options.status ?? "approved") === "approved",
+    }) },
     "../../_lib": {
-      createAdminClient: () => ({ from: () => { const query = { select: () => query, eq: () => query, maybeSingle: async () => ({ data: { id: "listing", title: "Putter", club_id: options.club ?? "club-a", is_active: options.active ?? true, contact_email: options.email ?? "seller@example.com" }, error: null }) }; return query; } }),
+      createAdminClient: () => ({ rpc: async () => (options.recentCount ?? 0) >= 3 ? { data: null, error: { code: "P0001" } } : { data: "stored-message", error: null }, from: (table: string) => { const query = {
+        select: () => query, eq: () => query, gte: () => query, insert: () => query, update: () => query,
+        single: async () => ({ data: { id: "stored-message" }, error: null }),
+        then: (resolve: (value: unknown) => unknown) => Promise.resolve({ count: table === "marketplace_contact_messages" ? options.recentCount ?? 0 : 0, error: null }).then(resolve),
+        maybeSingle: async () => ({ data: { id: "listing", user_id: "seller", title: "Putter", club_id: options.club ?? "club-a", is_active: options.active ?? true, contact_email: options.email ?? "seller@example.com" }, error: null }),
+      }; return query; } }),
       resolveMarketplaceAccess: async () => options.denied ? { error: "Forbidden", status: 403 } : { clubIds: ["club-a"], viewerUserId: "viewer" },
     },
   };
@@ -36,6 +44,7 @@ test("contact sends only to the stored seller and honors the editable reply addr
   assert.deepEqual(sent[0].to, [{ email: "seller@example.com" }]);
   assert.deepEqual(sent[0].replyTo, { email: "alternate@example.com" });
   assert.deepEqual(sent[0].sender, { name: "ActiviTee", email: "sender@example.com" });
+  assert.match(String(sent[0].textContent), /marketplace\/messages\?message=stored-message/);
 });
 
 test("unauthorized accounts and other clubs cannot send a seller email", async () => {
@@ -71,8 +80,28 @@ test("provider failures are not reported as sent and repeated sends are limited"
   assert.equal(limited.sent.length, 3);
 });
 
+test("blocked sellers and pending or rejected listings cannot be contacted, including by direct URL", async () => {
+  for (const options of [{ blocked: true }, { status: "pending" }, { status: "rejected" }]) {
+    const { call, sent } = setup(options);
+    assert.equal((await call()).status, 409);
+    assert.equal(sent.length, 0);
+  }
+});
+
 test("real email defaults are preserved and technical or blank defaults are empty", () => {
   assert.equal(marketplaceContactEmail(" member.42@NOEMAIL.LOCAL "), "");
   assert.equal(marketplaceContactEmail(null), "");
   assert.equal(marketplaceContactEmail(" buyer@example.com "), "buyer@example.com");
+});
+
+
+test("unsafe message text is filtered before delivery and durable limits survive a fresh server", async () => {
+  const filtered = setup();
+  assert.equal((await filtered.call({ message: "Visit https://example.test for the payment" })).status, 400);
+  assert.equal(filtered.sent.length, 0);
+  const limited = setup({ recentCount: 3 });
+  assert.equal((await limited.call()).status, 429);
+  assert.equal(limited.sent.length, 0);
+  assert.equal(marketplaceContactTextAllowed("Le putter", "Bonjour, je souhaite acheter ce putter."), true);
+  assert.equal(marketplaceContactTextAllowed("Message", "Je vais te tuer demain"), false);
 });

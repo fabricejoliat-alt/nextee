@@ -1,0 +1,9 @@
+.panel { display: grid; gap: 12px; padding-top: 16px; border-top: 1px solid rgba(20,50,35,.14); color: #243e30; }
+.panel p { margin: 0; line-height: 1.55; font-size: 14px; }
+.actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.actions button { min-height: 44px; display: inline-flex; gap: 7px; align-items: center; }
+.form { display: grid; gap: 12px; padding: 16px; border-radius: 12px; background: #f1f6f2; }
+.form label { display: grid; gap: 7px; font-size: 14px; font-weight: 600; }
+.form textarea, .form select { width: 100%; background: white; color: #203a2c; padding: 10px; border: 1px solid #b8c8bd; border-radius: 8px; }
+.status { padding: 10px 12px; border-radius: 9px; background: #f5f1e5; color: #4c421c; font-size: 14px; line-height: 1.5; }
+.status p { margin: 4px 0; }

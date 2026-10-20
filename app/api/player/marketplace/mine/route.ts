@@ -18,7 +18,7 @@ export async function GET(req: NextRequest) {
     const itemsRes = access.clubIds.length
       ? await supabaseAdmin
           .from("marketplace_items")
-          .select("id,created_at,club_id,user_id,title,description,price,is_free,is_active,category,condition,brand,model,delivery")
+          .select("id,created_at,club_id,user_id,title,description,price,is_free,is_active,category,condition,brand,model,delivery,moderation_status,moderation_note")
           .in("club_id", access.clubIds)
           .eq("user_id", access.effectiveUserId)
           .order("created_at", { ascending: false })

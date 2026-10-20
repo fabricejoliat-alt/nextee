@@ -7,6 +7,8 @@ import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
+import MarketplaceReviewStatus from "@/components/player/MarketplaceReviewStatus";
+import MarketplaceSafetyActions from "@/components/player/MarketplaceSafetyActions";
 import MarketplaceContactForm from "@/components/player/MarketplaceContactForm";
 import styles from "../Marketplace.module.css";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -31,6 +33,8 @@ type Item = {
   contact_email: string | null;
   contact_phone: string | null;
   user_id: string;
+  moderation_status: string;
+  moderation_note: string | null;
 };
 
 function getIdFromPathname(pathname: string): string | null {
@@ -242,6 +246,7 @@ export default function MarketplaceDetailPage() {
         {/* Content */}
         <div className="glass-section">
           <div className="glass-card" style={{ display: "grid", gap: 12 }}>
+            {isMine && <MarketplaceReviewStatus status={item.moderation_status} note={item.moderation_note} />}
             {/* Main image (click to zoom) */}
             <button
               type="button"
@@ -345,7 +350,8 @@ export default function MarketplaceDetailPage() {
                 </div>
               </div>
             </div>
-            <MarketplaceContactForm key={item.id} itemId={item.id} title={item.title} recipient={item.contact_email} />
+            {!isMine && <MarketplaceContactForm key={item.id} itemId={item.id} title={item.title} recipient={item.contact_email} />}
+            {!isMine && <MarketplaceSafetyActions itemId={item.id} />}
           </div>
         </div>
 

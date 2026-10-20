@@ -12,6 +12,7 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
+import { marketplaceSafetyText } from "@/lib/marketplaceSafetyLabels";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { getRouteParam } from "@/lib/routeParams";
 import { MARKETPLACE_CONDITIONS, marketplaceConditionLabel } from "@/lib/marketplaceLabels";
@@ -528,6 +529,7 @@ export default function MarketplaceEditPage() {
                 }}
                 style={{ display: "grid", gap: 12 }}
               >
+                <p>{marketplaceSafetyText(locale, "reviewNotice")}</p>
                 {/* Titre */}
                 <label style={{ display: "grid", gap: 6 }}>
                   <span style={fieldLabelStyle}>Titre</span>

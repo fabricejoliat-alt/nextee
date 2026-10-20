@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient, resolveMarketplaceAccess } from "../_lib";
 
 import { signMarketplaceImagePaths } from "@/lib/marketplaceStorage";
+import { marketplaceSafetyContext } from "@/lib/server/marketplaceSafety";
 
 export async function GET(req: NextRequest, ctx: { params: Promise<{ itemId: string }> }) {
   try {
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ itemId: str
 
     const itemRes = await supabaseAdmin
       .from("marketplace_items")
-      .select("id,title,description,created_at,club_id,is_active,category,condition,brand,model,price,is_free,contact_email,contact_phone,user_id")
+      .select("id,title,description,created_at,club_id,is_active,category,condition,brand,model,price,is_free,contact_email,contact_phone,user_id,moderation_status,moderation_note")
       .eq("id", itemId)
       .maybeSingle();
     if (itemRes.error) return NextResponse.json({ error: itemRes.error.message }, { status: 400 });
@@ -28,8 +29,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ itemId: str
     const item = itemRes.data as { club_id: string | null; user_id: string | null };
     const clubId = String(item.club_id ?? "").trim();
     const ownerId = String(item.user_id ?? "").trim();
-    if (!clubId || (!access.clubIds.includes(clubId) && ownerId !== access.effectiveUserId)) {
+    if (!clubId || !access.clubIds.includes(clubId)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+    if (ownerId !== access.effectiveUserId) {
+      const safety = await marketplaceSafetyContext(supabaseAdmin, access);
+      if (!safety.visible(itemRes.data)) return NextResponse.json({ error: "Annonce indisponible." }, { status: 404 });
     }
 
     const imgRes = await supabaseAdmin

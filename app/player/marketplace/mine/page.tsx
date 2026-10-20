@@ -10,11 +10,14 @@ import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import styles from "../Marketplace.module.css";
 import playerUi from "@/components/player/PlayerUI.module.css";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
+import MarketplaceReviewStatus from "@/components/player/MarketplaceReviewStatus";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { marketplaceConditionLabel } from "@/lib/marketplaceLabels";
 import type { AppLocale } from "@/lib/i18n/messages";
 
 type Item = {
+  moderation_status: string;
+  moderation_note: string | null;
   id: string;
   created_at: string;
   club_id: string;
@@ -177,6 +180,7 @@ export default function MarketplaceMine() {
                     </div>
                   </div>
                 </Link>
+                <MarketplaceReviewStatus status={it.moderation_status} note={it.moderation_note} />
                 <div className={styles.mineFooter}>
                   <label className={`toggle ${it.is_active ? "on" : ""}`}>
                     <input type="checkbox" checked={it.is_active} onChange={() => void toggleActive(it)} disabled={busy} />

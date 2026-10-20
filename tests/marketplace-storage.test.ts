@@ -23,7 +23,7 @@ test("signed images cannot target another listing, owner or private document pat
   assert.equal(isMarketplaceImagePath("owner/item/..", "owner", "item"), false);
 });
 
-function setup(options: { owner?: string; club?: string; path?: string; denied?: boolean; insertFails?: boolean } = {}) {
+function setup(options: { owner?: string; club?: string; path?: string; denied?: boolean; insertFails?: boolean; suspended?: boolean } = {}) {
   const uploads: unknown[] = []; const removals: string[][] = []; const inserts: Record<string, unknown>[] = [];
   let removedRow = false;
   const db = {
@@ -49,6 +49,7 @@ function setup(options: { owner?: string; club?: string; path?: string; denied?:
     "../../_lib": { createAdminClient: () => db, resolveMarketplaceAccess: async () => options.denied ? { error: "Forbidden", status: 403 } : { effectiveUserId: "owner", clubIds: ["club"] } },
     "@/lib/marketplaceStorage": { MARKETPLACE_BUCKET: "marketplace", MARKETPLACE_IMAGE_MAX_BYTES: 5242880, isMarketplaceImagePath, signMarketplaceImagePaths },
     "@/lib/playerDocumentPolicy": { normalizePlayerDocumentMimeType, playerDocumentSignatureMatches },
+    "@/lib/server/marketplaceSafety": { marketplaceSafetyContext: async () => ({ canPublish: () => !options.suspended }) },
   };
   const code = ts.transpileModule(readFileSync(new URL("../app/api/player/marketplace/[itemId]/images/route.ts", import.meta.url), "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
   type Handler = (req: Request, ctx: { params: Promise<{ itemId: string }> }) => Promise<Response>;
@@ -86,6 +87,12 @@ test("spoofed files are rejected and failed image inserts clean up their own upl
   assert.equal(invalid.uploads.length, 0);
   const failed = setup({ insertFails: true }); assert.equal((await failed.upload()).status, 400);
   assert.equal(failed.removals.length, 1);
+});
+
+test("suspended sellers cannot upload new images", async () => {
+  const result = setup({ suspended: true });
+  assert.equal((await result.upload()).status, 403);
+  assert.equal(result.uploads.length, 0);
 });
 
 test("image deletion uses the stored path and rejects cross-listing paths", async () => {

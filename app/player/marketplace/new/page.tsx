@@ -10,6 +10,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { optimizeUploadFile } from "@/lib/clientUploadFiles";
+import { marketplaceSafetyText } from "@/lib/marketplaceSafetyLabels";
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import { MARKETPLACE_CONDITIONS, marketplaceConditionLabel } from "@/lib/marketplaceLabels";
 
@@ -292,6 +293,7 @@ export default function MarketplaceNew() {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
+        rules_accepted: confirmOk,
         child_id: ctx.role === "parent" ? userId : null,
         club_id: clubId,
         title: title.trim(),
@@ -344,7 +346,7 @@ export default function MarketplaceNew() {
       }
     }
 
-    router.push("/player/marketplace");
+    router.push("/player/marketplace/mine");
   }
 
   return (
@@ -651,6 +653,8 @@ export default function MarketplaceNew() {
                 </div>
 
                 <div className="hr-soft" />
+                <p>{marketplaceSafetyText(locale, "reviewNotice")}</p>
+                <Link href="/legal/marketplace">{marketplaceSafetyText(locale, "rules")}</Link>
 
                 <label style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
                   <input
@@ -661,7 +665,7 @@ export default function MarketplaceNew() {
                     style={{ marginTop: 3 }}
                   />
                   <span style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.70)", lineHeight: 1.25 }}>
-                    Je confirme que l’article est conforme et que mes informations de contact sont correctes.
+                    {marketplaceSafetyText(locale, "rulesAccept")}
                   </span>
                 </label>
 

@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient, resolveMarketplaceAccess, uniq } from "./_lib";
 
 import { signMarketplaceImagePaths } from "@/lib/marketplaceStorage";
+import { marketplaceSafetyContext } from "@/lib/server/marketplaceSafety";
 
 type ProfileRow = { id: string | null; first_name: string | null; last_name: string | null };
 type ImageRow = { item_id: string | null; path: string | null; sort_order: number | null };
@@ -34,14 +35,16 @@ export async function GET(req: NextRequest) {
 
     const itemsRes = await supabaseAdmin
       .from("marketplace_items")
-      .select("id,created_at,club_id,user_id,title,description,price,is_free,is_active,category,condition,brand,model,delivery")
+      .select("id,created_at,club_id,user_id,title,description,price,is_free,is_active,category,condition,brand,model,delivery,moderation_status")
       .in("club_id", access.clubIds)
       .eq("is_active", true)
+      .eq("moderation_status", "approved")
       .order("created_at", { ascending: false });
     mark("items");
     if (itemsRes.error) return respond({ error: itemsRes.error.message }, { status: 400 });
 
-    const items = itemsRes.data ?? [];
+    const safety = await marketplaceSafetyContext(supabaseAdmin, access);
+    const items = (itemsRes.data ?? []).filter(item => safety.visible(item));
     const authorIds = uniq((items as Array<{ user_id?: string | null }>).map((row) => row.user_id));
     const itemIds = uniq((items as Array<{ id?: string | null }>).map((row) => row.id));
 
@@ -107,6 +110,9 @@ export async function POST(req: NextRequest) {
     if (!clubId || !access.clubIds.includes(clubId)) {
       return NextResponse.json({ error: "Invalid club_id" }, { status: 400 });
     }
+    const safety = await marketplaceSafetyContext(supabaseAdmin, access);
+    if (!safety.canPublish(clubId)) return NextResponse.json({ error: "Publication suspendue dans la Marketplace de ce club." }, { status: 403 });
+    if (body.rules_accepted !== true) return NextResponse.json({ error: "Acceptez les règles de la Marketplace." }, { status: 400 });
 
     const title = String(body?.title ?? "").trim();
     const category = String(body?.category ?? "").trim();
@@ -117,7 +123,8 @@ export async function POST(req: NextRequest) {
     const rawPrice = body?.price;
     const price = isFree || rawPrice == null || rawPrice === "" ? null : Number(rawPrice);
 
-    if (title.length < 3) return NextResponse.json({ error: "Titre invalide." }, { status: 400 });
+    if (title.length < 3 || title.length > 160 || String(body.description ?? "").length > 4000
+      || String(body.brand ?? "").length > 100 || String(body.model ?? "").length > 100) return NextResponse.json({ error: "Texte de l’annonce trop long ou titre invalide." }, { status: 400 });
     if (!category) return NextResponse.json({ error: "Catégorie manquante." }, { status: 400 });
     if (!condition) return NextResponse.json({ error: "État manquant." }, { status: 400 });
     if (!contactEmail) return NextResponse.json({ error: "E-mail de contact manquant." }, { status: 400 });

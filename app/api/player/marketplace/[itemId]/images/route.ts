@@ -3,6 +3,7 @@ import { createAdminClient, resolveMarketplaceAccess } from "../../_lib";
 
 import { MARKETPLACE_BUCKET as BUCKET, MARKETPLACE_IMAGE_MAX_BYTES, isMarketplaceImagePath, signMarketplaceImagePaths } from "@/lib/marketplaceStorage";
 import { normalizePlayerDocumentMimeType, playerDocumentSignatureMatches } from "@/lib/playerDocumentPolicy";
+import { marketplaceSafetyContext } from "@/lib/server/marketplaceSafety";
 
 function safeExtFromFileName(name: string) {
   const ext = (String(name ?? "").split(".").pop() || "jpg").toLowerCase();
@@ -43,6 +44,8 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ itemId: st
     if (ownerId !== access.effectiveUserId || !clubId || !access.clubIds.includes(clubId)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    const safety = await marketplaceSafetyContext(supabaseAdmin, access);
+    if (!safety.canPublish(clubId)) return NextResponse.json({ error: "Publication suspendue." }, { status: 403 });
 
     const mimeType = normalizePlayerDocumentMimeType(file.type, file.name);
     if (!["image/jpeg", "image/png", "image/webp"].includes(mimeType) || file.size <= 0 || file.size > MARKETPLACE_IMAGE_MAX_BYTES) {

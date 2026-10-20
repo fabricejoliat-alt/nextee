@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "test:marketplace": "node --experimental-strip-types --test tests/marketplace-contact.test.ts tests/marketplace-storage.test.ts tests/player-marketplace-read.test.mjs tests/marketplace-safety.test.ts tests/marketplace-moderation-sql.test.mjs",
     "test:account-deletion": "node --experimental-strip-types --test tests/account-deletion.test.ts tests/account-deletion-sql.test.mjs tests/account-deletion-ui.test.ts",
     "dev": "next dev",
     "build": "next build --webpack",

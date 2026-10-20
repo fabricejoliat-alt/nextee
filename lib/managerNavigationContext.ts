@@ -16,6 +16,7 @@ const CLUB_SCOPED_ROUTES = new Set([
   "/manager/performance/coaches",
   "/manager/om",
   "/manager/news",
+  "/manager/marketplace",
 ]);
 
 export function managerScopedHref(href: string, clubId: string) {

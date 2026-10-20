@@ -20,6 +20,7 @@ const ROUTES = {
   userManagementSeasons: "/manager/user-management/seasons",
   userManagementEmailConfiguration: "/manager/user-management/email-configuration",
   news: "/manager/news",
+  marketplace: "/manager/marketplace",
   notifications: "/manager/notifications",
   groups: "/manager/groups",
   groupsNew: "/manager/groups/new",
@@ -168,6 +169,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
           { label: t("manager.nav.activities"), icon: CalendarDays, href: ROUTES.events },
           { label: t("manager.nav.camps"), icon: Tent, href: ROUTES.camps },
           { label: t("manager.nav.news"), icon: Newspaper, href: ROUTES.news },
+          { label: t("nav.marketplace"), icon: ShieldCheck, href: ROUTES.marketplace },
         ],
       },
       {

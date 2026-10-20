@@ -17,6 +17,7 @@ const ROUTES = {
   rules: "/admin/rules",
   etiquette: "/admin/etiquette",
   news: "/admin/news",
+  marketplace: "/admin/marketplace",
   legal: "/admin/legal",
   contact: "/admin/settings/contact",
 } as const;
@@ -78,6 +79,7 @@ export default function AdminDesktopDrawer({ open, onClose }: Props) {
       { label: "Managers", icon: Users, href: ROUTES.users },
       { label: "Organisations", icon: Building2, href: ROUTES.organizations },
       { label: "Actualités ActiviTee", icon: Newspaper, href: ROUTES.news },
+      { label: "Modération Marketplace", icon: ClipboardCheck, href: ROUTES.marketplace },
       { label: "Traductions", icon: Languages, href: ROUTES.translations },
       { label: "Documents juridiques", icon: FileText, href: ROUTES.legal },
       { label: "Contact", icon: Mail, href: ROUTES.contact },

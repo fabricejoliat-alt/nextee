@@ -9,6 +9,7 @@ import { managerActivityLabel, managerCount, managerFormat, managerLocaleTag } f
 import { readClientPageCache, writeClientPageCache } from "@/lib/clientPageCache";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
 import styles from "@/components/admin/AdminHomeStats.module.css";
+import MarketplaceModerationAlert from "@/components/marketplace/MarketplaceModerationAlert";
 
 type EventLite = {
   id: string;
@@ -245,6 +246,7 @@ export default function ManagerHomePage() {
 
   return (
     <div className={styles.page}>
+      <MarketplaceModerationAlert role="manager" />
       <nav aria-label={t("common.breadcrumb")} style={{ display: "flex", alignItems: "center", minHeight: 22, color: "#35483b", fontSize: 11, fontWeight: 700 }}>
         {t("manager.home.workspace")}
       </nav>
