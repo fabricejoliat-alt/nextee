@@ -1,13 +1,34 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { PushNotifications } from "@capacitor/push-notifications";
 import { supabase } from "@/lib/supabaseClient";
+import { loadNotificationBadgeCounts } from "@/lib/notificationBadgeCounts";
 
 type Context = { environment: "sandbox" | "production"; bundleId: string };
 type Device = Context & { token: string };
-const contextPlugin = registerPlugin<{ getContext(): Promise<Context> }>("NativePushContext");
+const contextPlugin = registerPlugin<{ getContext(): Promise<Context>; setBadgeCount(options: { count: number }): Promise<void> }>("NativePushContext");
 let device: Device | null = null;
 let pending: Promise<{ ok: boolean; reason?: string }> | null = null;
 let generation = 0;
+let badgeRevision = 0;
+let badgeWrite = Promise.resolve();
+
+function setNativeBadge(count: number) {
+  // Serialize native writes so signing out cannot be overtaken by an old count.
+  badgeWrite = badgeWrite.catch(() => {}).then(() => contextPlugin.setBadgeCount({ count }));
+  return badgeWrite;
+}
+
+export async function syncNativeBadge() {
+  if (!supportsNativePush()) return;
+  const revision = ++badgeRevision;
+  const auth = await authorization();
+  const counts = auth ? await loadNotificationBadgeCounts(supabase, [auth.userId]) : null;
+  const latest = await authorization();
+  if (revision !== badgeRevision || latest?.userId !== auth?.userId) return;
+  const count = auth ? counts?.get(auth.userId) : 0;
+  // Do not turn a failed/missing count into a false "all read" state.
+  if (count !== undefined) await setNativeBadge(count);
+}
 
 export function supportsNativePush() {
   return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios" &&
@@ -102,8 +123,10 @@ export async function disableNativePush() {
 
 export async function clearNativePushSession() {
   generation++;
+  badgeRevision++;
   device = null;
   if (!supportsNativePush()) return;
+  await setNativeBadge(0).catch(() => {}); // Older binaries do not expose this method.
   await pending;
   // Server registrations also cascade with auth.sessions on sign-out.
   await PushNotifications.unregister();

@@ -65,6 +65,23 @@ test("native delivery works without VAPID and honors account, category and devic
   assert.equal(result.sent, 1); assert.equal(sent[0].p.recipientUserId, "on"); assert.equal(sent[0].p.url, "/");
 });
 
+test("each native recipient gets their own global unread count, including zero, rather than the thread count", async () => {
+  const { db } = managerDatabase({
+    user_notification_preferences: ["a", "b"].map(user_id => ({ user_id, receive_push: true })),
+    native_push_subscriptions: ["a", "b", "a"].map((user_id, id) => ({ id, user_id, device_token: token, environment: "production", bundle_id: device.bundleId })),
+  });
+  let reads = 0;
+  const sent: any[] = [];
+  const sender = loadManagerModule<any>("lib/server/webPush.ts", {
+    "@/lib/notificationBadgeCounts": { loadNotificationBadgeCounts: async () => { reads++; return new Map([["a", 7], ["b", 0]]); } },
+    "@/lib/server/apns": { apnsConfigured: () => true, openApnsConnection: () => ({ close() {} }), apnsPayload: (v: any) => v,
+      sendApns: async (_: any, _d: any, p: any) => { sent.push(p); return { sent: true }; } },
+  });
+  await sender.sendWebPush(db, { recipientUserIds: ["a", "b"], kind: "marketplace_message", title: "Message", badgeCount: 99 });
+  assert.equal(reads, 1);
+  assert.deepEqual(sent.map(p => [p.recipientUserId, p.badgeCount]), [["a", 7], ["b", 0], ["a", 7]]);
+});
+
 const sessionId = "11111111-1111-4111-8111-111111111111";
 const jwt = `header.${Buffer.from(JSON.stringify({ session_id: sessionId })).toString("base64url")}.signature`;
 test("native API binds devices to the authenticated user and session, and cannot delete another user's device", async () => {
@@ -78,13 +95,14 @@ test("native API binds devices to the authenticated user and session, and cannot
   assert.equal(writes[1].rows.length, 0);
 });
 
-function nativeFixture(t: any, options: { configured?: boolean; permission?: string; rejectRegistration?: boolean; failPost?: boolean } = {}) {
+function nativeFixture(t: any, options: { configured?: boolean; permission?: string; rejectRegistration?: boolean; failPost?: boolean; badgeCounts?: () => Promise<Map<string, number>> } = {}) {
   const oldDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
   Object.defineProperty(globalThis, "document", { configurable: true, value: { documentElement: { lang: "fr" } } });
   t.after(() => oldDocument ? Object.defineProperty(globalThis, "document", oldDocument) : Reflect.deleteProperty(globalThis, "document"));
   const events = new Map<string, (...args: any[]) => void>();
   const calls: string[] = [];
   let permission = options.permission ?? "prompt";
+  let userId: string | null = "player";
   const push = {
     checkPermissions: async () => ({ receive: permission }),
     requestPermissions: async () => { calls.push("permission"); permission = "granted"; return { receive: permission }; },
@@ -93,13 +111,37 @@ function nativeFixture(t: any, options: { configured?: boolean; permission?: str
     unregister: async () => { calls.push("unregister"); }, removeAllDeliveredNotifications: async () => {},
   };
   const mod = loadManagerModule<any>("lib/nativePush.ts", {
-    "@capacitor/core": { Capacitor: { isNativePlatform: () => true, getPlatform: () => "ios", isPluginAvailable: () => true }, registerPlugin: () => ({ getContext: async () => ({ environment: "sandbox", bundleId: device.bundleId }) }) },
+    "@capacitor/core": { Capacitor: { isNativePlatform: () => true, getPlatform: () => "ios", isPluginAvailable: () => true }, registerPlugin: () => ({ getContext: async () => ({ environment: "sandbox", bundleId: device.bundleId }), setBadgeCount: async ({ count }: any) => { calls.push(`badge:${count}`); } }) },
     "@capacitor/push-notifications": { PushNotifications: push },
-    "@/lib/supabaseClient": { supabase: { auth: { getSession: async () => ({ data: { session: { access_token: jwt, user: { id: "player" } } } }) } } },
+    "@/lib/supabaseClient": { supabase: { auth: { getSession: async () => ({ data: { session: userId ? { access_token: jwt, user: { id: userId } } : null } }) } } },
+    "@/lib/notificationBadgeCounts": { loadNotificationBadgeCounts: options.badgeCounts ?? (async () => new Map([["player", 3]])) },
     fetch: async (_: string, init: any) => { calls.push(init?.method ?? "GET"); return Response.json(init?.method ? { ok: !options.failPost } : { configured: options.configured !== false }, { status: init?.method === "POST" && options.failPost ? 503 : 200 }); },
   });
-  return { ...mod, calls, events };
+  return { ...mod, calls, events, setUser: (id: string | null) => { userId = id; } };
 }
+
+test("native badge synchronizes unread and all-read states without asking for permission", async t => {
+  let count = 3;
+  const f = nativeFixture(t, { badgeCounts: async () => new Map([["player", count]]) });
+  await f.syncNativeBadge(); count = 0; await f.syncNativeBadge();
+  assert.deepEqual(f.calls, ["badge:3", "badge:0"]);
+});
+
+test("logout clears the native badge and discards counts from the previous account", async t => {
+  let resolve!: (counts: Map<string, number>) => void;
+  let started!: () => void;
+  const ready = new Promise<void>(r => { started = r; });
+  const f = nativeFixture(t, { badgeCounts: () => { started(); return new Promise(r => { resolve = r; }); } });
+  const pending = f.syncNativeBadge(); await ready;
+  f.setUser(null); await f.clearNativePushSession(); resolve(new Map([["player", 12]])); await pending;
+  assert.deepEqual(f.calls.filter((c: string) => c.startsWith("badge:")), ["badge:0"]);
+});
+
+test("a failed badge count does not erase an unread badge", async t => {
+  const f = nativeFixture(t, { badgeCounts: async () => { throw new Error("offline"); } });
+  await assert.rejects(f.syncNativeBadge(), /offline/);
+  assert(!f.calls.some((c: string) => c.startsWith("badge:")));
+});
 
 test("native activation prompts only on a tap, waits for APNs and removes registration listeners", async t => {
   const f = nativeFixture(t);

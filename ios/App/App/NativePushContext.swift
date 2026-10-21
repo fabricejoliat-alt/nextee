@@ -1,5 +1,6 @@
 import Foundation
 import Capacitor
+import UserNotifications
 
 /// Read the signed provisioning profile, not Debug/Release: an exported archive
 /// can have a different APNs environment from the build configuration.
@@ -7,7 +8,24 @@ import Capacitor
 public class NativePushContextPlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "NativePushContextPlugin"
     public let jsName = "NativePushContext"
-    public let pluginMethods: [CAPPluginMethod] = [CAPPluginMethod(name: "getContext", returnType: CAPPluginReturnPromise)]
+    public let pluginMethods: [CAPPluginMethod] = [
+        CAPPluginMethod(name: "getContext", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setBadgeCount", returnType: CAPPluginReturnPromise)
+    ]
+
+    @objc func setBadgeCount(_ call: CAPPluginCall) {
+        guard let count = call.getInt("count"), count >= 0 else {
+            call.reject("Invalid notification badge count")
+            return
+        }
+        UNUserNotificationCenter.current().setBadgeCount(count) { error in
+            if let error {
+                call.reject("Unable to update notification badge", nil, error)
+            } else {
+                call.resolve()
+            }
+        }
+    }
 
     @objc func getContext(_ call: CAPPluginCall) {
         #if targetEnvironment(simulator)

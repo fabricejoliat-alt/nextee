@@ -6,6 +6,7 @@ La PWA conserve Web Push/VAPID. Capacitor utilise le module officiel
 ## Déploiement
 
 1. Appliquer `supabase/migrations/20261207_native_push.sql` au projet concerné.
+   Appliquer aussi `20261209_notification_badge_counts.sql` pour le compteur de l’icône.
 2. Activer Push Notifications pour l’identifiant Apple `golf.activitee.app`.
 3. Créer deux clés APNs **Topic Specific**, limitées à cet identifiant : Sandbox
    pour les installations Xcode, Production pour TestFlight/App Store.
@@ -41,6 +42,18 @@ développement lors de l’export en distribution.
 - Tester le refus dans Réglages iOS, la désactivation dans ActiviTee, la
   reconnexion, puis le changement de compte.
 - Vérifier séparément une installation TestFlight et une PWA existante.
+- Vérifier la pastille de l’icône après une notification en arrière-plan, puis
+  après lecture/suppression, changement de préférences et déconnexion. Les
+  « Pastilles » doivent être autorisées dans les réglages de notifications iOS.
+
+La pastille native utilise le total des notifications non lues du compte,
+toutes sections confondues (y compris les conversations). Le même calcul SQL
+est utilisé à l’envoi APNs et au retour dans l’app : notifications supprimées,
+catégories désactivées et organisations devenues inaccessibles sont exclues.
+Désactiver la réception push ou dans l’app remet ce compteur à zéro. La lecture
+depuis un autre appareil est resynchronisée au prochain retour dans l’app ou au
+prochain push. Le build iOS 2 ajoute la mise à jour native après lecture ; le
+build 1 peut déjà recevoir le compteur inclus dans les nouveaux pushes.
 
 Les préférences `receive_in_app`, `receive_push` et `enabled_kinds` sont communes
 aux deux transports. Les tokens sont privés (API authentifiée, table inaccessible

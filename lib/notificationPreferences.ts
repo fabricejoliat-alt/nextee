@@ -83,5 +83,6 @@ export async function upsertMyNotificationPreferences(
     throw new Error(up.error.message);
   }
 
+  if (typeof window !== "undefined") window.dispatchEvent(new Event("notifications:badge-refresh"));
   return next;
 }

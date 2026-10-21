@@ -2,6 +2,7 @@ import { serverNotificationMessage, type NotificationTemplateInput } from "@/lib
 import type { NotificationLocale } from "@/lib/notificationCatalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import webpush from "web-push";
+import { loadNotificationBadgeCounts } from "@/lib/notificationBadgeCounts";
 import { apnsConfigured, apnsPayload, openApnsConnection, sendApns, type NativePushDevice } from "@/lib/server/apns";
 
 export function webPushConfigured() {
@@ -83,6 +84,10 @@ export async function sendWebPush(db: SupabaseClient, input: {
       .eq("environment", input.nativeDevice.environment).eq("bundle_id", input.nativeDevice.bundleId);
     const devices = await nativeQuery;
     if (devices.error) throw new Error("Native push subscriptions unavailable");
+    // Count per account, not per message/thread or once for every recipient.
+    // A counter outage must not prevent the notification itself from arriving.
+    const badgeCounts = await loadNotificationBadgeCounts(db, (devices.data ?? []).map(row => row.user_id))
+      .catch(() => { console.warn("Notification badge count unavailable"); return new Map<string, number>(); });
     for (const environment of ["sandbox", "production"] as const) {
       const rows = (devices.data ?? []).filter(row => row.environment === environment);
       if (!rows.length) continue;
@@ -99,7 +104,7 @@ export async function sendWebPush(db: SupabaseClient, input: {
                 ? await serverNotificationMessage(db, input.templateKey, locale, input.templateParamsByLocale?.[locale] ?? input.templateParams ?? {})
                 : { title: input.title, body: input.body ?? "" };
               const delivery = await sendApns(client, { token: row.device_token, environment, bundleId: row.bundle_id },
-                apnsPayload({ ...message, url: notificationPath(input.url), recipientUserId: row.user_id, badgeCount: input.badgeCount }));
+                apnsPayload({ ...message, url: notificationPath(input.url), recipientUserId: row.user_id, badgeCount: badgeCounts.get(row.user_id) }));
               if (delivery.sent) result.sent++; else result.failed++;
               if (delivery.stale) {
                 // Do not delete a token that was refreshed while the provider answered.

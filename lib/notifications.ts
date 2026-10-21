@@ -2,6 +2,7 @@ import { getNotificationMessage } from "@/lib/notificationMessages";
 import { notificationKindsForRole, type NotificationRole, type NotificationLocale, type NotificationParams } from "@/lib/notificationCatalog";
 import { supabase } from "@/lib/supabaseClient";
 import { dispatchPush } from "@/lib/pushClient";
+import { supportsNativePush } from "@/lib/nativePush";
 import {
   isKindEnabled,
   loadMyNotificationPreferences,
@@ -297,6 +298,11 @@ export async function deleteNotificationRecipient(recipientId: number) {
 
 export function applyPwaBadge(unreadCount: number) {
   if (typeof window === "undefined") return;
+  if (supportsNativePush()) {
+    // Section counts can omit chat or other roles. The app icon uses the account total.
+    window.dispatchEvent(new Event("notifications:badge-refresh"));
+    return;
+  }
   const nav = navigator as Navigator & {
     setAppBadge?: (count?: number) => Promise<void>;
     clearAppBadge?: () => Promise<void>;
