@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { BellRing } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { loadMyNotificationPreferences } from "@/lib/notificationPreferences";
-import { ensurePushSubscription, hasLocalPushSubscription, supportsWebPush, pushFailureMessage } from "@/lib/pushClient";
+import { ensurePushSubscription, hasLocalPushSubscription, supportsPush, pushFailureMessage, pushPermission, isNativeApp } from "@/lib/pushClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 
 type Props = {
@@ -43,7 +43,7 @@ export default function PushActivationBanner({ settingsHref }: Props) {
       window.matchMedia?.("(display-mode: fullscreen)").matches ||
       Boolean((navigator as Navigator & { standalone?: boolean }).standalone));
   const isSettingsPage = pathname === settingsHref;
-  const shouldHideOnIOSBrowser = isIOS && !isStandalone;
+  const shouldHideOnIOSBrowser = isIOS && !isStandalone && !isNativeApp();
 
   useEffect(() => {
     if (isSettingsPage) setVisible(false);
@@ -65,13 +65,13 @@ export default function PushActivationBanner({ settingsHref }: Props) {
           return;
         }
 
-        if (!supportsWebPush()) {
+        if (!supportsPush()) {
           setUnsupported(true);
           setVisible(true);
           return;
         }
 
-        const permission = typeof Notification !== "undefined" ? Notification.permission : "default";
+        const permission = await pushPermission();
         setDenied(permission === "denied");
 
         const hasSubscription = await hasLocalPushSubscription().catch(() => false);
@@ -149,7 +149,9 @@ export default function PushActivationBanner({ settingsHref }: Props) {
             {tr("Activer les notifications push", "Enable push notifications")}
           </div>
           <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(0,0,0,0.70)", lineHeight: 1.5 }}>
-            {unsupported
+            {unsupported && isNativeApp()
+              ? t("notifications.settings.nativePush")
+              : unsupported
               ? tr(
                   isIOS
                     ? "Les notifications push ne sont pas encore actives sur cet appareil. Sur iPhone/iPad, utilise de préférence ActiviTee depuis l’app installée sur l’écran d’accueil, puis vérifie les autorisations de notifications."

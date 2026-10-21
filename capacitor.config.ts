@@ -4,6 +4,9 @@ const config: CapacitorConfig = {
   appId: 'golf.activitee.app',
   appName: 'ActiviTee',
   webDir: 'public',
+  plugins: {
+    PushNotifications: { presentationOptions: ['badge', 'sound', 'banner', 'list'] },
+  },
 
   server: {
     url: 'https://activitee.app',

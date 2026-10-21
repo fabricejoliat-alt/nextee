@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabaseClient";
+import { supportsNativePush, ensureNativePush, hasNativePush, disableNativePush, testNativePush, nativePushPermission } from "@/lib/nativePush";
 
 function base64UrlToUint8Array(base64Url: string) {
   const padding = "=".repeat((4 - (base64Url.length % 4)) % 4);
@@ -21,10 +22,20 @@ export function supportsWebPush() {
   return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
 }
 
+export function supportsPush() {
+  return isNativeApp() ? supportsNativePush() : supportsWebPush();
+}
+
+export async function pushPermission() {
+  if (supportsNativePush()) return nativePushPermission();
+  return typeof Notification !== "undefined" ? Notification.permission : "default";
+}
+
 export function pushFailureMessage(reason: string) {
   return ({ denied: "notifications.settings.pushDenied", not_granted: "notifications.settings.pushNotGranted",
     missing_vapid: "notifications.settings.pushNotConfigured", worker_error: "notifications.settings.pushWorkerError",
     native: "notifications.settings.nativePush", unsupported: "notifications.settings.unsupported",
+    missing_apns: "notifications.settings.pushNotConfigured", native_registration: "notifications.settings.nativePushError",
     no_session: "notifications.settings.pushSessionExpired" } as Record<string, string>)[reason] ?? "notifications.settings.pushError";
 }
 
@@ -43,6 +54,7 @@ async function activePushWorker() {
 }
 
 export async function hasLocalPushSubscription() {
+  if (isNativeApp()) return hasNativePush();
   if (!supportsWebPush()) return false;
   const reg = await activePushWorker();
   const sub = await reg.pushManager.getSubscription();
@@ -50,7 +62,7 @@ export async function hasLocalPushSubscription() {
 }
 
 export async function ensurePushSubscription(options?: { prompt?: boolean }) {
-  if (isNativeApp()) return { ok: false as const, reason: "native" as const };
+  if (isNativeApp()) return ensureNativePush(options);
   if (!supportsWebPush()) return { ok: false as const, reason: "unsupported" as const };
   if (typeof Notification === "undefined") return { ok: false as const, reason: "unsupported" as const };
 
@@ -94,6 +106,7 @@ export async function ensurePushSubscription(options?: { prompt?: boolean }) {
 }
 
 export async function disablePushSubscription() {
+  if (isNativeApp()) return disableNativePush();
   if (!supportsWebPush()) return { ok: true as const };
 
   const reg = await navigator.serviceWorker.getRegistration("/");
@@ -137,6 +150,7 @@ export async function dispatchPush(payload: {
 }
 
 export async function testPushSubscription(locale: string) {
+  if (isNativeApp()) return testNativePush(locale);
   if (!supportsWebPush()) return { ok: false };
   const reg = await navigator.serviceWorker.getRegistration("/");
   const sub = await reg?.pushManager.getSubscription();

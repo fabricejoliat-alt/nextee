@@ -2,6 +2,7 @@ import { serverNotificationMessage, type NotificationTemplateInput } from "@/lib
 import type { NotificationLocale } from "@/lib/notificationCatalog";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import webpush from "web-push";
+import { apnsConfigured, apnsPayload, openApnsConnection, sendApns, type NativePushDevice } from "@/lib/server/apns";
 
 export function webPushConfigured() {
   return Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
@@ -31,8 +32,11 @@ export function notificationPath(value: unknown) {
 export async function sendWebPush(db: SupabaseClient, input: {
   recipientUserIds: string[]; kind: string; title: string; body?: string | null; url?: string;
   endpoint?: string; badgeCount?: number; test?: boolean;
+  nativeDevice?: NativePushDevice;
 } & NotificationTemplateInput) {
-  const result = { configured: webPushConfigured(), attempted: 0, sent: 0, failed: 0, cleaned: 0 };
+  const webEnabled = webPushConfigured() && !input.nativeDevice;
+  const nativeEnabled = apnsConfigured(input.nativeDevice?.environment) && !input.endpoint;
+  const result = { configured: webEnabled || nativeEnabled, attempted: 0, sent: 0, failed: 0, cleaned: 0 };
   if (!result.configured || !input.recipientUserIds.length) return result;
   const preferences = await db.from("user_notification_preferences").select("user_id,receive_in_app,receive_push,enabled_kinds")
     .in("user_id", [...new Set(input.recipientUserIds)]);
@@ -42,9 +46,9 @@ export async function sendWebPush(db: SupabaseClient, input: {
   if (!allowed.length) return result;
   let query = db.from("push_subscriptions").select("id,user_id,endpoint,p256dh,auth,locale").in("user_id", allowed);
   if (input.endpoint) query = query.eq("endpoint", input.endpoint);
-  const subscriptions = await query;
+  const subscriptions = webEnabled ? await query : { data: [], error: null };
   if (subscriptions.error) throw new Error("Push subscriptions unavailable");
-  webpush.setVapidDetails(process.env.VAPID_SUBJECT || "mailto:contact@activitee.app",
+  if (webEnabled) webpush.setVapidDetails(process.env.VAPID_SUBJECT || "mailto:contact@activitee.app",
     process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!, process.env.VAPID_PRIVATE_KEY!);
   const localized = new Map<string, { title: string; body: string }>();
   if (input.templateKey) {
@@ -72,6 +76,41 @@ export async function sendWebPush(db: SupabaseClient, input: {
   if (stale.length) {
     const deleted = await db.from("push_subscriptions").delete().in("id", stale);
     if (!deleted.error) result.cleaned = stale.length;
+  }
+  if (nativeEnabled) {
+    let nativeQuery = db.from("native_push_subscriptions").select("id,user_id,device_token,environment,bundle_id,locale,updated_at").in("user_id", allowed);
+    if (input.nativeDevice) nativeQuery = nativeQuery.eq("device_token", input.nativeDevice.token.toLowerCase())
+      .eq("environment", input.nativeDevice.environment).eq("bundle_id", input.nativeDevice.bundleId);
+    const devices = await nativeQuery;
+    if (devices.error) throw new Error("Native push subscriptions unavailable");
+    for (const environment of ["sandbox", "production"] as const) {
+      const rows = (devices.data ?? []).filter(row => row.environment === environment);
+      if (!rows.length) continue;
+      if (!apnsConfigured(environment)) { result.failed += rows.length; continue; }
+      const client = openApnsConnection(environment);
+      try {
+        // Keep each connection's number of concurrent streams bounded.
+        for (let offset = 0; offset < rows.length; offset += 20) {
+          await Promise.all(rows.slice(offset, offset + 20).map(async row => {
+            result.attempted++;
+            try {
+              const locale = (["fr", "en", "de", "it"].includes(row.locale) ? row.locale : "fr") as NotificationLocale;
+              const message = input.templateKey
+                ? await serverNotificationMessage(db, input.templateKey, locale, input.templateParamsByLocale?.[locale] ?? input.templateParams ?? {})
+                : { title: input.title, body: input.body ?? "" };
+              const delivery = await sendApns(client, { token: row.device_token, environment, bundleId: row.bundle_id },
+                apnsPayload({ ...message, url: notificationPath(input.url), recipientUserId: row.user_id, badgeCount: input.badgeCount }));
+              if (delivery.sent) result.sent++; else result.failed++;
+              if (delivery.stale) {
+                // Do not delete a token that was refreshed while the provider answered.
+                const removed = await db.from("native_push_subscriptions").delete().eq("id", row.id).eq("updated_at", row.updated_at);
+                if (!removed.error) result.cleaned++;
+              }
+            } catch { result.failed++; }
+          }));
+        }
+      } finally { client.close(); }
+    }
   }
   return result;
 }

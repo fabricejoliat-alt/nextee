@@ -22,7 +22,7 @@ const init = (options: { load?: () => Promise<typeof defaults>; save?: (id: stri
       loadMyNotificationPreferences: options.load ?? (async () => defaults),
       upsertMyNotificationPreferences: options.save ?? (async (_id: string, patch: Partial<typeof defaults>) => ({ ...defaults, ...patch })),
     },
-    "@/lib/pushClient": { supportsWebPush: () => true, isNativeApp: () => false, hasLocalPushSubscription: async () => true, testPushSubscription: async () => ({ ok: true }), pushFailureMessage: (reason: string) => reason === "denied" ? "notifications.settings.pushDenied" : "notifications.settings.pushError", ensurePushSubscription: options.push ?? (async () => ({ ok: true })), disablePushSubscription: async () => ({ ok: true }) },
+    "@/lib/pushClient": { supportsPush: () => true, isNativeApp: () => false, hasLocalPushSubscription: async () => true, testPushSubscription: async () => ({ ok: true }), pushFailureMessage: (reason: string) => reason === "denied" ? "notifications.settings.pushDenied" : "notifications.settings.pushError", ensurePushSubscription: options.push ?? (async () => ({ ok: true })), disablePushSubscription: async () => ({ ok: true }) },
   },
 });
 

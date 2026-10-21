@@ -6,6 +6,7 @@ import { IBM_Plex_Sans, Inter, Inter_Tight } from "next/font/google";
 import RouteLoadingIndicator from "@/components/ui/RouteLoadingIndicator";
 import AuthSessionBoundary from "@/components/auth/AuthSessionBoundary";
 import GlobalHeaderBoundary from "@/components/public/GlobalHeaderBoundary";
+import NativePushLifecycle from "@/components/notifications/NativePushLifecycle";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -76,6 +77,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <Suspense fallback={null}>
           <AuthSessionBoundary />
+          <NativePushLifecycle />
           <RouteLoadingIndicator />
         </Suspense>
         <GlobalHeaderBoundary>{children}</GlobalHeaderBoundary>
