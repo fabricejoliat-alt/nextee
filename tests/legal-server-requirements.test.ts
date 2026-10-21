@@ -21,3 +21,22 @@ test('database switch off leaves missing actions empty without reading user docu
  const requirements=loadManagerModule<{loadLegalGateStatus:(db:unknown,id:string)=>Promise<{enabled:boolean;missing:unknown[]}>}>('lib/server/legalRequirements.ts',{});
  assert.deepEqual(await requirements.loadLegalGateStatus(db,'coach-a'),{enabled:false,missing:[]});
 });
+
+test('superadmin status is exempt without loading documents or creating acceptance evidence',async()=>{
+ const {db,rpcs,writes}=managerDatabase({
+  legal_enforcement_control:[{singleton:true,enabled:true}],
+  app_admins:[{user_id:'admin'}],
+  club_members:[{user_id:'admin',club_id:'A',role:'coach',is_active:true}],
+  legal_documents:[document('A','review_pending')],
+ },{failureTable:'legal_documents'});
+ const requirements=loadManagerModule<{loadLegalGateStatus:(db:unknown,id:string)=>Promise<{enabled:boolean;missing:unknown[]}>}>('lib/server/legalRequirements.ts',{});
+ assert.deepEqual(await requirements.loadLegalGateStatus(db,'admin'),{enabled:true,missing:[]});
+ assert.deepEqual(rpcs,[]);
+ assert.deepEqual(writes,[]);
+});
+
+test('a failed superadmin lookup never grants an exemption',async()=>{
+ const {db}=managerDatabase({legal_enforcement_control:[{singleton:true,enabled:true}]},{failureTable:'app_admins'});
+ const requirements=loadManagerModule<{loadLegalGateStatus:(db:unknown,id:string)=>Promise<unknown>}>('lib/server/legalRequirements.ts',{});
+ await assert.rejects(()=>requirements.loadLegalGateStatus(db,'coach-a'),/Database failure/);
+});

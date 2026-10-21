@@ -22,6 +22,7 @@ export default function AdminEtiquetteManagement() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const legalActionRequired = error === "LEGAL_ACTION_REQUIRED" || error === "Legal validation required";
   const token = useCallback(async () => (await supabase.auth.getSession()).data.session?.access_token ?? "", []);
   const load = useCallback(async () => {
     try {
@@ -47,7 +48,7 @@ export default function AdminEtiquetteManagement() {
       const response = await fetch("/api/admin/etiquette", { method: "PATCH", headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth}` },
         body: JSON.stringify({ action, themeId: selected.id, title_fr: title }) });
       const json = await response.json();
-      if (!response.ok) throw new Error(String(json.error ?? "Enregistrement impossible."));
+      if (!response.ok) throw new Error(String(json.code ?? json.error ?? "Enregistrement impossible."));
       setNotice(action === "publish" ? "Le thème complet a été publié." : "Le titre a été enregistré.");
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Enregistrement impossible."); }
@@ -57,7 +58,7 @@ export default function AdminEtiquetteManagement() {
   return <main className={styles.page}>
     <nav className={styles.breadcrumb} aria-label="Fil d’Ariane"><Link href="/admin">{a.admin}</Link><ChevronRight size={14}/><span>{a.title}</span></nav>
     <header className={styles.topline}><div><p className={styles.eyebrow}>{a.content}</p><h1>{a.management}</h1><p className={styles.lead}>{a.managementLead}</p></div><div className={styles.summary}><BookOpen size={18}/><span><b>{themes.length}</b> {a.themes}</span></div></header>
-    {error && <div className={styles.error} role="alert"><CircleAlert size={17}/>{error}</div>}{notice && <div className={styles.success} role="status"><CheckCircle2 size={17}/>{notice}</div>}
+    {error && <div className={styles.error} role="alert"><CircleAlert size={17} style={{ flexShrink: 0 }} aria-hidden="true"/><span>{legalActionRequired ? <>{a.legalActionRequired}{" "}<Link href="/legal/my" className="underline underline-offset-2">{a.reviewLegalDocuments}</Link></> : error}</span></div>}{notice && <div className={styles.success} role="status"><CheckCircle2 size={17}/>{notice}</div>}
     <section className={styles.seriesLayout}><aside className={styles.seriesList}><div className={styles.listHead}><div><h2>{a.themes}</h2><p>{a.themesHint}</p></div><button type="button" onClick={() => void load()} aria-label={a.refresh}><RefreshCw size={16}/></button></div>
       {themes.map((theme) => <button type="button" key={theme.id} className={`${styles.seriesItem} ${theme.id === selectedId ? styles.active : ""}`} onClick={() => setSelectedId(theme.id)}><b>{String(theme.position).padStart(2, "0")}</b><span><strong>{theme.title_i18n[locale] ?? theme.title_i18n.fr}</strong><small>{theme.status === "published" ? a.published : a.review}</small></span>{theme.status === "published" ? <CheckCircle2 className={styles.validIcon} size={17}/> : <CircleAlert className={styles.invalidIcon} size={17}/>}</button>)}</aside>
       {selected && <section className={styles.panel}><div className={styles.panelHead}><div><span className={styles.panelIcon}><BookOpen size={18}/></span><div><h2>{a.theme} {String(selected.position).padStart(2, "0")} · {selected.title_i18n[locale] ?? selected.title_i18n.fr}</h2><p>{approved}/3 {a.approvedCount}</p></div></div><span className={`${styles.status} ${selected.status === "published" ? styles.published : ""}`}>{selected.status === "published" ? a.published : a.draft}</span></div>

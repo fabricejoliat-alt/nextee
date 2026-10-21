@@ -5,16 +5,20 @@ export async function loadLegalGateStatus(db: SupabaseClient, actorId: string, o
   const control = await db.from("legal_enforcement_control").select("enabled").eq("singleton", true).maybeSingle();
   if (control.error || !control.data) throw new Error("Legal direct-access gate is unavailable");
   if (!control.data.enabled) return { enabled: false, missing: [] };
-  const [memberships, admin, docs] = await Promise.all([
+  const admin = await db.from("app_admins").select("user_id").eq("user_id", actorId).maybeSingle();
+  if (admin.error) throw new Error(admin.error.message);
+  // Platform administrators are exempt from account-document acknowledgements.
+  // Authentication, MFA and each operation's authorization remain separate gates.
+  if (admin.data) return { enabled: true, missing: [] };
+  const [memberships, docs] = await Promise.all([
     db.from("club_members").select("club_id,role").eq("user_id", actorId).eq("is_active", true),
-    db.from("app_admins").select("user_id").eq("user_id", actorId).maybeSingle(),
     db.from("legal_documents").select("id,document_key,kind,scope,club_id,audience_roles,action_kind,required,active,applicability")
       .eq("active", true).eq("required", true),
   ]);
-  for (const result of [memberships, admin, docs]) if (result.error) throw new Error(result.error.message);
+  for (const result of [memberships, docs]) if (result.error) throw new Error(result.error.message);
   const applicableDocs = (docs.data ?? []).filter((doc) =>
     (allOrganizations || doc.scope === "platform" || doc.club_id === organizationId)
-    && eligibleLegalRole(doc as RequiredLegalDocument, memberships.data ?? [], Boolean(admin.data)));
+    && eligibleLegalRole(doc as RequiredLegalDocument, memberships.data ?? [], false));
   for (const doc of applicableDocs) {
     if (["terms", "privacy", "junior_notice"].includes(doc.kind)
       && (doc.applicability as { rule?: string } | null)?.rule !== "all_members") {
@@ -40,7 +44,7 @@ export async function loadLegalGateStatus(db: SupabaseClient, actorId: string, o
     const matching = await db.rpc("legal_version_matches_document", { p_document: doc.id, p_version: latest.id });
     if (matching.error || matching.data !== true) throw new Error("Published legal metadata changed");
   }));
-  const missing = findMissingLegalActions({ memberships: memberships.data ?? [], isAdmin: Boolean(admin.data),
+  const missing = findMissingLegalActions({ memberships: memberships.data ?? [], isAdmin: false,
     documents: applicableDocs as Parameters<typeof findMissingLegalActions>[0]["documents"],
     versions: versions.data ?? [], states: states.data ?? [] });
   return { enabled: true, missing };

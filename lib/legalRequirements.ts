@@ -31,6 +31,7 @@ export function findMissingLegalActions(input: {
   versions: LegalVersionRef[];
   states: LegalStateRef[];
 }) {
+  if (input.isAdmin) return [];
   const latest = new Map<string, LegalVersionRef>();
   for (const version of [...input.versions].sort((a, b) => b.version_number - a.version_number)) {
     if (!latest.has(version.document_id)) latest.set(version.document_id, version);

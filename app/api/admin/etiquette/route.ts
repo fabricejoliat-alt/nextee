@@ -36,6 +36,9 @@ export const PATCH = withAdminMutationAudit(async function PATCH(req: NextReques
         global: { headers: { Authorization: `Bearer ${access.token}` } }, auth: { persistSession: false },
       });
       const result = await userDb.rpc("etiquette_publish_theme", { p_theme_id: themeId });
+      if (result.error?.message === "Legal validation required") {
+        return NextResponse.json({ error: "LEGAL_ACTION_REQUIRED", code: "LEGAL_ACTION_REQUIRED" }, { status: 403 });
+      }
       if (result.error) return NextResponse.json({ error: result.error.message }, { status: 409 });
       return NextResponse.json({ published: true });
     }

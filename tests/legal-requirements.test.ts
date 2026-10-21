@@ -9,6 +9,13 @@ const clubNotice = { id: "notice", document_key: "notice", kind: "privacy", scop
 const optionalPhoto = { id: "photo", document_key: "photo", kind: "specific_consent", scope: "club" as const, club_id: "club-a",
   audience_roles: ["parent"], action_kind: "consent", required: false, active: true };
 
+test("superadmins are exempt even when they also have a club role and no document decisions", () => {
+  assert.deepEqual(findMissingLegalActions({
+    memberships: [{ club_id: "club-a", role: "coach" }], isAdmin: true,
+    documents: [{ ...terms, audience_roles: ["admin", "coach"] }, clubNotice], versions: [], states: [],
+  }), []);
+});
+
 test("one current platform acceptance covers a multi-role adult while a new version requires a fresh decision", () => {
   const base = { memberships: [{ club_id: "club-a", role: "parent" }, { club_id: "club-a", role: "coach" }], isAdmin: false,
     documents: [terms], versions: [{ id: "v2", document_id: "terms", version_number: 2 }, { id: "v1", document_id: "terms", version_number: 1 }],
