@@ -118,7 +118,6 @@
 .messageTabs > a[aria-current] { color: #fff; background: #35483b; box-shadow: 0 2px 6px #35483b18; }
 .messageTabs > a:focus-visible { outline: 3px solid #899d7d; outline-offset: 2px; }
 .messageActions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
-.messageActions .messageDelete { color: #a13b30; }
 .messageReply { display: grid; gap: 12px; padding: 16px; border: 1px solid #dfe7dd; border-radius: 12px; background: #f6f9f4; }
 .messageReply label { color: #35483b; font-size: 12px; font-weight: 750; }
 .messageReply textarea { box-sizing: border-box; width: 100%; min-width: 0; padding: 12px; border: 1px solid #dce3dc; border-radius: 9px; background: #fff; color: #35483b; line-height: 1.6 !important; resize: vertical; }

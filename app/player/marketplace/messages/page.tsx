@@ -1,7 +1,7 @@
 "use client";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Bell, Inbox as InboxIcon, Mail, Reply, Send, Trash2, Undo2 } from "lucide-react";
+import { ArrowLeft, Eye, Inbox as InboxIcon, Mail, Reply, Send, Trash2, Undo2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
@@ -67,8 +67,8 @@ function MessageCard({ row, sent, canEdit, context, onDelete }: { row: Message; 
     {error && <InlineNotice variant="error" title={error} />}
     <div className={styles.messageActions}>
       {!sent && row.can_reply && <button className={playerUi.primary} type="button" disabled={busy} onClick={() => { setOpen(!open); setError(""); }} aria-expanded={open} aria-controls={`reply-${row.id}`}><Reply size={16} aria-hidden="true" />{text("reply")}</button>}
-      {canEdit && <button className={`${playerUi.secondary} ${styles.messageDelete}`} type="button" disabled={busy} onClick={() => void remove()}><Trash2 size={15} aria-hidden="true" />{text("delete")}</button>}
-      {row.item_id && <Link className={playerUi.textLink} href={`/player/marketplace/${row.item_id}${context.role === "parent" ? `?child_id=${context.effectiveUserId}` : ""}`}>{text("listing")}</Link>}
+      {canEdit && <button className={`${playerUi.iconButton} ${playerUi.dangerIcon}`} type="button" disabled={busy} onClick={() => void remove()} aria-label={text("delete")} title={text("delete")}><Trash2 size={17} aria-hidden="true" /></button>}
+      {row.item_id && <Link className={playerUi.iconButton} href={`/player/marketplace/${row.item_id}${context.role === "parent" ? `?child_id=${context.effectiveUserId}` : ""}`} aria-label={text("listing")} title={text("listing")}><Eye size={17} aria-hidden="true" /></Link>}
     </div>
     {open && <form className={styles.messageReply} id={`reply-${row.id}`} onSubmit={submit}>
       <label htmlFor={`reply-text-${row.id}`}>{text("response")}</label>
@@ -150,7 +150,6 @@ function Inbox() {
         <Link href={href(false)} aria-current={!sent ? "page" : undefined}><InboxIcon size={15} aria-hidden="true" />{text("received")}</Link>
         <Link href={href(true)} aria-current={sent ? "page" : undefined}><Send size={15} aria-hidden="true" />{text("sent")}</Link>
       </nav>
-      <Link className={playerUi.secondary} href="/player/notifications/settings"><Bell size={15} aria-hidden="true" />{text("settings")}</Link>
     </div>
     {messageId && <Link className={styles.messageAll} href={href(sent)}><ArrowLeft size={15} aria-hidden="true" />{text("all")}</Link>}
     {error && <InlineNotice variant="error" title={marketplaceMessageError(locale, error)}><button className={playerUi.secondary} type="button" onClick={() => void load()}>{t("coach.retry")}</button></InlineNotice>}
