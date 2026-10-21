@@ -14,7 +14,7 @@ import {
   loadMyNotificationPreferences,
   upsertMyNotificationPreferences,
 } from "@/lib/notificationPreferences";
-import { disablePushSubscription, ensurePushSubscription, supportsPush, pushFailureMessage, isNativeApp, hasLocalPushSubscription, testPushSubscription } from "@/lib/pushClient";
+import { disablePushSubscription, ensurePushSubscription, supportsPush, pushFailureMessage, isNativeApp, hasLocalPushSubscription } from "@/lib/pushClient";
 import { notificationKindsForRole } from "@/lib/notificationCatalog";
 import { nextNotificationKinds } from "@/lib/notificationKindSelection";
 
@@ -52,8 +52,6 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
   const [userId, setUserId] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [reload, setReload] = useState(0);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<string | null>(null);
   const saveLock = useRef(false);
 
   const [receiveInApp, setReceiveInApp] = useState(DEFAULT_NOTIFICATION_PREFERENCES.receiveInApp);
@@ -150,17 +148,6 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
   const pushHint = pushSupported ? "notifications.settings.pushHint" : isNativeApp()
     ? "notifications.settings.nativePush" : "notifications.settings.unsupported";
 
-  async function testDevice() {
-    if (testing) return;
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const result = await testPushSubscription(locale);
-      setTestResult(result.ok ? "notifications.settings.testSent" : "notifications.settings.testFailed");
-    } catch { setTestResult("notifications.settings.testFailed"); }
-    finally { setTesting(false); }
-  }
-
   async function onToggleKind(kind: string, enabled: boolean) {
     if (!receiveInApp) return;
     await persist(async () => ({ enabledKinds: nextNotificationKinds(enabledKinds, kind, enabled, allKindIds) }));
@@ -199,13 +186,6 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
               </div>
             </div>
           </section>
-
-          {receivePush && receiveInApp && devicePushActive ? <section className={campsStyles.panel}>
-            <button type="button" className={campsStyles.secondary} disabled={saving || testing} onClick={() => void testDevice()}>
-              <BellRing size={16} />{t(testing ? "notifications.settings.testSending" : "notifications.settings.test")}
-            </button>
-            {testResult ? <p role="status">{t(testResult)}</p> : null}
-          </section> : null}
 
           <section className={`${campsStyles.panel} ${!receiveInApp ? styles.sectionDisabled : ""}`}>
             <div className={campsStyles.panelHeader}>

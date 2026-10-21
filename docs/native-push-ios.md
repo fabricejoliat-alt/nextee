@@ -35,8 +35,8 @@ développement lors de l’export en distribution.
 
 - Activer Push dans les paramètres et accepter la demande iOS.
 - Vérifier les catégories, notamment Messages du Marketplace.
-- Utiliser le bouton de test de l’appareil, vérifier l’alerte au premier plan,
-  puis la réception quand l’app est en arrière-plan/verrouillée.
+- Déclencher une notification destinée au compte de test, vérifier l’alerte au
+  premier plan, puis la réception quand l’app est en arrière-plan/verrouillée.
 - Toucher une notification métier ouvre son écran après authentification.
 - Tester le refus dans Réglages iOS, la désactivation dans ActiviTee, la
   reconnexion, puis le changement de compte.
