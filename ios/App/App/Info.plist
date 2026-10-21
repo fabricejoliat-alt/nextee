@@ -24,6 +24,8 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSFaceIDUsageDescription</key>
 	<string>ActiviTee utilise Face ID pour déverrouiller l’application sur cet appareil lorsque vous activez cette option.</string>
 	<key>UIApplicationSceneManifest</key>
