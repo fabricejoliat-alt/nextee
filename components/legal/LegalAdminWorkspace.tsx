@@ -1,4 +1,5 @@
 "use client";
+import { adminFetch } from "@/lib/adminFetch";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import AccountDeletionAdmin from "./AccountDeletionAdmin";
@@ -54,7 +55,7 @@ export default function LegalAdminWorkspace() {
   const [representativePair, setRepresentativePair] = useState(""); const [representativeBasis, setRepresentativeBasis] = useState("");
   const load = useCallback(async () => {
     const token = (await supabase.auth.getSession()).data.session?.access_token;
-    const response = await fetch("/api/admin/legal", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+    const response = await adminFetch("/api/admin/legal", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
     const data = await response.json(); if (!response.ok) throw new Error(data.error);
     setDocs(data.documents); setDrafts(data.drafts); setVersions(data.versions); setClubs(data.clubs ?? []);
     setClubTemplatePurposes(data.club_template_purposes ?? []);
@@ -122,7 +123,7 @@ export default function LegalAdminWorkspace() {
     setBusy(true); setMessage("");
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
-      const response = await fetch("/api/admin/legal", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
+      const response = await adminFetch("/api/admin/legal", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify(payload) });
       const data = await response.json(); if (!response.ok) throw new Error(data.error);
       await load(); setMessage(payload.operation === "create_club_templates" ? t("organization.draftCreated") : "Enregistré.");
       if (data.id) setSelected(data.id);
@@ -243,7 +244,7 @@ export default function LegalAdminWorkspace() {
           <div className={styles.actionRow}><button className={styles.primaryButton} disabled={busy || Boolean(selectedGroup?.shared && !sharedTextAligned)} onClick={() => mutate({ operation: "save_translation", document_id: selected, locale, ...form, expected_revision: draft?.source_revision,
             ...(selectedGroup?.shared ? { group_purpose: selectedGroup.key, expected_drafts: sharedExpectedDrafts } : {}) })}>{selectedGroup?.shared ? `Enregistrer dans ${selectedGroup.documents.length} clubs` : "Enregistrer la langue"}</button>
           <button disabled={busy || unsavedTranslationChanges || !draft?.translations?.[locale]} onClick={() => mutate({ operation: "approve_translation", document_id: selected, locale, expected_revision: draft?.source_revision, expected_translation: draft?.translations?.[locale] })}>Approuver</button>
-          {locale !== "fr" && <button disabled={busy || !draft?.translations?.fr?.body} onClick={async () => { setBusy(true); try { const token = (await supabase.auth.getSession()).data.session?.access_token; const response = await fetch("/api/admin/legal/translate", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ document_id: selected, locale }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); await load(); setMessage("Proposition à relire."); } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } finally { setBusy(false); } }}>Proposer une traduction</button>}</div>
+          {locale !== "fr" && <button disabled={busy || !draft?.translations?.fr?.body} onClick={async () => { setBusy(true); try { const token = (await supabase.auth.getSession()).data.session?.access_token; const response = await adminFetch("/api/admin/legal/translate", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ document_id: selected, locale }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); await load(); setMessage("Proposition à relire."); } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } finally { setBusy(false); } }}>Proposer une traduction</button>}</div>
           <details><summary>Aperçu utilisateur</summary><h3>{form.title}</h3><p style={{ whiteSpace: "pre-wrap" }}>{form.body}</p><button disabled>{form.action_label}</button></details>
           <details><summary>Public concerné</summary>
             <p>Ce document s’adresse aux membres actifs des rôles indiqués ci-dessus{document.scope !== "platform" ? " dans le club sélectionné" : " sur la plateforme"}. Les liens parent–enfant sont vérifiés lors de la décision.</p>
@@ -308,7 +309,7 @@ export default function LegalAdminWorkspace() {
     <section className={styles.panel}>
       <h2>Décisions enregistrées</h2><p>Accès réservé aux administrateurs de la plateforme. Les résultats sont limités à 100 événements.</p>
       <button onClick={async () => { try { const token = (await supabase.auth.getSession()).data.session?.access_token;
-        const response = await fetch(`/api/admin/legal/decisions${selected ? `?document_id=${selected}` : ""}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        const response = await adminFetch(`/api/admin/legal/decisions${selected ? `?document_id=${selected}` : ""}`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
         const data = await response.json(); if (!response.ok) throw new Error(data.error); setDecisions(data.decisions); } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } }}>Charger les décisions{selected ? " du document sélectionné" : ""}</button>
       {decisions.map((row) => <details key={row.id}><summary>{row.rendered_snapshot.title ?? "Document"} · {row.decision} · {new Date(row.decided_at).toLocaleString()}</summary>
         <p>Acteur : {row.actor_id} · Bénéficiaire : {row.beneficiary_id} · langue : {row.rendered_snapshot.locale}</p>
@@ -317,13 +318,13 @@ export default function LegalAdminWorkspace() {
     <AccountDeletionAdmin />
     <section className={styles.panel}>
       <h2>Demandes relatives aux données</h2><button onClick={async () => { try { const token = (await supabase.auth.getSession()).data.session?.access_token;
-        const response = await fetch("/api/admin/legal/requests", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        const response = await adminFetch("/api/admin/legal/requests", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
         const data = await response.json(); if (!response.ok) throw new Error(data.error); setRequests(data.requests); } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } }}>Charger les demandes</button>
       <label>Note de suivi<input disabled={busy} value={requestNote} onChange={(e) => setRequestNote(e.target.value)} placeholder="Contrôles effectués et décision" style={{ display: "block", width: "100%" }} /></label>
       {requests.map((row) => <details key={row.id}><summary>{row.request_kind} · {row.status} · {new Date(row.created_at).toLocaleString()}</summary>
         <p>{row.contact_email} · {row.description}</p>
         <button disabled={requestNote.trim().length < 10} onClick={async () => { try { const token = (await supabase.auth.getSession()).data.session?.access_token;
-          const response = await fetch("/api/admin/legal/requests", { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          const response = await adminFetch("/api/admin/legal/requests", { method: "PATCH", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
             body: JSON.stringify({ id: row.id, status: "identity_check", note: requestNote }) });
           const data = await response.json(); if (!response.ok) throw new Error(data.error); setMessage("Suivi enregistré.");
           setRequests((current) => current.map((item) => item.id === row.id ? { ...item, status: "identity_check" } : item)); }
@@ -333,7 +334,7 @@ export default function LegalAdminWorkspace() {
       <h2>Retraits à résoudre</h2>
       <p>Une nouvelle autorisation reste bloquée jusqu’à une résolution motivée. Le retrait demeure dans l’historique.</p>
       <button onClick={async () => { try { const token = (await supabase.auth.getSession()).data.session?.access_token;
-        const response = await fetch("/api/admin/legal/conflicts", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+        const response = await adminFetch("/api/admin/legal/conflicts", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
         const data = await response.json(); if (!response.ok) throw new Error(data.error); setConflicts(data.conflicts); }
         catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } }}>Charger les retraits</button>
       <label>Motif de résolution<textarea disabled={busy} value={resolutionReason} onChange={(e) => setResolutionReason(e.target.value)}
@@ -343,7 +344,7 @@ export default function LegalAdminWorkspace() {
         <p>Document : {row.document_id} · Club : {row.club_scope ?? "plateforme"} · Bénéficiaire : {row.beneficiary_id}</p>
         <button disabled={resolutionReason.trim().length < 20 || busy} onClick={async () => { setBusy(true); try {
           const token = (await supabase.auth.getSession()).data.session?.access_token;
-          const response = await fetch("/api/admin/legal/conflicts", { method: "POST", headers: {
+          const response = await adminFetch("/api/admin/legal/conflicts", { method: "POST", headers: {
             Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({
               document_id: row.document_id, beneficiary_id: row.beneficiary_id, club_scope: row.club_scope, reason: resolutionReason }) });
           const data = await response.json(); if (!response.ok) throw new Error(data.error);
@@ -359,7 +360,7 @@ export default function LegalAdminWorkspace() {
         <option value="">{t("organization.choose")}</option>{clubs.map((club) => <option value={club.id} key={club.id}>{club.name}</option>)}</select></label>
       <button disabled={!representativeClub || busy} onClick={async () => { try {
         const token = (await supabase.auth.getSession()).data.session?.access_token;
-        const response = await fetch(`/api/admin/legal/representatives?club_id=${encodeURIComponent(representativeClub)}`,
+        const response = await adminFetch(`/api/admin/legal/representatives?club_id=${encodeURIComponent(representativeClub)}`,
           { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
         const data = await response.json(); if (!response.ok) throw new Error(data.error);
         setRepresentativeCandidates(data.candidates); setRepresentativeAssertions(data.assertions);
@@ -374,7 +375,7 @@ export default function LegalAdminWorkspace() {
       <button disabled={!representativePair || representativeBasis.trim().length < 20 || busy} onClick={async () => {
         const [guardian_id, child_id] = representativePair.split(":"); setBusy(true); try {
           const token = (await supabase.auth.getSession()).data.session?.access_token;
-          const response = await fetch("/api/admin/legal/representatives", { method: "POST", headers: {
+          const response = await adminFetch("/api/admin/legal/representatives", { method: "POST", headers: {
             Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({
               guardian_id, child_id, club_id: representativeClub, status: "verified", basis: representativeBasis }) });
           const data = await response.json(); if (!response.ok) throw new Error(data.error);
@@ -385,7 +386,7 @@ export default function LegalAdminWorkspace() {
       <button disabled={!representativePair || representativeBasis.trim().length < 20 || busy} onClick={async () => {
         const [guardian_id, child_id] = representativePair.split(":"); setBusy(true); try {
           const token = (await supabase.auth.getSession()).data.session?.access_token;
-          const response = await fetch("/api/admin/legal/representatives", { method: "POST", headers: {
+          const response = await adminFetch("/api/admin/legal/representatives", { method: "POST", headers: {
             Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({
               guardian_id, child_id, club_id: representativeClub, status: "revoked", basis: representativeBasis }) });
           const data = await response.json(); if (!response.ok) throw new Error(data.error);

@@ -1,4 +1,5 @@
 "use client";
+import { adminFetch } from "@/lib/adminFetch";
 import { useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import styles from "./LegalAdminWorkspace.module.css";
@@ -9,7 +10,7 @@ export default function AccountDeletionAdmin() {
   const [confirmation, setConfirmation] = useState(""), [busy, setBusy] = useState(false), [message, setMessage] = useState("");
   async function load() {
     const token = (await supabase.auth.getSession()).data.session?.access_token;
-    const response = await fetch("/api/admin/legal/account-deletions", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
+    const response = await adminFetch("/api/admin/legal/account-deletions", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error);
     setRows(data.requests);
@@ -18,7 +19,7 @@ export default function AccountDeletionAdmin() {
     setBusy(true); setMessage("");
     try {
       const token = (await supabase.auth.getSession()).data.session?.access_token;
-      const response = await fetch("/api/admin/legal/account-deletions", {
+      const response = await adminFetch("/api/admin/legal/account-deletions", {
         method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ id, confirm_request_id: id }),
       });

@@ -38,7 +38,7 @@ test('Admin displays review states in French without changing stored values',asy
   elements(h.render()).find(n=>n.type==='button'&&textContent(n).includes('fixture terms'))!.props.onClick();
   const tree=h.render();
   assert.ok(button(tree,'EN · à relire'));
-  assert.match(textContent(tree).replace(/\s+/g,' '),/Club · player · public à configurer/);
+  assert.match(textContent(tree).replace(/\s+/g,' '),/Organisation · player · public à configurer/);
   assert.ok(button(tree,'Configurer ce public'));
   assert.equal(button(tree,'Activer le contrôle').props.disabled,true);
  }finally{h.cleanup();}
@@ -70,3 +70,55 @@ test('three club copies have one model row and save one shared text request',asy
   assert.deepEqual(Object.keys(posts[0].expected_drafts as object).sort(),documents.map((item)=>item.id).sort());
  }finally{h.cleanup();}
 });
+
+for (const code of ['ADMIN_REAUTH_REQUIRED', 'ADMIN_MFA_REQUIRED']) {
+ test(`approval requests verification on ${code}, preserves the draft and waits for an explicit retry`,async()=>{
+  const originalWindow=Object.getOwnPropertyDescriptor(globalThis,'window');
+  const events=new EventTarget();
+  Object.defineProperty(globalThis,'window',{configurable:true,value:events});
+  const requests:string[]=[];
+  events.addEventListener('admin:reauth-required',event=>requests.push((event as CustomEvent).detail.code));
+  const pendingDraft=structuredClone(draft);
+  pendingDraft.translations.fr.status='needs_review';
+  let token='expired-session',posts=0,reads=0;
+  const h=coachComponentHarness('components/legal/LegalAdminWorkspace.tsx',{
+   modules:{'@/lib/supabaseClient':{supabase:{auth:{getSession:async()=>({data:{session:{access_token:token}}})}}}},
+   fetch:async(_input,init)=>{
+    if(init?.method==='POST'){
+     posts++;
+     assert.equal(JSON.parse(String(init.body)).operation,'approve_translation');
+     if(posts===1)return Response.json({error:'Confirmez votre identité, puis réessayez.',code},{status:403});
+     assert.equal(new Headers(init.headers).get('Authorization'),'Bearer renewed-session');
+     pendingDraft.translations.fr.status='approved';
+     return Response.json({ok:true});
+    }
+    reads++;
+    return Response.json({documents:[doc],drafts:[structuredClone(pendingDraft)],versions:[],clubs:[]});
+   },
+  });
+  try{
+   for(let i=0;i<5;i++){h.render();await flush();}
+   elements(h.render()).find(n=>n.type==='button'&&textContent(n).includes('fixture terms'))!.props.onClick();h.render();h.render();
+   field(h.render(),'Résumé des changements').props.onChange({target:{value:'Unsaved review summary'}});
+   const beforeReads=reads;
+   await button(h.render(),'Approuver').props.onClick();
+   for(let i=0;i<3;i++){h.render();await flush();}
+   assert.deepEqual(requests,[code]);
+   assert.equal(posts,1,'A rejected approval must not replay automatically');
+   assert.equal(reads,beforeReads,'A rejected approval must not reload and discard pending edits');
+   assert.equal(field(h.render(),'Résumé des changements').props.value,'Unsaved review summary');
+   assert.ok(button(h.render(),'FR · à relire'));
+   assert.match(textContent(h.render()),/Confirmez votre identité/);
+   token='renewed-session';
+   await button(h.render(),'Approuver').props.onClick();
+   for(let i=0;i<3;i++){h.render();await flush();}
+   assert.equal(posts,2);
+   assert.deepEqual(requests,[code]);
+   assert.ok(button(h.render(),'FR · approuvée'));
+  }finally{
+   h.cleanup();
+   if(originalWindow)Object.defineProperty(globalThis,'window',originalWindow);
+   else Reflect.deleteProperty(globalThis,'window');
+  }
+ });
+}
