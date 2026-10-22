@@ -8,7 +8,7 @@ import type * as Invitation from "../lib/biometricInvitation.ts";
 
 function fixture(platform = "ios", registered = true) {
   const calls: Array<{ method: string; options?: unknown }> = [];
-  const status = { available: true, enabled: false, locked: false, biometryType: "faceID" };
+  const status = { available: true, enabled: false, locked: false, biometryType: platform === "android" ? "biometric" : "faceID" };
   const api = loadManagerModule<typeof NativeLock>("lib/nativeBiometricLock.ts", {
     "@capacitor/core": {
       Capacitor: { isNativePlatform: () => platform !== "web", getPlatform: () => platform, isPluginAvailable: () => registered },
@@ -25,13 +25,40 @@ function fixture(platform = "ios", registered = true) {
   return { api, calls };
 }
 
-test("web, Android and older iOS builds do not call the native plugin", async () => {
-  for (const [platform, registered] of [["web", true], ["android", true], ["ios", false]] as const) {
+test("web and native builds without the biometric plugin do not call it", async () => {
+  for (const [platform, registered] of [["web", true], ["android", false], ["ios", false]] as const) {
     const { api, calls } = fixture(platform, registered);
     assert.equal(await api.getBiometricLockStatus(), null);
     await api.syncBiometricSession(null, "fr");
     await assert.rejects(api.configureBiometricLock("parent", true, "fr"));
     assert.deepEqual(calls, []);
+  }
+});
+
+test("registered Android builds support the same explicit opt-in and sign-out contract as iOS", async () => {
+  const { api, calls } = fixture("android");
+  assert.equal(api.supportsNativeBiometricLock(), true);
+  assert.equal((await api.getBiometricLockStatus())?.enabled, false);
+  assert.equal((await api.getBiometricLockStatus())?.biometryType, "biometric");
+  assert.equal(calls.some(call => call.method === "configure"), false);
+  await api.configureBiometricLock("player-account", true, "it");
+  await api.syncBiometricSession(null, "en");
+  assert.deepEqual(calls.slice(2), [
+    { method: "configure", options: { userID: "player-account", enabled: true, locale: "it" } },
+    { method: "syncSession", options: { userID: null, locale: "en" } },
+  ]);
+});
+
+test("Android biometrics can be offered without naming Apple Face ID", () => {
+  const { claimBiometricInvitation: claim } = loadManagerModule<typeof Invitation>("lib/biometricInvitation.ts", {});
+  const storage = { getItem: () => null, setItem() {} };
+  assert.equal(claim("android-player", { enabled: false, available: true, locked: false, biometryType: "biometric" }, storage), true);
+  const nativeKeys = [...readFileSync("android/app/src/main/res/values/biometric.xml", "utf8").matchAll(/name="([^"]+)"/g)].map(match => match[1]).sort();
+  for (const lang of ["fr", "en", "de", "it"] as const) {
+    assert.doesNotMatch(biometricMessages[lang].biometricMethod, /Face ID|Touch ID/);
+    const folder = lang === "fr" ? "values" : `values-${lang}`;
+    const native = readFileSync(`android/app/src/main/res/${folder}/biometric.xml`, "utf8");
+    assert.deepEqual([...native.matchAll(/name="([^"]+)"/g)].map(match => match[1]).sort(), nativeKeys);
   }
 });
 

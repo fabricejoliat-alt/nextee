@@ -235,13 +235,13 @@
   .swipeCard .mobileDate{display:block}
 }
 @media(max-width:640px) and (hover:none) and (pointer:coarse){
-  .swipeRow.swipeRow{display:flex;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scrollbar-width:none;border:0;border-radius:13px}
+  .swipeRow.swipeRow{display:flex;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x mandatory;scrollbar-width:none;border:0;border-radius:13px;background:#b63e39;isolation:isolate}
   .swipeRow::-webkit-scrollbar{display:none}
   .swipeCard.swipeCard{flex:0 0 100%;scroll-snap-align:start;scroll-snap-stop:always}
   .swipeCard .cardActions{display:none!important}
   .mobileCardLink{display:block;position:absolute;inset:0;z-index:1;border-radius:inherit}
   .mobileCardLink:focus-visible{outline:3px solid #91aa86;outline-offset:-3px}
-  .swipeDelete{display:grid;flex:0 0 76px;place-items:center;align-self:stretch;min-height:60px;border:0;background:#b63e39;color:#fff;scroll-snap-align:end;scroll-snap-stop:always;cursor:pointer}
+  .swipeDelete{display:grid;flex:0 0 76px;place-items:center;align-self:stretch;min-height:60px;border:0;border-radius:0 13px 13px 0;background:transparent;color:#fff;scroll-snap-align:end;scroll-snap-stop:always;cursor:pointer}
   .swipeDelete:disabled{opacity:.5}
   .swipeHint{display:block;margin:0;color:#738076;font-size:11px;line-height:1.4}
 }

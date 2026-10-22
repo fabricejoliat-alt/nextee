@@ -54,11 +54,11 @@ export default function BiometricLockSettings() {
   }
 
   if (!status && !failed) return null;
-  const method = status?.biometryType === "touchID" ? "Touch ID" : "Face ID";
+  const method = status?.biometryType === "faceID" ? "Face ID" : status?.biometryType === "touchID" ? "Touch ID" : copy.biometricMethod;
   return (
     <div className={styles.field} role="group" aria-labelledby={headingId}>
       <span id={headingId} className={styles.label}>{copy.title}</span>
-      {status && !status.available && !status.enabled ? <p>{copy.unavailable}</p> : null}
+      {status && !status.available && !status.enabled ? <p>{status.biometryType === "biometric" ? copy.androidUnavailable : copy.unavailable}</p> : null}
       {failed ? <p role="alert">{copy.error}</p> : null}
       <button className="btn" type="button" disabled={busy} onClick={() => void toggle()}>
         {busy ? copy.checking : (status?.enabled ? copy.disable : copy.enable).replace("{method}", method)}

@@ -8,7 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { initialPasswordRequired } from "@/lib/adminSecurity";
 import { claimBiometricInvitation } from "@/lib/biometricInvitation";
 import { biometricMessages } from "@/lib/i18n/biometricMessages";
-import { biometricErrorKey, configureBiometricLock, getBiometricLockStatus, supportsNativeBiometricLock, syncBiometricSession } from "@/lib/nativeBiometricLock";
+import { biometricErrorKey, configureBiometricLock, getBiometricLockStatus, supportsNativeBiometricLock, syncBiometricSession, type BiometricLockStatus } from "@/lib/nativeBiometricLock";
 import styles from "./BiometricLockInvitation.module.css";
 
 /** Mounted inside each role guard, after authentication and required access checks. */
@@ -16,7 +16,7 @@ export default function BiometricLockInvitation() {
   const { locale } = useI18n();
   const copy = biometricMessages[locale];
   const titleId = useId();
-  const [offer, setOffer] = useState<{ userID: string; method: "Face ID" | "Touch ID" } | null>(null);
+  const [offer, setOffer] = useState<{ userID: string; biometryType: BiometricLockStatus["biometryType"] } | null>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<"cancelled" | "unavailable" | "error" | null>(null);
   const busyRef = useRef(false);
@@ -36,7 +36,7 @@ export default function BiometricLockInvitation() {
         const status = await getBiometricLockStatus();
         if (!active || version !== generation.current || document.visibilityState !== "visible") return;
         if (claimBiometricInvitation(data.user.id, status, window.localStorage)) {
-          setOffer({ userID: data.user.id, method: status?.biometryType === "touchID" ? "Touch ID" : "Face ID" });
+          setOffer({ userID: data.user.id, biometryType: status!.biometryType });
         }
       } catch { /* An optional invitation must never prevent access to the app. */ }
     };
@@ -81,12 +81,13 @@ export default function BiometricLockInvitation() {
   }
 
   if (!offer) return null;
+  const method = offer.biometryType === "faceID" ? "Face ID" : offer.biometryType === "touchID" ? "Touch ID" : copy.biometricMethod;
   return <AccessibleDialog labelledBy={titleId} onClose={() => { if (!busyRef.current) setOffer(null); }} className={styles.dialog}>
     <ScanFace className={styles.icon} size={32} aria-hidden="true" />
-    <h2 id={titleId}>{copy.invitationTitle.replace("{method}", offer.method)}</h2>
-    <p>{copy.invitationDescription.replace("{method}", offer.method)}</p>
+    <h2 id={titleId}>{copy.invitationTitle.replace("{method}", method)}</h2>
+    <p>{copy.invitationDescription.replace("{method}", method)}</p>
     <div className={styles.actions}>
-      <button type="button" className={styles.primary} disabled={busy} onClick={() => void enable()}>{busy ? copy.checking : copy.enable.replace("{method}", offer.method)}</button>
+      <button type="button" className={styles.primary} disabled={busy} onClick={() => void enable()}>{busy ? copy.checking : copy.enable.replace("{method}", method)}</button>
       <button type="button" className={styles.secondary} disabled={busy} onClick={() => setOffer(null)}>{copy.later}</button>
     </div>
     {feedback ? <p role={feedback === "cancelled" ? "status" : "alert"}>{copy[feedback]}</p> : null}

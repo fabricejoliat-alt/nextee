@@ -4,10 +4,12 @@ type BiometricCopy = {
   title: string; description: string; privacy: string; enabled: string; disabled: string;
   enable: string; disable: string; checking: string; unavailable: string; error: string; cancelled: string;
   invitationTitle: string; invitationDescription: string; later: string;
+  biometricMethod: string; androidUnavailable: string;
 };
 
 export const biometricMessages: Record<AppLocale, BiometricCopy> = {
   fr: {
+    biometricMethod: "la biométrie", androidUnavailable: "Configurez une empreinte ou une reconnaissance faciale compatible avec les apps dans les réglages de sécurité de votre appareil, puis réessayez.",
     invitationTitle: "Activer {method} ?", invitationDescription: "Déverrouillez ActiviTee avec {method} à l’ouverture et au retour dans l’app. Vous pourrez modifier ce choix dans les paramètres de l’application, depuis votre profil.", later: "Plus tard",
     title: "Déverrouillage de l’app", description: "Utilisez {method} à l’ouverture de l’app et après un passage en arrière-plan. Le code de l’appareil peut servir de secours.",
     privacy: "Option propre à votre compte sur cet appareil, désactivée à la déconnexion. ActiviTee ne reçoit aucune donnée biométrique.",
@@ -16,6 +18,7 @@ export const biometricMessages: Record<AppLocale, BiometricCopy> = {
     error: "Impossible de modifier cette option. Réessayez.", cancelled: "Vérification annulée. Votre réglage est conservé.",
   },
   en: {
+    biometricMethod: "biometrics", androidUnavailable: "Set up a fingerprint or app-compatible face recognition in your device’s security settings, then try again.",
     invitationTitle: "Enable {method}?", invitationDescription: "Unlock ActiviTee with {method} when opening or returning to the app. You can change this choice in App settings in your profile.", later: "Later",
     title: "App unlock", description: "Use {method} when opening the app and after returning from the background. Your device passcode is available as a fallback.",
     privacy: "This option applies to your account on this device and turns off when you sign out. ActiviTee receives no biometric data.",
@@ -24,6 +27,7 @@ export const biometricMessages: Record<AppLocale, BiometricCopy> = {
     error: "Unable to change this option. Try again.", cancelled: "Verification cancelled. Your setting is unchanged.",
   },
   de: {
+    biometricMethod: "Biometrie", androidUnavailable: "Richte in den Sicherheitseinstellungen deines Geräts einen Fingerabdruck oder eine für Apps geeignete Gesichtserkennung ein und versuche es erneut.",
     invitationTitle: "{method} aktivieren?", invitationDescription: "Entsperre ActiviTee mit {method} beim Öffnen und bei der Rückkehr zur App. Du kannst diese Auswahl in den App-Einstellungen in deinem Profil ändern.", later: "Später",
     title: "App entsperren", description: "Verwende {method} beim Öffnen der App und nach der Rückkehr aus dem Hintergrund. Alternativ kannst du den Gerätecode verwenden.",
     privacy: "Diese Option gilt für dein Konto auf diesem Gerät und wird beim Abmelden deaktiviert. ActiviTee erhält keine biometrischen Daten.",
@@ -32,6 +36,7 @@ export const biometricMessages: Record<AppLocale, BiometricCopy> = {
     error: "Diese Einstellung konnte nicht geändert werden. Versuche es erneut.", cancelled: "Überprüfung abgebrochen. Deine Einstellung bleibt erhalten.",
   },
   it: {
+    biometricMethod: "la biometria", androidUnavailable: "Configura un’impronta digitale o il riconoscimento facciale compatibile con le app nelle impostazioni di sicurezza del dispositivo, poi riprova.",
     invitationTitle: "Attivare {method}?", invitationDescription: "Sblocca ActiviTee con {method} all’apertura e quando torni nell’app. Puoi modificare questa scelta nelle impostazioni dell’app dal tuo profilo.", later: "Più tardi",
     title: "Sblocco dell’app", description: "Usa {method} all’apertura dell’app e quando torni dall’esecuzione in background. In alternativa puoi usare il codice del dispositivo.",
     privacy: "Questa opzione riguarda il tuo account su questo dispositivo e si disattiva alla disconnessione. ActiviTee non riceve dati biometrici.",

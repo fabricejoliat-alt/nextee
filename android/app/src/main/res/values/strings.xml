@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">ActiviTee</string>
-    <string name="title_activity_main">ActiviTee</string>
-    <string name="package_name">golf.activitee.app</string>
-    <string name="custom_url_scheme">golf.activitee.app</string>
+    <string name="app_name" translatable="false">ActiviTee</string>
+    <string name="title_activity_main" translatable="false">ActiviTee</string>
+    <string name="package_name" translatable="false">golf.activitee.app</string>
+    <string name="custom_url_scheme" translatable="false">golf.activitee.app</string>
 </resources>

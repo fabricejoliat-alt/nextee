@@ -7,7 +7,7 @@ export type BiometricLockStatus = {
   enabled: boolean;
   available: boolean;
   locked: boolean;
-  biometryType: "faceID" | "touchID" | "none";
+  biometryType: "faceID" | "touchID" | "biometric" | "none";
 };
 
 interface BiometricLockPlugin {
@@ -20,7 +20,7 @@ const plugin = registerPlugin<BiometricLockPlugin>("BiometricLock");
 export const BIOMETRIC_LOCK_CHANGE_EVENT = "activitee:biometric-lock-changed";
 
 export function supportsNativeBiometricLock() {
-  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios" && Capacitor.isPluginAvailable("BiometricLock");
+  return Capacitor.isNativePlatform() && ["ios", "android"].includes(Capacitor.getPlatform()) && Capacitor.isPluginAvailable("BiometricLock");
 }
 
 export async function getBiometricLockStatus(): Promise<BiometricLockStatus | null> {

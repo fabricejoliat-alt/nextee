@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="biometric_unlock">Déverrouiller</string>
+    <string name="biometric_checking">Vérification…</string>
+    <string name="biometric_cancel">Annuler</string>
+    <string name="biometric_passcode">Utiliser le code de l’appareil</string>
+    <string name="biometric_enable_reason">Activer le déverrouillage biométrique sur cet appareil.</string>
+    <string name="biometric_disable_reason">Confirmer la désactivation du déverrouillage biométrique.</string>
+    <string name="biometric_unlock_reason">Déverrouiller l’app pour accéder à votre compte.</string>
+    <string name="biometric_cancelled">L’app reste verrouillée. Réessayez lorsque vous êtes prêt.</string>
+    <string name="biometric_unavailable">Vérifiez les réglages de sécurité de votre appareil, puis réessayez avec la biométrie ou le code.</string>
+</resources>

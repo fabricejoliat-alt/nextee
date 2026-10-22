@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="biometric_unlock">Entsperren</string>
+    <string name="biometric_checking">Wird überprüft…</string>
+    <string name="biometric_cancel">Abbrechen</string>
+    <string name="biometric_passcode">Gerätecode verwenden</string>
+    <string name="biometric_enable_reason">Biometrisches Entsperren auf diesem Gerät aktivieren.</string>
+    <string name="biometric_disable_reason">Deaktivierung des biometrischen Entsperrens bestätigen.</string>
+    <string name="biometric_unlock_reason">Entsperre die App, um auf dein Konto zuzugreifen.</string>
+    <string name="biometric_cancelled">Die App bleibt gesperrt. Versuche es erneut, sobald du bereit bist.</string>
+    <string name="biometric_unavailable">Prüfe die Sicherheitseinstellungen deines Geräts und versuche es erneut mit Biometrie oder Gerätecode.</string>
+</resources>

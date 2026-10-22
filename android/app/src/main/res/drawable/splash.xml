@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item android:drawable="@color/ic_launcher_background" />
-    <item android:width="120dp" android:height="120dp" android:gravity="center" android:drawable="@drawable/activitee_icon" />
+    <item android:drawable="@color/activitee_green" />
+    <item android:width="240dp" android:height="67dp" android:gravity="center" android:drawable="@drawable/activitee_wordmark" />
 </layer-list>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="biometric_unlock">Sblocca</string>
+    <string name="biometric_checking">Verifica…</string>
+    <string name="biometric_cancel">Annulla</string>
+    <string name="biometric_passcode">Usa il codice del dispositivo</string>
+    <string name="biometric_enable_reason">Attiva lo sblocco biometrico su questo dispositivo.</string>
+    <string name="biometric_disable_reason">Conferma la disattivazione dello sblocco biometrico.</string>
+    <string name="biometric_unlock_reason">Sblocca l’app per accedere al tuo account.</string>
+    <string name="biometric_cancelled">L’app rimane bloccata. Riprova quando sei pronto.</string>
+    <string name="biometric_unavailable">Controlla le impostazioni di sicurezza del dispositivo, poi riprova con la biometria o il codice.</string>
+</resources>

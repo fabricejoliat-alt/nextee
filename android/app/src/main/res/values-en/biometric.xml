@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="biometric_unlock">Unlock</string>
+    <string name="biometric_checking">Verifying…</string>
+    <string name="biometric_cancel">Cancel</string>
+    <string name="biometric_passcode">Use device passcode</string>
+    <string name="biometric_enable_reason">Enable biometric unlock on this device.</string>
+    <string name="biometric_disable_reason">Confirm turning off biometric unlock.</string>
+    <string name="biometric_unlock_reason">Unlock the app to access your account.</string>
+    <string name="biometric_cancelled">The app remains locked. Try again when you are ready.</string>
+    <string name="biometric_unavailable">Check your device security settings, then try again with biometrics or your passcode.</string>
+</resources>

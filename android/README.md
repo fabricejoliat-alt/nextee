@@ -41,4 +41,15 @@ parcours de vérification sont décrits dans `../docs/native-push-android.md`.
 
 Une demande Oui / Non est présentée sur les appareils compatibles. Oui lance
 l'autorisation système puis enregistre cet appareil ; Non mémorise le refus
-sur cet appareil. Le verrouillage biométrique reste réservé à iOS.
+sur cet appareil.
+
+Le déverrouillage biométrique est proposé après connexion et dans les paramètres
+du profil. Android choisit une biométrie forte compatible avec l’app (empreinte
+ou visage selon le téléphone) ; le code, schéma ou mot de passe de l’appareil
+sert de secours. Une activation exige une vérification biométrique réussie.
+Le verrou natif masque le contenu au retour d’arrière-plan et au redémarrage.
+La préférence est liée au compte sur cet appareil, exclue des sauvegardes et
+retirée à la déconnexion. Les mots de passe et données biométriques ne sont
+pas stockés par le module. Les quatre langues FR/EN/DE/IT sont prises en charge.
+
+L’écran de lancement utilise le logo vectoriel ActiviTee d’iOS, sur fond vert.
