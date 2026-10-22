@@ -35,7 +35,7 @@ export function pushFailureMessage(reason: string) {
   return ({ denied: "notifications.settings.pushDenied", not_granted: "notifications.settings.pushNotGranted",
     missing_vapid: "notifications.settings.pushNotConfigured", worker_error: "notifications.settings.pushWorkerError",
     native: "notifications.settings.nativePush", unsupported: "notifications.settings.unsupported",
-    missing_apns: "notifications.settings.pushNotConfigured", native_registration: "notifications.settings.nativePushError",
+    missing_apns: "notifications.settings.pushNotConfigured", missing_fcm: "notifications.settings.pushNotConfigured", native_registration: "notifications.settings.nativePushError",
     no_session: "notifications.settings.pushSessionExpired" } as Record<string, string>)[reason] ?? "notifications.settings.pushError";
 }
 

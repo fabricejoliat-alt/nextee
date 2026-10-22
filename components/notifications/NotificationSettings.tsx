@@ -17,6 +17,7 @@ import {
 import { disablePushSubscription, ensurePushSubscription, supportsPush, pushFailureMessage, isNativeApp, hasLocalPushSubscription } from "@/lib/pushClient";
 import { notificationKindsForRole } from "@/lib/notificationCatalog";
 import { nextNotificationKinds } from "@/lib/notificationKindSelection";
+import { rememberPushDecision } from "@/lib/pushOnboarding";
 
 type Props = {
   homeHref: string;
@@ -104,6 +105,7 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
       const next = await makePatch();
       if (!next) return;
       const updated = await upsertMyNotificationPreferences(userId, next);
+      if (next.receivePush !== undefined) rememberPushDecision(userId, next.receivePush ? "accepted" : "declined");
       setReceiveInApp(updated.receiveInApp);
       setReceivePush(updated.receivePush);
       setEnabledKinds(updated.enabledKinds);
@@ -284,16 +286,9 @@ export default function NotificationSettings({ homeHref, notificationsHref, desi
 
                 <label className="glass-card" style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", padding: 12, opacity: pushSupported ? 1 : 0.6 }}>
                   <div style={{ display: "grid", gap: 4 }}>
-                    <div style={{ fontWeight: 900, fontSize: 13 }}>{tr("Push PWA", "PWA push", "PWA-Push", "Push PWA")}</div>
+                    <div style={{ fontWeight: 900, fontSize: 13 }}>{t("notifications.settings.push")}</div>
                     <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(0,0,0,0.62)", lineHeight: 1.4 }}>
-                      {pushSupported
-                        ? tr(
-                            "Notification sur l'application et le navigateur mobile/desktop",
-                            "Notification on app and mobile/desktop browser",
-                            "Benachrichtigung in der App und im mobilen/desktop Browser",
-                            "Notifica sull'app e nel browser mobile/desktop"
-                          )
-                        : tr("Non supporté sur cet appareil.", "Not supported on this device.", "Auf diesem Gerät nicht unterstützt.", "Non supportato su questo dispositivo.")}
+                      {t(pushHint)}
                     </div>
                   </div>
                   <span

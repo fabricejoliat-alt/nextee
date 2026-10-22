@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendWebPush, validPushEndpoint } from "@/lib/server/webPush";
 import { validNativePushDevice } from "@/lib/server/apns";
+import { validAndroidPushDevice } from "@/lib/server/fcm";
 
 export async function POST(req: Request) {
   const headers = { "Cache-Control": "private, no-store" };
@@ -12,7 +13,8 @@ export async function POST(req: Request) {
     const user = await db.auth.getUser(token);
     if (user.error || !user.data.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers });
     const input = await req.json();
-    if (input.nativeDevice ? !validNativePushDevice(input.nativeDevice) : !validPushEndpoint(String(input.endpoint ?? ""))) return NextResponse.json({ error: "Invalid device" }, { status: 400, headers });
+    const targets = [input.nativeDevice, input.androidDevice, input.endpoint].filter(Boolean);
+    if (targets.length !== 1 || (input.androidDevice ? !validAndroidPushDevice(input.androidDevice) : input.nativeDevice ? !validNativePushDevice(input.nativeDevice) : !validPushEndpoint(String(input.endpoint ?? "")))) return NextResponse.json({ error: "Invalid device" }, { status: 400, headers });
     const messages = {
       fr: "Les notifications ActiviTee sont actives sur cet appareil.",
       en: "ActiviTee notifications are active on this device.",
@@ -21,7 +23,7 @@ export async function POST(req: Request) {
     };
     const locale = String(input.locale ?? "fr") as keyof typeof messages;
     const result = await sendWebPush(db, { recipientUserIds: [user.data.user.id], kind: "push_test", title: "ActiviTee",
-      body: messages[locale] ?? messages.fr, url: "/", ...(input.nativeDevice ? { nativeDevice: input.nativeDevice } : { endpoint: input.endpoint }), test: true });
+      body: messages[locale] ?? messages.fr, url: "/", ...(input.androidDevice ? { androidDevice: input.androidDevice } : input.nativeDevice ? { nativeDevice: input.nativeDevice } : { endpoint: input.endpoint }), test: true });
     return NextResponse.json({ ok: result.sent > 0, ...result }, { status: result.sent ? 200 : 503, headers });
   } catch { return NextResponse.json({ error: "Push test unavailable" }, { status: 503, headers }); }
 }

@@ -2,8 +2,9 @@ import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor
 import { PushNotifications } from "@capacitor/push-notifications";
 import { supabase } from "@/lib/supabaseClient";
 import { loadNotificationBadgeCounts } from "@/lib/notificationBadgeCounts";
+import { readPushDecision, rememberPushDecision } from "@/lib/pushOnboarding";
 
-type Context = { environment: "sandbox" | "production"; bundleId: string };
+type Context = { environment: "sandbox" | "production"; bundleId: string; firebaseConfigured?: boolean };
 type Device = Context & { token: string };
 const contextPlugin = registerPlugin<{ getContext(): Promise<Context>; setBadgeCount(options: { count: number }): Promise<void> }>("NativePushContext");
 let device: Device | null = null;
@@ -13,13 +14,15 @@ let badgeRevision = 0;
 let badgeWrite = Promise.resolve();
 
 function setNativeBadge(count: number) {
+  // Android launchers derive their badge from delivered notifications.
+  if (Capacitor.getPlatform() !== "ios") return Promise.resolve();
   // Serialize native writes so signing out cannot be overtaken by an old count.
   badgeWrite = badgeWrite.catch(() => {}).then(() => contextPlugin.setBadgeCount({ count }));
   return badgeWrite;
 }
 
 export async function syncNativeBadge() {
-  if (!supportsNativePush()) return;
+  if (!supportsNativePush() || Capacitor.getPlatform() !== "ios") return;
   const revision = ++badgeRevision;
   const auth = await authorization();
   const counts = auth ? await loadNotificationBadgeCounts(supabase, [auth.userId]) : null;
@@ -31,8 +34,14 @@ export async function syncNativeBadge() {
 }
 
 export function supportsNativePush() {
-  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios" &&
+  return Capacitor.isNativePlatform() && ["ios", "android"].includes(Capacitor.getPlatform()) &&
     Capacitor.isPluginAvailable("PushNotifications") && Capacitor.isPluginAvailable("NativePushContext");
+}
+
+function isAndroidPush() { return Capacitor.getPlatform() === "android"; }
+function registrationPath() { return isAndroidPush() ? "/api/push/android" : "/api/push/native"; }
+function registrationDevice(value: Device) {
+  return isAndroidPush() ? { token: value.token, applicationId: value.bundleId } : value;
 }
 
 export async function nativePushPermission() {
@@ -76,24 +85,29 @@ export async function ensureNativePush(options?: { prompt?: boolean }) {
   pending = (async () => {
     const auth = await authorization();
     if (!auth) return { ok: false, reason: "no_session" };
+    // Older Android releases grant OS permission by default; still require opt-in.
+    if (isAndroidPush() && !options?.prompt && readPushDecision(auth.userId) !== "accepted") return { ok: false, reason: "not_granted" };
     const context = await contextPlugin.getContext();
-    const readiness = await fetch(`/api/push/native?environment=${context.environment}`, { headers: auth.headers, cache: "no-store" });
+    const missingConfiguration = isAndroidPush() ? "missing_fcm" : "missing_apns";
+    if (isAndroidPush() && context.firebaseConfigured !== true) return { ok: false, reason: missingConfiguration };
+    const readiness = await fetch(isAndroidPush() ? registrationPath() : `${registrationPath()}?environment=${context.environment}`, { headers: auth.headers, cache: "no-store" });
     if (readiness.status === 401) return { ok: false, reason: "no_session" };
-    if (!readiness.ok || !(await readiness.json()).configured) return { ok: false, reason: "missing_apns" };
+    if (!readiness.ok || !(await readiness.json()).configured) return { ok: false, reason: missingConfiguration };
     let permission = await nativePushPermission();
     if (permission === "denied") return { ok: false, reason: "denied" };
     if (permission !== "granted" && options?.prompt) permission = (await PushNotifications.requestPermissions()).receive;
     if (permission !== "granted") return { ok: false, reason: "not_granted" };
-    // Ask APNs on every launch: its token may change after a restore or reinstall.
+    // Refresh the provider token on launch, including after a restore or reinstall.
     const token = await registerDevice();
     const latest = await authorization();
     if (currentGeneration !== generation || latest?.userId !== auth.userId) return { ok: false, reason: "no_session" };
     const next = { ...context, token };
-    const res = await fetch("/api/push/native", { method: "POST", headers: latest.headers,
-      body: JSON.stringify({ ...next, locale: document.documentElement.lang }) });
-    if (!res.ok) return { ok: false, reason: res.status === 503 ? "missing_apns" : "api_error" };
+    const res = await fetch(registrationPath(), { method: "POST", headers: latest.headers,
+      body: JSON.stringify({ ...registrationDevice(next), locale: document.documentElement.lang }) });
+    if (!res.ok) return { ok: false, reason: res.status === 503 ? missingConfiguration : "api_error" };
     if (currentGeneration !== generation) return { ok: false, reason: "no_session" };
     device = next;
+    if (isAndroidPush() && options?.prompt) rememberPushDecision(auth.userId, "accepted");
     return { ok: true };
   })().catch(() => ({ ok: false, reason: "native_registration" })).finally(() => { pending = null; });
   return pending;
@@ -113,7 +127,7 @@ export async function disableNativePush() {
   const auth = await authorization();
   if (!auth) return { ok: false, reason: "no_session" };
   const context = device ?? { ...await contextPlugin.getContext(), token: await registerDevice() };
-  const response = await fetch("/api/push/native", { method: "DELETE", headers: auth.headers, body: JSON.stringify(context) });
+  const response = await fetch(registrationPath(), { method: "DELETE", headers: auth.headers, body: JSON.stringify(registrationDevice(context)) });
   if (!response.ok) return { ok: false, reason: "api_error" };
   await PushNotifications.unregister();
   await PushNotifications.removeAllDeliveredNotifications();
@@ -137,7 +151,7 @@ export async function testNativePush(locale: string) {
   const auth = await authorization();
   if (!device || !auth) return { ok: false };
   const res = await fetch("/api/push/test", { method: "POST", headers: auth.headers,
-    body: JSON.stringify({ nativeDevice: device, locale }) });
+    body: JSON.stringify({ ...(isAndroidPush() ? { androidDevice: registrationDevice(device) } : { nativeDevice: device }), locale }) });
   return { ok: res.ok };
 }
 

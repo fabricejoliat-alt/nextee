@@ -41,6 +41,7 @@
     "test:coach-ai-assistance": "node --experimental-strip-types --test tests/coachAiAssistance.test.ts"
   },
   "dependencies": {
+    "@capacitor/android": "^8.5.2",
     "@capacitor/cli": "^8.5.2",
     "@capacitor/core": "^8.5.2",
     "@capacitor/ios": "^8.5.2",

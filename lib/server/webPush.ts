@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import webpush from "web-push";
 import { loadNotificationBadgeCounts } from "@/lib/notificationBadgeCounts";
 import { apnsConfigured, apnsPayload, openApnsConnection, sendApns, type NativePushDevice } from "@/lib/server/apns";
+import { fcmConfigured, fcmMessage, sendFcm, type AndroidPushDevice } from "@/lib/server/fcm";
 
 export function webPushConfigured() {
   return Boolean(process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
@@ -34,10 +35,12 @@ export async function sendWebPush(db: SupabaseClient, input: {
   recipientUserIds: string[]; kind: string; title: string; body?: string | null; url?: string;
   endpoint?: string; badgeCount?: number; test?: boolean;
   nativeDevice?: NativePushDevice;
+  androidDevice?: AndroidPushDevice;
 } & NotificationTemplateInput) {
-  const webEnabled = webPushConfigured() && !input.nativeDevice;
-  const nativeEnabled = apnsConfigured(input.nativeDevice?.environment) && !input.endpoint;
-  const result = { configured: webEnabled || nativeEnabled, attempted: 0, sent: 0, failed: 0, cleaned: 0 };
+  const webEnabled = webPushConfigured() && !input.nativeDevice && !input.androidDevice;
+  const nativeEnabled = apnsConfigured(input.nativeDevice?.environment) && !input.endpoint && !input.androidDevice;
+  const androidEnabled = fcmConfigured() && !input.endpoint && !input.nativeDevice;
+  const result = { configured: webEnabled || nativeEnabled || androidEnabled, attempted: 0, sent: 0, failed: 0, cleaned: 0 };
   if (!result.configured || !input.recipientUserIds.length) return result;
   const preferences = await db.from("user_notification_preferences").select("user_id,receive_in_app,receive_push,enabled_kinds")
     .in("user_id", [...new Set(input.recipientUserIds)]);
@@ -115,6 +118,32 @@ export async function sendWebPush(db: SupabaseClient, input: {
           }));
         }
       } finally { client.close(); }
+    }
+  }
+  if (androidEnabled) {
+    let query = db.from("android_push_subscriptions").select("id,user_id,device_token,application_id,locale,updated_at").in("user_id", allowed);
+    if (input.androidDevice) query = query.eq("device_token", input.androidDevice.token).eq("application_id", input.androidDevice.applicationId);
+    const devices = await query;
+    if (devices.error) throw new Error("Android push subscriptions unavailable");
+    const badgeCounts = await loadNotificationBadgeCounts(db, (devices.data ?? []).map(row => row.user_id))
+      .catch(() => new Map<string, number>());
+    for (let offset = 0; offset < (devices.data ?? []).length; offset += 20) {
+      await Promise.all((devices.data ?? []).slice(offset, offset + 20).map(async row => {
+        result.attempted++;
+        try {
+          const locale = (["fr", "en", "de", "it"].includes(row.locale) ? row.locale : "fr") as NotificationLocale;
+          const message = input.templateKey
+            ? await serverNotificationMessage(db, input.templateKey, locale, input.templateParamsByLocale?.[locale] ?? input.templateParams ?? {})
+            : { title: input.title, body: input.body ?? "" };
+          const delivery = await sendFcm({ token: row.device_token, applicationId: row.application_id },
+            fcmMessage({ ...message, url: notificationPath(input.url), recipientUserId: row.user_id, badgeCount: badgeCounts.get(row.user_id) }));
+          if (delivery.sent) result.sent++; else result.failed++;
+          if (delivery.stale) {
+            const removed = await db.from("android_push_subscriptions").delete().eq("id", row.id).eq("updated_at", row.updated_at);
+            if (!removed.error) result.cleaned++;
+          }
+        } catch { result.failed++; }
+      }));
     }
   }
   return result;
