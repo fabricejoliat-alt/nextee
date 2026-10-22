@@ -39,6 +39,7 @@ type ReviewDraft = {
   player_id: string;
   status: CoachAttendanceStatus;
   statusRecorded: boolean;
+  attendanceLocked: boolean;
   engagement: number | null;
   attitude: number | null;
   performance: number | null;
@@ -76,6 +77,8 @@ type EventRow = {
 
 type DebriefApiAttendee = {
   player_id: string;
+  status: string | null;
+  attendanceLocked?: boolean;
   coach_recorded_status: string | null;
   coach_recorded_at: string | null;
   feedback?: {
@@ -214,7 +217,8 @@ export default function CoachTrainingDebriefPage() {
             );
             return {
               player_id: String(row.player_id),
-              status: recordedStatus ?? "present",
+              status: recordedStatus ?? (row.status === "absent" || row.status === "excused" ? "absent" : "present"),
+              attendanceLocked: row.attendanceLocked === true,
               statusRecorded: recordedStatus != null,
               engagement,
               attitude,
@@ -274,6 +278,7 @@ export default function CoachTrainingDebriefPage() {
   }
 
   function setStatus(playerId: string, status: CoachAttendanceStatus) {
+    if (reviews.find((review) => review.player_id === playerId)?.attendanceLocked) return;
     patchIndividualAi(playerId, {
       preview: null,
       reviewConfirmed: false,
@@ -654,15 +659,20 @@ export default function CoachTrainingDebriefPage() {
 
               <div className={styles.sectionBlock}>
                 <h3 className={styles.sectionTitle}>1. {t("coachDebrief.presence")}</h3>
-                <div className={styles.statusChoice} role="group" aria-label={`${playerName(currentReview.profile)} — ${t("coachDebrief.presence")}`}>
+                {currentReview.attendanceLocked ? (
+                  <>
+                    <span className="pill-soft">{currentReview.status === "present" ? <UserCheck size={16} aria-hidden="true" /> : <UserX size={16} aria-hidden="true" />}{t(currentReview.status === "present" ? "coachDebrief.present" : "coachDebrief.absent")}</span>
+                    <p className={styles.defaultHint}>{t("coach.error.attendanceLocked")}</p>
+                  </>
+                ) : <div className={styles.statusChoice} role="group" aria-label={`${playerName(currentReview.profile)} — ${t("coachDebrief.presence")}`}>
                   <button type="button" className={currentReview.status === "present" ? styles.statusActivePresent : ""} aria-pressed={currentReview.status === "present"} disabled={busy} onClick={() => setStatus(currentReview.player_id, "present")}>
                     <UserCheck size={18} />{t("coachDebrief.present")}
                   </button>
                   <button type="button" className={currentReview.status === "absent" ? styles.statusActiveAbsent : ""} aria-pressed={currentReview.status === "absent"} disabled={busy} onClick={() => setStatus(currentReview.player_id, "absent")}>
                     <UserX size={18} />{t("coachDebrief.absent")}
                   </button>
-                </div>
-                {!currentReview.statusRecorded ? <p className={styles.defaultHint}>{t("coachDebrief.defaultPresentHint")}</p> : null}
+                </div>}
+                {!currentReview.attendanceLocked && !currentReview.statusRecorded ? <p className={styles.defaultHint}>{t("coachDebrief.defaultPresentHint")}</p> : null}
               </div>
 
               {currentReview.status === "absent" ? (

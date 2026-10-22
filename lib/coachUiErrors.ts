@@ -2,6 +2,7 @@ const messages: Record<string, string> = {
   event_not_found: "coach.error.notFound",
   group_not_found: "coach.error.groupAccess",
   forbidden: "coach.error.forbidden",
+  attendance_locked_by_player_evaluation: "coach.error.attendanceLocked",
   evaluation_conflict: "coach.error.conflict",
   required_criteria_missing: "coach.error.criteria",
   evaluation_disabled: "coach.error.disabled",

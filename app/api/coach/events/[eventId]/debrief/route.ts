@@ -1,3 +1,4 @@
+import { playerEvaluationLockedIds } from "@/lib/server/playerEvaluationPresence";
 import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { authorizedCoachPlayers } from "@/lib/coachAccess";
 import { NextResponse, type NextRequest } from "next/server";
@@ -27,11 +28,13 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     }
 
     const assistanceEnabled = await isCoachTrainingAssistanceEnabled(supabaseAdmin, event.club_id, callerId);
-    const evaluationState = await loadCoachEvaluationState(supabaseAdmin, [eventId]);
+    const [evaluationState, attendanceLockedIds] = await Promise.all([
+      loadCoachEvaluationState(supabaseAdmin, [eventId]), playerEvaluationLockedIds(supabaseAdmin, eventId),
+    ]);
     const [attendeesRes, feedbackRes, debriefRes, groupRes] = await Promise.all([
       supabaseAdmin
         .from("club_event_attendees")
-        .select("player_id,coach_recorded_status,coach_recorded_by,coach_recorded_at")
+        .select("player_id,status,coach_recorded_status,coach_recorded_by,coach_recorded_at")
         .eq("event_id", eventId),
       supabaseAdmin
         .from("club_event_coach_feedback")
@@ -51,6 +54,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
 
     const candidateAttendeeRows = (attendeesRes.data ?? []) as Array<{
       player_id: string;
+      status: string | null;
       coach_recorded_status: "present" | "absent" | null;
       coach_recorded_by: string | null;
       coach_recorded_at: string | null;
@@ -82,6 +86,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     const attendees = attendeeRows
       .map((row) => ({
         ...row,
+        attendanceLocked: attendanceLockedIds.has(row.player_id),
         profile: profileByPlayer.get(row.player_id) ?? null,
         feedback: feedbackByPlayer.get(row.player_id) ?? null,
       }))

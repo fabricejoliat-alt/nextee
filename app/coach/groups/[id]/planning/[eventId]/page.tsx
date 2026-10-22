@@ -460,7 +460,7 @@ export default function CoachEventDetailPage() {
       const assistanceEnabled = detailJson?.coachTrainingAssistanceEnabled === true;
       setCoachTrainingAssistanceEnabled(assistanceEnabled);
       setAttendees(Array.isArray(detailJson?.attendees) ? (detailJson.attendees as AttendeeUiRow[]) : []);
-      if (ev.event_type === "training" && new Date(ev.ends_at ?? ev.starts_at).getTime() <= Date.now()) {
+      if (ev.event_type === "training") {
         const attendanceRes = await fetch(`/api/coach/events/${encodeURIComponent(ev.id)}/attendance`, {
           headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
         });
@@ -650,6 +650,7 @@ export default function CoachEventDetailPage() {
         body: JSON.stringify({ playerId, status: nextStatus }),
       });
       const result = await response.json().catch(() => ({}));
+      if (result.code === "attendance_locked_by_player_evaluation") setAttendanceLockedIds((ids) => new Set([...ids, playerId]));
       return { error: response.ok ? null : { message: String(result.error ?? "Présence non enregistrée.") } };
     })() : await supabase.from("club_event_attendees").update({ status: nextStatus }).eq("event_id", event.id).eq("player_id", playerId);
     } catch {
@@ -820,8 +821,8 @@ export default function CoachEventDetailPage() {
                     <b>{nameOf(player?.first_name ?? null, player?.last_name ?? null)}</b>
                   </div>
                 <div className={eventStyles.attendance}>
-                  {isTrainingPast && attendanceLockedIds.has(attendee.player_id) ? (
-                    <span className="pill-soft">
+                  {attendanceLockedIds.has(attendee.player_id) ? (
+                    <span className="pill-soft" title={t("coach.error.attendanceLocked")}>
                       {attendanceStatus === "present"
                         ? t("coachDebrief.present")
                         : attendanceStatus === "absent"

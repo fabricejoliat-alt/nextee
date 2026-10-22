@@ -1,4 +1,5 @@
 export const coachActivityRows = {
+  "coach.error.attendanceLocked": ["L’autoévaluation du joueur est enregistrée : la présence est verrouillée.", "The player’s self-evaluation is saved: attendance is locked.", "Die Selbsteinschätzung des Spielers ist gespeichert: Die Anwesenheit ist gesperrt.", "L’autovalutazione del giocatore è salvata: la presenza è bloccata."],
   "coach.training.season": ["Cette saison", "This season", "Diese Saison", "Questa stagione"],
   "coach.training.lastSeason": ["La saison dernière", "Last season", "Letzte Saison", "La stagione scorsa"],
   "coach.followup.publicNote": ["Note partagée avec le joueur", "Note shared with the player", "Mit dem Spieler geteilte Notiz", "Nota condivisa con il giocatore"],

@@ -1,3 +1,5 @@
+import { playerEvaluationLockedIds } from "@/lib/server/playerEvaluationPresence";
+import { evaluatedAttendanceStatus } from "@/lib/playerEvaluationPresence";
 import { notifyCoachPlayerEvaluation } from "@/lib/server/coachEvaluationNotifications";
 import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { requireCoachEventPlayer } from "@/lib/coachAccess";
@@ -12,6 +14,7 @@ import {
 function httpError(message: string) {
   if (message === "event_not_found") return { status: 404, message: "Training not found." };
   if (message === "forbidden") return { status: 403, message: "Forbidden" };
+  if (message === "attendance_locked_by_player_evaluation") return { status: 409, message: "L’autoévaluation du joueur est enregistrée : la présence est verrouillée." };
   if (message === "evaluation_conflict") return { status: 409, message: "Cette évaluation a été modifiée depuis son ouverture. Rechargez la page avant de la modifier." };
   if (message === "required_criteria_missing") return { status: 400, message: "Complétez les critères personnalisés obligatoires." };
   return { status: 400, message };
@@ -41,13 +44,18 @@ export async function PUT(req: NextRequest, ctx: { params: Promise<{ eventId: st
     await requireCoachEventPlayer(supabaseAdmin, eventId, normalized.player_id, callerId, event.club_id);
     const attendeeRes = await supabaseAdmin
       .from("club_event_attendees")
-      .select("player_id")
+      .select("player_id,status,coach_recorded_status")
       .eq("event_id", eventId)
       .eq("player_id", normalized.player_id)
       .maybeSingle();
     if (attendeeRes.error) throw new Error(attendeeRes.error.message);
     if (!attendeeRes.data) {
       return NextResponse.json({ error: "Player is not part of this session.", code: "unknown_attendee" }, { status: 400 });
+    }
+
+    if ((await playerEvaluationLockedIds(supabaseAdmin, eventId)).has(normalized.player_id)
+      && normalized.status !== evaluatedAttendanceStatus(attendeeRes.data.status, attendeeRes.data.coach_recorded_status)) {
+      throw new Error("attendance_locked_by_player_evaluation");
     }
 
     const saveRes = await supabaseAdmin.rpc("save_coach_training_player_evaluation_v2", {
