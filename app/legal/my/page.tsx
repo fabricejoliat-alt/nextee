@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import DeleteAccountLink from "@/components/legal/DeleteAccountLink";
-import { ArrowRight, Check, ChevronDown, Download, FileText, Globe2, LockKeyhole, LogOut, ShieldCheck, X } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Download, FileText, Globe2, LockKeyhole, LogOut, ShieldCheck, TriangleAlert, X } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import type { OrganizationAccessSummary } from "@/lib/organizationPolicy";
 import { supabase } from "@/lib/supabaseClient";
@@ -211,7 +211,12 @@ export default function MyLegalPage() {
             <p>{t("organization.legalScope")}</p></div></div>
           <ul>{parentItems.map((item) => <li key={item.key}><div className={styles.parentChildDetails}>
             <strong>{item.child.child_name ?? "Mon enfant"} <span>· {item.child.club_name ?? t("organization.context")}</span></strong>
-            <span>{displayTitle(item.title,item.doc)}</span><small>{item.complete ? "Autorisation enregistrée" : item.conflict ? "Retrait ou refus à examiner avec l’organisation" : "Autorisation à donner"}{item.doc?.version ? ` · Version ${item.doc.version.version_number}` : ""}</small>
+            <span>{displayTitle(item.title,item.doc)}</span>
+            <small className={styles.authorizationStatus}>
+              {item.complete ? <Check size={16} strokeWidth={3} className={styles.authorizationCompleteIcon} aria-hidden="true" />
+                : !item.conflict ? <TriangleAlert size={16} className={styles.authorizationPendingIcon} aria-hidden="true" /> : null}
+              <span>{item.complete ? "Autorisation enregistrée" : item.conflict ? "Retrait ou refus à examiner avec l’organisation" : "Autorisation à donner"}{item.doc?.version ? ` · Version ${item.doc.version.version_number}` : ""}</span>
+            </small>
             {Boolean(item.child.other_clubs_pending?.length) && <small>L’accès de cet enfant reste aussi en attente auprès de {item.child.other_clubs_pending!.join(", ")}. Ce club doit activer votre accès Parent pour que vous puissiez y donner l’autorisation.</small>}
             {!item.child.can_authorize && <small>Votre club doit vérifier votre habilitation à autoriser cet enfant.</small>}
             {!item.doc?.version && <small>Le document de ce club n’est pas disponible. Contactez votre club.</small>}

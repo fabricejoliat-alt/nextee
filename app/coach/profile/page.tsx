@@ -579,7 +579,6 @@ export default function CoachProfilePage() {
 
         {info && <div className={styles.success} role="status">{t(info)}</div>}
 
-        <p style={{ margin: "12px 0" }}><Link href="/legal/my">Documents et consentements</Link> · <Link href="/legal/request">Mes données</Link> · <DeleteAccountLink /></p>
         {/* ===== GLASS ===== */}
         <section className="glass-section" style={{ marginTop: 14 }}>
           <div className="section-title">{t("coach.profile.title")}</div>
@@ -797,6 +796,10 @@ export default function CoachProfilePage() {
 
           {/* ✅ Logout supprimé */}
         </section>
+
+        <p style={{ margin: "12px 0", color: "#000" }}>
+          <Link href="/legal/my">Documents et consentements</Link> · <Link href="/legal/request">Mes données</Link> · <DeleteAccountLink />
+        </p>
 
         <div style={{ height: 12 }} />
       </div>

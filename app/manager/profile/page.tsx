@@ -10,6 +10,7 @@ import { Settings } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import Cropper from "react-easy-crop";
 import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
+import InlineNotice from "@/components/ui/InlineNotice";
 import BiometricLockSettings from "@/components/auth/BiometricLockSettings";
 
 type ProfileRow = {
@@ -561,10 +562,16 @@ export default function ManagerProfilePage() {
 
         {error && <div style={{ marginTop: 10, color: "#ffd1d1", fontWeight: 800 }}>{error}</div>}
 
-        {info && <div style={{ marginTop: 10, color: "#d1fae5", fontWeight: 800 }}>{info}</div>}
+        {info && (
+          <div style={{ marginTop: 10 }}>
+            <InlineNotice variant="success" title={info} />
+          </div>
+        )}
 
         {/* ===== GLASS ===== */}
-        <p style={{ margin: "12px 0" }}><Link href="/legal/my">Documents et consentements</Link> · <Link href="/legal/request">Mes données</Link> · <DeleteAccountLink /></p>
+        <p style={{ margin: "12px 0", color: "#000" }}>
+          <Link href="/legal/my">Documents et consentements</Link> · <Link href="/legal/request">Mes données</Link>
+        </p>
         <section className="glass-section" style={{ marginTop: 14 }}>
           <div className="section-title">{t("manager.profile.title")}</div>
 
@@ -786,6 +793,10 @@ export default function ManagerProfilePage() {
 
           {/* ✅ Logout supprimé */}
         </section>
+
+        <p style={{ margin: "12px 0" }}>
+          <DeleteAccountLink />
+        </p>
 
         <div style={{ height: 12 }} />
       </div>

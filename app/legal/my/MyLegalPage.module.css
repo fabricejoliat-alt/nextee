@@ -24,3 +24,4 @@
 @media(max-width:750px){.parentChildrenNotice li{align-items:stretch;flex-direction:column}.parentChildrenNotice li .secondaryButton{width:100%}}
 
 .optionalAccess{display:grid;gap:12px;width:100%}.optionalAccess h3{margin:0 0 5px;font-size:15px;color:#35483b}.optionalAccess p{margin:0;color:#536b57;font-size:13px;line-height:1.55}
+.authorizationStatus{display:flex;align-items:flex-start;gap:6px}.authorizationStatus>svg{flex:none;margin-top:1px}.authorizationCompleteIcon{color:#15803d}.authorizationPendingIcon{color:#854d0e;fill:#facc15}
