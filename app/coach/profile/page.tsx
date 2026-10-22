@@ -797,7 +797,7 @@ export default function CoachProfilePage() {
           {/* ✅ Logout supprimé */}
         </section>
 
-        <p style={{ margin: "12px 0", color: "#000" }}>
+        <p style={{ margin: "12px 0", color: "#fff" }}>
           <Link href="/legal/my">Documents et consentements</Link> · <Link href="/legal/request">Mes données</Link> · <DeleteAccountLink />
         </p>
 
