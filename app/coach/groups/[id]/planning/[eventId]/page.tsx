@@ -831,6 +831,8 @@ export default function CoachEventDetailPage() {
                   ) : (
                     <AttendanceToggle variant="pill" checked={attendanceStatus === "present"} onToggle={() => handleAttendanceToggle(attendee.player_id, attendanceStatus ?? attendee.status)} disabled={Boolean(attendanceBusyIds[attendee.player_id])} ariaLabel={tr("Basculer présence", "Toggle attendance")} leftLabel={tr("Absent", "Absent")} rightLabel={tr("Présent", "Present")} />
                   )}
+                  {isTrainingPast ? <Link className={eventStyles.actionIconButton} aria-label={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} title={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} href={`/coach/groups/${groupId}/planning/${eventId}/debrief`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
+                  {canEvaluate ? <Link className={eventStyles.actionIconButton} aria-label={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} title={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/edit`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
                   {canStructure ? <Link className={eventStyles.actionIconButton} aria-label={tr("Structurer", "Structure")} title={tr("Structurer", "Structure")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/structure`}><Pencil size={17} aria-hidden="true" /></Link> : null}
                 </div>
                   </div>
@@ -865,8 +867,6 @@ export default function CoachEventDetailPage() {
                     {preparationInsight.seen_at ? <Check size={16} aria-hidden="true"/> : <Eye size={16} aria-hidden="true"/>}
                     {t(preparationInsight.seen_at ? "coach.preparation.seen" : "coach.preparation.markSeen")}
                   </button> : null}
-                  {isTrainingPast ? <Link className={eventStyles.actionIconButton} aria-label={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} title={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} href={`/coach/groups/${groupId}/planning/${eventId}/debrief`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
-                  {canEvaluate ? <Link className={eventStyles.actionIconButton} aria-label={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} title={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/edit`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
                 </div>
               </article>
             );
