@@ -5,6 +5,7 @@ import {
   CoachDebriefValidationError,
   hasAnalyzableDebriefSource,
   needsCoachPlayerEvaluation,
+  nextCoachEvaluationIndex,
   normalizeCoachDebriefAnalysis,
   normalizeDebriefSaveInput,
   normalizeCoachPlayerEvaluationInput,
@@ -14,6 +15,18 @@ import { assertCoachTrainingReportAllowed } from "../lib/coachTrainingAssistance
 
 const PLAYER_A = "11111111-1111-4111-8111-111111111111";
 const PLAYER_B = "22222222-2222-4222-8222-222222222222";
+
+test("reviewing saved Hugo advances to saved Léa before finishing the session", () => {
+  assert.equal(nextCoachEvaluationIndex(0, [true, true]), 1);
+  assert.equal(nextCoachEvaluationIndex(1, [true, true]), null);
+});
+
+test("saving follows the player order and returns to any outstanding evaluation at the end", () => {
+  assert.equal(nextCoachEvaluationIndex(0, [true, false, true]), 1);
+  assert.equal(nextCoachEvaluationIndex(1, [true, true, true]), 2);
+  assert.equal(nextCoachEvaluationIndex(2, [false, true, true]), 0);
+  assert.equal(nextCoachEvaluationIndex(0, [true]), null);
+});
 
 test("normalizes present ratings and clears absent ratings", () => {
   const result = normalizeDebriefSaveInput(

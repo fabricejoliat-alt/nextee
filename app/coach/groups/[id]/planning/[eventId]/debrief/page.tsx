@@ -19,6 +19,7 @@ import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { coachUiErrorKey, coachCaughtErrorKey } from "@/lib/coachUiErrors";
 import { supabase } from "@/lib/supabaseClient";
 import {
+  nextCoachEvaluationIndex,
   type CoachAttendanceStatus,
   type CoachIndividualComments,
 } from "@/lib/coachDebrief";
@@ -421,6 +422,19 @@ export default function CoachTrainingDebriefPage() {
     });
   }
 
+  function advanceEvaluation(nextReviews: ReviewDraft[], noteInserted = false) {
+    const nextIndex = nextCoachEvaluationIndex(currentIndex,
+      nextReviews.map((review) => isEvaluationComplete(review, customCriteria)));
+    setError(null);
+    if (nextIndex === null) {
+      setFlowComplete(true);
+      setMessage(t("coachDebrief.finishedMessage"));
+    } else {
+      setMessage(t(noteInserted ? "coachDebrief.individualValidated" : "coachDebrief.playerSaved"));
+      setCurrentIndex(nextIndex);
+    }
+  }
+
   async function saveCurrentEvaluation() {
     if (!currentReview || busy || saveInFlightRef.current) return;
     if (currentReview.status === "present" && !hasAllRatings(currentReview)) {
@@ -434,6 +448,11 @@ export default function CoachTrainingDebriefPage() {
       criterion.snapshot_is_required && !validCoachCriterionValue(criterion, currentReview.customResponses[criterion.id]));
     if (missingCriterion) {
       setError(`${t("coachDebrief.customRequired")} ${missingCriterion.snapshot_name}`);
+      return;
+    }
+
+    if (isEvaluationComplete(currentReview, customCriteria)) {
+      advanceEvaluation(reviews);
       return;
     }
 
@@ -488,19 +507,9 @@ export default function CoachTrainingDebriefPage() {
         success: null,
       });
 
-      if (json.notification?.failed || json.notification?.push?.failed > 0) setError("coachDebrief.notificationFailed");
-
       const nextReviews = reviews.map((review) => review.player_id === currentReview.player_id ? { ...review, persisted: true } : review);
-      const remainingIndex = nextReviews.findIndex((review) => !isEvaluationComplete(review, customCriteria));
-      if (remainingIndex === -1) {
-        setFlowComplete(true);
-        setMessage(t("coachDebrief.finishedMessage"));
-      } else {
-        setMessage(json?.noteInserted === true
-          ? t("coachDebrief.individualValidated")
-          : t("coachDebrief.playerSaved"));
-        setCurrentIndex(currentIndex < reviews.length - 1 ? currentIndex + 1 : remainingIndex);
-      }
+      advanceEvaluation(nextReviews, json?.noteInserted === true);
+      if (json.notification?.failed || json.notification?.push?.failed > 0) setError("coachDebrief.notificationFailed");
     } catch (caught: unknown) {
       patchIndividualAi(currentReview.player_id, {
         error: coachCaughtErrorKey(caught, "coach.error.save"),

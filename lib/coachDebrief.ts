@@ -3,6 +3,13 @@ export const COACH_RATING_MAX = 6;
 export const COACH_REPORT_MAX_LENGTH = 10_000;
 export const COACH_PRIVATE_NOTE_MAX_LENGTH = 4_000;
 
+/** Review every following player before finishing, even when their evaluation is already saved. */
+export function nextCoachEvaluationIndex(currentIndex: number, completed: readonly boolean[]): number | null {
+  if (currentIndex + 1 < completed.length) return currentIndex + 1;
+  const remainingIndex = completed.findIndex((complete) => !complete);
+  return remainingIndex === -1 ? null : remainingIndex;
+}
+
 export type CoachAttendanceStatus = "present" | "absent";
 export type CoachReportScope = "collective" | "individual";
 export type CoachIndividualComments = Record<string, string>;

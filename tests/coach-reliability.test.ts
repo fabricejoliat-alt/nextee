@@ -56,7 +56,7 @@ test("guided UI and transactional save include custom criteria and concurrency t
   const page = readFileSync(new URL("../app/coach/groups/[id]/planning/[eventId]/debrief/page.tsx", import.meta.url), "utf8");
   assert.match(page, /EvaluationResponseField/);
   assert.match(page, /expected_recorded_at: currentReview.recordedAt/);
-  assert.match(page, /remainingIndex === -1/);
+  assert.match(page, /nextCoachEvaluationIndex/);
   const seriesPage = readFileSync(new URL("../app/coach/groups/[id]/planning/[eventId]/edit/page.tsx", import.meta.url), "utf8");
   const saveSeries = seriesPage.slice(seriesPage.indexOf("async function saveSeries"), seriesPage.indexOf("async function removeThisEvent"));
   assert.match(saveSeries, /update_coach_event_series_v1/);
