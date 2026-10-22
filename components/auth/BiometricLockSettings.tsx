@@ -63,7 +63,7 @@ export default function BiometricLockSettings() {
       <button className="btn" type="button" disabled={busy} onClick={() => void toggle()}>
         {busy ? copy.checking : (status?.enabled ? copy.disable : copy.enable).replace("{method}", method)}
       </button>
-      {feedback ? <p role={feedback === "cancelled" ? "status" : "alert"}>{copy[feedback]}</p> : null}
+      {feedback ? <p role={feedback === "cancelled" ? "status" : "alert"}>{feedback === "unavailable" && status?.biometryType === "biometric" ? copy.androidUnavailable : copy[feedback]}</p> : null}
     </div>
   );
 }
