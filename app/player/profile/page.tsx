@@ -1012,7 +1012,13 @@ export default function PlayerProfilePage() {
 
         {info && <div className={styles.successAlert}>{info}</div>}
 
-        <nav className={styles.legalCard} aria-label="Documents et données personnelles"><ShieldCheck size={19} aria-hidden="true" /><div><strong>Documents et données personnelles</strong><Link href="/legal/my">Documents et consentements →</Link><Link href="/legal/request">Mes données →</Link><DeleteAccountLink /></div></nav>
+        <SectionCard title="Documents et données personnelles" icon={<ShieldCheck size={17} aria-hidden="true" />}>
+          <nav className={styles.legalLinks} aria-label="Documents et données personnelles">
+            <Link href="/legal/my">Documents et consentements →</Link>
+            <Link href="/legal/request">Mes données →</Link>
+            <DeleteAccountLink variant="text" />
+          </nav>
+        </SectionCard>
         <section className={styles.profileContent}>
           <div className={styles.contentHeading}><div><span>Mon compte</span><h2>Informations personnelles</h2></div></div>
 
