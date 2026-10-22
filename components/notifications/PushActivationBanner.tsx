@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { BellRing } from "lucide-react";
@@ -110,7 +109,6 @@ export default function PushActivationBanner({ settingsHref }: { settingsHref: s
             {t(busy ? "notifications.onboarding.activating" : "notifications.onboarding.yes")}
           </button>
         </div>
-        <Link href={settingsHref} style={{ justifySelf: "end", fontSize: 13 }} onClick={decline}>{t("notifications.settings.title")}</Link>
       </div>
     </div>
   );
