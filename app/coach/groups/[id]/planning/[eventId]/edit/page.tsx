@@ -718,8 +718,8 @@ export default function CoachEventEditPage() {
       const hasPlayerVisibleChange =
         prevType !== nextType ||
         prevTitle !== nextTitle ||
-        event.starts_at !== nextStartIso ||
-        (event.ends_at ?? null) !== (nextEndIso ?? null) ||
+        new Date(event.starts_at).getTime() !== startDt.getTime() ||
+        (event.ends_at ? new Date(event.ends_at).getTime() : null) !== endDt.getTime() ||
         oldDuration !== newDuration ||
         prevLocRaw !== nextLocRaw ||
         prevNote !== nextNote;
@@ -874,8 +874,9 @@ export default function CoachEventEditPage() {
             </Link>
           </header>
 
-          {error && <div className={formStyles.alert} role="alert">{t(error)}</div>}
-          {saveCommitted ? <div className={formStyles.notice} role="status">{t("coach.editor.saved")}{" "}
+          {error && !saveCommitted && <div className={formStyles.alert} role="alert">{t(error)}</div>}
+          {saveCommitted ? <div className={error === "coach.error.planningNotification" ? formStyles.warning : formStyles.notice} role="status">
+            {t(error === "coach.error.planningNotification" ? error : "coach.editor.saved")}{" "}
             <Link href={`/coach/groups/${groupId}/planning/${eventId}`}>{t("coach.editor.viewSaved")}</Link>
           </div> : null}
         </>

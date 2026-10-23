@@ -21,12 +21,13 @@ function database(save:(args:Record<string,unknown>)=>Promise<Result>, opts:{per
   return {writes,get reads(){return reads;},
     rpc:async(name:string,args:Record<string,unknown>)=>{
       if(name==='can_manage_assigned_group') return {data:opts.permission??true,error:null};
+      if(name==='organization_actor_legal_ready'||name==='organization_actor_access') return {data:true,error:null};
       writes.push(name);assert.equal(name,opts.expectedRpc??'update_coach_event_occurrence_v1');return save(args);
     },
     from(table:string){
       let data:unknown=[];
       if(table==='coach_groups') data={id:'group',club_id:'club',name:'Groupe témoin',head_coach_user_id:'coach'};
-      if(table==='clubs') data={name:'Club témoin'};
+      if(table==='organizations') data={name:'Club témoin'};
       if(table==='club_members') data=[{user_id:'coach',role:'coach'},...(opts.historical?[]:[{user_id:'player',role:'player'}])];
       if(table==='profiles') data=[profile,coach];
       if(table==='coach_group_coaches') data=[{coach_user_id:'coach',profiles:coach}];
@@ -111,12 +112,32 @@ test('a committed save with failed notifications cannot be submitted again',asyn
     for(const locale of ['fr','en','de','it'] as const){
       harness.setLocale(locale);const tree=harness.render();
       assert.ok(textContent(tree).includes(messages[locale]['coach.error.planningNotification']));
+      assert.equal(elements(tree).filter(node=>node.type==='div'&&node.props.role==='status'&&textContent(node).includes(messages[locale]['coach.error.planningNotification'])).length,1);
+      assert.ok(!elements(tree).some(node=>node.props.role==='alert'));
       assert.equal(saveButton(tree,locale).props.disabled,true);saveButton(tree,locale).props.onClick();
       assert.ok(elements(tree).some(node=>node.type==='a'&&textContent(node)===messages[locale]['coach.editor.viewSaved']));
     }
     assert.deepEqual((notified[0] as {recipientUserIds:string[]}).recipientUserIds,['eligible-only']);
     assert.equal(db.writes.length,1);assert.deepEqual(navigation,[]);
   }finally{harness.cleanup();}
+});
+
+test('a structure-only edit does not notify because equivalent database and browser timestamps use different ISO formats',async()=>{
+  for(const offset of ['2020-01-01T10:00:00+00:00','2020-01-01T11:00:00+01:00']) {
+    const data=detail();data.event.starts_at=offset;data.event.ends_at='2020-01-01T11:00:00.000+00:00';
+    let notifications=0;let payload:Record<string,unknown>|undefined;
+    const db=database(async args=>{payload=args;return {data:{ok:true,recipient_ids:['eligible-only']},error:null};});
+    const {harness,navigation}=await init(db,data,{notify:async()=>{notifications++;throw new Error('Must not send');}});
+    try {
+      const row=find(harness.render(),node=>node.type==='select'&&node.props.value==='30');
+      row.props.onChange({target:{value:'45'}});
+      saveButton(harness.render()).props.onClick();await flush();
+      assert.equal(notifications,0);
+      assert.deepEqual(payload?.p_structure,[{category:'putting',minutes:45,note:'Original structure'}]);
+      assert.deepEqual(navigation,['/coach/groups/group/planning/event']);
+      assert.ok(!textContent(harness.render()).includes(messages.fr['coach.error.planningNotification']));
+    } finally {harness.cleanup();}
+  }
 });
 
 test('recurring occurrence retains its own title and note instead of the series template',async()=>{

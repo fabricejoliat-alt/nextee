@@ -13,6 +13,10 @@ export async function runOccurrenceSqlTests(t, db, ids, asActor) {
     language sql stable as $$ select not exists(select 1 from occurrence_hidden_players where player_id=p_player) $$;`);
   const scopedMigration=readFileSync(new URL("../../supabase/migrations/20261023_coach_occurrence_scoped_attendees.sql",import.meta.url),"utf8");
   await db.exec(scopedMigration); await db.exec(scopedMigration);
+  await db.exec(`create function public.organization_actor_legal_ready(p_org uuid,p_actor uuid) returns boolean
+    language sql stable as $$ select not exists(select 1 from occurrence_hidden_players where player_id=p_actor) $$;`);
+  const recipientMigration=readFileSync(new URL("../../supabase/migrations/20261023_coach_occurrence_notification_recipients.sql",import.meta.url),"utf8");
+  await db.exec(recipientMigration); await db.exec(recipientMigration);
   await db.exec(`create function reject_hidden_attendee_reinsert() returns trigger language plpgsql as $$ begin
     if exists(select 1 from occurrence_hidden_players where player_id=new.player_id)
       then raise exception 'Organization editing forbidden'; end if;
@@ -154,6 +158,15 @@ export async function runOccurrenceSqlTests(t, db, ids, asActor) {
       await db.query("delete from occurrence_hidden_players where player_id=$1",[newcomer]);
     }
   });
+  await t.test("an ineligible recipient cannot block notifications to eligible players and remains registered",async()=>{
+    const f=await fixture();
+    await db.query("update club_event_attendees set status='present' where event_id=$1",[f.id]);
+    await db.query("insert into club_event_attendees(event_id,player_id,status) values($1,$2,'present')",[f.id,newcomer]);
+    await db.query("insert into occurrence_hidden_players values($1)",[newcomer]);
+    await asActor(coach,async()=>assert.deepEqual((await f.call()).rows[0].result.recipient_ids,[player]));
+    assert.equal((await snapshot(f.id)).attendees.length,2);
+    await db.query("delete from occurrence_hidden_players where player_id=$1",[newcomer]);
+  });
   await t.test("scoped participant edits affect only visible registrations, while full Manager snapshots remain supported",async()=>{
     for(const full of [false,true]) {
       const f=await fixture();
@@ -229,6 +242,7 @@ export async function runOccurrenceSqlTests(t, db, ids, asActor) {
       end $$;`);
     const wrapper=await db.query("select pg_get_functiondef('public.update_coach_event_occurrence_v1(uuid,jsonb,jsonb,uuid[],uuid[],jsonb)'::regprocedure) definition");
     await db.exec(scopedMigration); await db.exec(scopedMigration);
+    await db.exec(recipientMigration); await db.exec(recipientMigration);
     assert.deepEqual(await db.query("select pg_get_functiondef('public.update_coach_event_occurrence_v1(uuid,jsonb,jsonb,uuid[],uuid[],jsonb)'::regprocedure) definition"),wrapper);
     assert.equal((await db.query("select has_function_privilege('authenticated','public.update_coach_event_occurrence_v1_business(uuid,jsonb,jsonb,uuid[],uuid[],jsonb)','execute') allowed")).rows[0].allowed,false);
     const f=await fixture();
