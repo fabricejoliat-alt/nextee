@@ -8,6 +8,18 @@ export async function runOccurrenceSqlTests(t, db, ids, asActor) {
   await db.exec(`alter table club_camp_days add column starts_at timestamptz, add column ends_at timestamptz,
     add column location_text text, add column updated_at timestamptz default now();`);
   await db.exec(migration); await db.exec(migration);
+  await db.exec(`create table occurrence_hidden_players(player_id uuid primary key);
+    create function public.organization_actor_access(p_org uuid,p_actor uuid,p_player uuid) returns boolean
+    language sql stable as $$ select not exists(select 1 from occurrence_hidden_players where player_id=p_player) $$;`);
+  const scopedMigration=readFileSync(new URL("../../supabase/migrations/20261023_coach_occurrence_scoped_attendees.sql",import.meta.url),"utf8");
+  await db.exec(scopedMigration); await db.exec(scopedMigration);
+  await db.exec(`create function reject_hidden_attendee_reinsert() returns trigger language plpgsql as $$ begin
+    if exists(select 1 from occurrence_hidden_players where player_id=new.player_id)
+      then raise exception 'Organization editing forbidden'; end if;
+    return new;
+    end $$;
+    create trigger guard_hidden_attendee_insert before insert on club_event_attendees
+      for each row execute function reject_hidden_attendee_reinsert();`);
   const newcomer=uuid(500), foreign=uuid(501), unassignedCoach=uuid(502);
   await db.query("insert into club_members(club_id,user_id,role,is_active) values($1,$2,'player',true),($3,$4,'player',true)",[clubA,newcomer,clubB,foreign]);
   await db.query("insert into club_members(club_id,user_id,role,is_active) values($1,$2,'coach',true)",[clubA,unassignedCoach]);
@@ -114,6 +126,47 @@ export async function runOccurrenceSqlTests(t, db, ids, asActor) {
       assert.deepEqual(await snapshot(f.id),before,kind);
     }
   });
+  await t.test("a filtered Coach snapshot saves structure while preserving hidden attendance and work",async()=>{
+    const f=await fixture();
+    await db.query("insert into club_event_attendees(event_id,player_id,status,coach_recorded_status,coach_recorded_by,coach_recorded_at) values($1,$2,'absent','absent',$3,'2020-01-02')",[f.id,newcomer,coach]);
+    await db.query("insert into occurrence_hidden_players values($1)",[newcomer]);
+    await db.query("insert into coach_player_private_notes(event_id,player_id,organization_id,body) values($1,$2,$3,'Hidden retained')",[f.id,newcomer,clubA]);
+    const before=await snapshot(f.id);
+    await asActor(coach,()=>f.call());
+    const after=await snapshot(f.id);
+    assert.deepEqual(after.attendees,before.attendees);
+    assert.deepEqual(after.notes,before.notes);
+    assert.equal(after.structure[0].minutes,45);
+    await db.query("delete from occurrence_hidden_players where player_id=$1",[newcomer]);
+  });
+  await t.test("a filtered snapshot still rejects changed visible participants and structure atomically",async()=>{
+    for(const kind of ['visible-roster','structure','event','omitted-visible']) {
+      const f=await fixture();
+      await db.query("insert into club_event_attendees(event_id,player_id,status) values($1,$2,'present')",[f.id,newcomer]);
+      await db.query("insert into occurrence_hidden_players values($1)",[newcomer]);
+      if(kind==='visible-roster') await db.query("insert into club_event_attendees(event_id,player_id,status) values($1,$2,'present')",[f.id,manager]);
+      if(kind==='structure') await db.query("update club_event_structure_items set minutes=20 where event_id=$1",[f.id]);
+      if(kind==='event') await db.query("update club_events set title='Concurrent edit' where id=$1",[f.id]);
+      const before=await snapshot(f.id);
+      const loaded=kind==='omitted-visible'?{...f.initial,player_ids:[]}:f.initial;
+      await asActor(coach,()=>assert.rejects(f.call({expected:loaded}),/planning_conflict/));
+      assert.deepEqual(await snapshot(f.id),before);
+      await db.query("delete from occurrence_hidden_players where player_id=$1",[newcomer]);
+    }
+  });
+  await t.test("scoped participant edits affect only visible registrations, while full Manager snapshots remain supported",async()=>{
+    for(const full of [false,true]) {
+      const f=await fixture();
+      await db.query("insert into club_event_attendees(event_id,player_id,status) values($1,$2,'excused')",[f.id,newcomer]);
+      await db.query("insert into occurrence_hidden_players values($1)",[newcomer]);
+      const loaded=full?await expected(f.id):f.initial;
+      await asActor(full?manager:coach,()=>f.call({expected:loaded,players:full?[player,newcomer]:[]}));
+      const after=await snapshot(f.id);
+      assert.equal(after.attendees.find(a=>a.player_id===newcomer).status,'excused');
+      assert.equal(after.attendees.length,full?2:1);
+      await db.query("delete from occurrence_hidden_players where player_id=$1",[newcomer]);
+    }
+  });
   await t.test("a late occurrence failure rolls back event, coaches, participants, structure and camp day",async()=>{
     for(const type of ['training','camp']) {
       const f=await fixture(type),before=await snapshot(f.id);
@@ -163,5 +216,29 @@ export async function runOccurrenceSqlTests(t, db, ids, asActor) {
     await db.query("update club_camp_players set registration_status='registered' where camp_id in (select camp_id from club_camp_days where event_id=$1)",[f.id]);
     const latest=await expected(f.id);
     await asActor(coach,async()=>assert.deepEqual((await f.call({expected:latest})).rows[0].result.recipient_ids,[player]));
+  });
+  await t.test("migration patches only the business function when a legal wrapper is installed",async()=>{
+    await db.exec(migration);
+    await db.exec(`alter function public.update_coach_event_occurrence_v1(uuid,jsonb,jsonb,uuid[],uuid[],jsonb)
+      rename to update_coach_event_occurrence_v1_business;
+      revoke all on function public.update_coach_event_occurrence_v1_business(uuid,jsonb,jsonb,uuid[],uuid[],jsonb) from authenticated;
+      create function public.update_coach_event_occurrence_v1(p_event_id uuid,p_expected jsonb,p_changes jsonb,p_coach_ids uuid[],p_player_ids uuid[],p_structure jsonb)
+      returns jsonb language plpgsql security definer set search_path=public,pg_temp as $$ begin
+        if current_setting('test.legal_blocked',true)='true' then raise exception 'Legal validation required'; end if;
+        return public.update_coach_event_occurrence_v1_business(p_event_id,p_expected,p_changes,p_coach_ids,p_player_ids,p_structure);
+      end $$;`);
+    const wrapper=await db.query("select pg_get_functiondef('public.update_coach_event_occurrence_v1(uuid,jsonb,jsonb,uuid[],uuid[],jsonb)'::regprocedure) definition");
+    await db.exec(scopedMigration); await db.exec(scopedMigration);
+    assert.deepEqual(await db.query("select pg_get_functiondef('public.update_coach_event_occurrence_v1(uuid,jsonb,jsonb,uuid[],uuid[],jsonb)'::regprocedure) definition"),wrapper);
+    assert.equal((await db.query("select has_function_privilege('authenticated','public.update_coach_event_occurrence_v1_business(uuid,jsonb,jsonb,uuid[],uuid[],jsonb)','execute') allowed")).rows[0].allowed,false);
+    const f=await fixture();
+    await db.query("insert into club_event_attendees(event_id,player_id,status) values($1,$2,'excused')",[f.id,newcomer]);
+    await db.query("insert into occurrence_hidden_players values($1)",[newcomer]);
+    await db.exec("select set_config('test.legal_blocked','true',false)");
+    await asActor(coach,()=>assert.rejects(f.call(),/Legal validation required/));
+    await db.exec("select set_config('test.legal_blocked','false',false)");
+    await asActor(coach,()=>f.call());
+    assert.equal((await snapshot(f.id)).attendees.length,2);
+    await db.query("delete from occurrence_hidden_players where player_id=$1",[newcomer]);
   });
 }
