@@ -53,3 +53,11 @@ retirée à la déconnexion. Les mots de passe et données biométriques ne sont
 pas stockés par le module. Les quatre langues FR/EN/DE/IT sont prises en charge.
 
 L’écran de lancement utilise le logo vectoriel ActiviTee d’iOS, sur fond vert.
+
+Si le chargement de la page principale échoue, un écran hors connexion natif
+remplace l’erreur Android. Il reste disponible sans Internet, propose Réessayer
+et relance la page lorsque le réseau retrouve un accès Internet validé.
+Le verrou biométrique reste prioritaire. Les erreurs de ressources secondaires
+ne remplacent pas une page déjà utilisable. Les textes existent en FR/EN/DE/IT.
+Ce comportement nécessite une nouvelle installation Android ; il ne rend pas
+les données de l’app consultables ou modifiables hors connexion.

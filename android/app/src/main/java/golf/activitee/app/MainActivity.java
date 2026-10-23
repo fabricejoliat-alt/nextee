@@ -3,13 +3,18 @@ package golf.activitee.app;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.webkit.WebView;
+import android.graphics.Bitmap;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
 import androidx.core.splashscreen.SplashScreen;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.BridgeWebViewClient;
 import com.getcapacitor.WebViewListener;
 
 public class MainActivity extends BridgeActivity {
     private BiometricLockController biometricLock;
     private boolean firstPageLoaded;
+    private OfflineScreenController offlineScreen;
 
     BiometricLockController biometricLock() {
         if (biometricLock == null) biometricLock = new BiometricLockController(this);
@@ -48,6 +53,25 @@ public class MainActivity extends BridgeActivity {
         biometricLock();
 
         if (bridge != null) {
+            WebView webView = bridge.getWebView();
+            offlineScreen = new OfflineScreenController(this, webView, bridge.getConfig().getServerUrl());
+            bridge.setWebViewClient(new BridgeWebViewClient(bridge) {
+                @Override public void onPageStarted(WebView view, String url, Bitmap favicon) {
+                    offlineScreen.started(url);
+                    super.onPageStarted(view, url, favicon);
+                }
+                @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                    if (request.isForMainFrame()) {
+                        firstPageLoaded = true;
+                        offlineScreen.failed(request.getUrl().toString());
+                    }
+                    super.onReceivedError(view, request, error);
+                }
+                @Override public void onPageCommitVisible(WebView view, String url) {
+                    super.onPageCommitVisible(view, url);
+                    offlineScreen.committed(url);
+                }
+            });
             // Hide Android's native scroll indicator while keeping touch scrolling.
             bridge.getWebView().setVerticalScrollBarEnabled(false);
             bridge.getWebView().setBackgroundColor(android.graphics.Color.rgb(53, 72, 59));
@@ -70,6 +94,7 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override public void onDestroy() {
+        if (offlineScreen != null) offlineScreen.destroy();
         if (biometricLock != null) biometricLock.destroy();
         super.onDestroy();
     }

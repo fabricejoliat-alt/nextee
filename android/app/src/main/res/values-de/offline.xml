@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="offline_title">Du bist offline</string>
+    <string name="offline_message">Prüfe deine Internetverbindung, um zu ActiviTee zurückzukehren.\n\nDie App wird automatisch fortgesetzt, sobald du wieder verbunden bist.</string>
+    <string name="offline_retry">Erneut versuchen</string>
+    <string name="offline_retrying">Verbindung wird hergestellt…</string>
+</resources>

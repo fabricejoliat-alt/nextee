@@ -248,6 +248,10 @@ final class BiometricLockController {
 
     private int dp(int value) { return Math.round(value * activity.getResources().getDisplayMetrics().density); }
 
+    String language() { return locale; }
+
+    void refreshPresentation() { refreshCover(); }
+
     private void refreshCover() {
         boolean concealed = state.enabled() && (state.locked() || inactive);
         if (activity.getBridge() != null) {

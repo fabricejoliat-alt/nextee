@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="offline_title">Tu es hors connexion</string>
+    <string name="offline_message">Vérifie ta connexion Internet pour retrouver ActiviTee.\n\nL’app reprendra automatiquement dès que la connexion sera rétablie.</string>
+    <string name="offline_retry">Réessayer</string>
+    <string name="offline_retrying">Connexion en cours…</string>
+</resources>
