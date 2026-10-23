@@ -64,7 +64,8 @@ final class BiometricLockController {
         String owner = null;
         try {
             JSONObject saved = new JSONObject(new String(preferenceFile.readFully(), StandardCharsets.UTF_8));
-            owner = saved.optString("owner", null);
+            // optString coerces JSONObject.NULL into the non-null string "null".
+            owner = BiometricLockState.storedOwner(saved.opt("owner"));
             locale = saved.optString("locale", "fr");
         } catch (Exception ignored) { /* First use: opt-in is disabled. */ }
         state = new BiometricLockState(owner);

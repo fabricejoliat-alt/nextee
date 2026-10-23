@@ -12,9 +12,16 @@ final class BiometricLockState {
     private int generation;
 
     BiometricLockState(String ownerID) {
-        this.ownerID = ownerID;
-        currentUserID = ownerID;
-        locked = ownerID != null;
+        this.ownerID = storedOwner(ownerID);
+        currentUserID = this.ownerID;
+        locked = this.ownerID != null;
+    }
+
+    static String storedOwner(Object value) {
+        if (!(value instanceof String)) return null;
+        String owner = ((String) value).trim();
+        // Also repair the literal sentinel persisted by older versions.
+        return owner.isEmpty() || "null".equals(owner) ? null : owner;
     }
 
     String ownerID() { return ownerID; }

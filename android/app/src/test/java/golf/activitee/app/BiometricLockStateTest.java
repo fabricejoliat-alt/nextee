@@ -4,6 +4,21 @@ import static org.junit.Assert.*;
 import org.junit.Test;
 
 public class BiometricLockStateTest {
+    @Test public void disabledPreferenceNeverBecomesAnOwnerOnColdStart() {
+        // Android's JSON null sentinel is an object whose toString() is "null".
+        Object jsonNull = new Object() { @Override public String toString() { return "null"; } };
+        for (Object saved : new Object[] { null, jsonNull, "null", "", "  " }) {
+            BiometricLockState state = new BiometricLockState(BiometricLockState.storedOwner(saved));
+            assertFalse(state.enabled());
+            assertFalse(state.locked());
+            state.synchronizeUser("player");
+            state.background();
+            assertFalse(state.locked());
+        }
+        assertFalse(new BiometricLockState("null").enabled());
+        assertTrue(new BiometricLockState("player").locked());
+    }
+
     @Test public void explicitEnrollmentLocksAfterBackgroundAndColdStart() {
         BiometricLockState state = new BiometricLockState(null);
         assertFalse(state.enabled());
