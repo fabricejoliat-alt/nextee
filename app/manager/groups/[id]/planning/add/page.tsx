@@ -540,7 +540,7 @@ export default function ManagerGroupActivityCreatePage() {
         const msg = await getNotificationMessage(request.mode === "single" ? "notif.coachEventCreated" : "notif.coachEventsCreated", locale, {
           eventType: eventTypeLabelLocalized(String(request.template.event_type)), count: ids.length,
           dateTime: request.mode === "single" ? fmtDateTimeRange(String(request.template.starts_at), String(request.template.ends_at), locale) : "",
-          locationPart: request.template.location_text ? ` · ${request.template.location_text}` : "",
+          locationPart: String(request.template.location_text ?? "").trim(),
           changesSummary: `${ids.length} · ${request.template.start_date} → ${request.template.end_date} · ${request.template.time_of_day}`,
         });
         await createAppNotification({ actorUserId: meId, kind: "coach_event_created", ...msg,

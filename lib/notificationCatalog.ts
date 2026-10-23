@@ -30,19 +30,19 @@ export const notificationTemplateDefaults: Record<string, NotificationTemplate> 
     ],
     "fr": {
       "title": "Nouvelle activité planifiée",
-      "body": "{eventType} · {dateTime}{locationPart}"
+      "body": "{eventType} · {dateTime} {locationPart}"
     },
     "en": {
       "title": "New activity scheduled",
-      "body": "{eventType} · {dateTime}{locationPart}"
+      "body": "{eventType} · {dateTime} {locationPart}"
     },
     "de": {
       "title": "Neue Aktivität geplant",
-      "body": "{eventType} · {dateTime}{locationPart}"
+      "body": "{eventType} · {dateTime} {locationPart}"
     },
     "it": {
       "title": "Nuova attività programmata",
-      "body": "{eventType} · {dateTime}{locationPart}"
+      "body": "{eventType} · {dateTime} {locationPart}"
     }
   },
   "notif.coachEventsCreated": {
@@ -144,19 +144,19 @@ export const notificationTemplateDefaults: Record<string, NotificationTemplate> 
     ],
     "fr": {
       "title": "Activité annulée",
-      "body": "{eventType} · {dateTime}{locationPart}"
+      "body": "{eventType} · {dateTime} {locationPart}"
     },
     "en": {
       "title": "Activity cancelled",
-      "body": "{eventType} · {dateTime}{locationPart}"
+      "body": "{eventType} · {dateTime} {locationPart}"
     },
     "de": {
       "title": "Aktivität abgesagt",
-      "body": "{eventType} · {dateTime}{locationPart}"
+      "body": "{eventType} · {dateTime} {locationPart}"
     },
     "it": {
       "title": "Attività annullata",
-      "body": "{eventType} · {dateTime}{locationPart}"
+      "body": "{eventType} · {dateTime} {locationPart}"
     }
   },
   "notif.coachSeriesDeleted": {
@@ -343,7 +343,7 @@ notificationTemplateDefaults["notif.managerNews"] = {
 export const notificationVariableExamples: Record<string, string> = {
   newsTitle: "Rencontre des juniors", newsSummary: "Rendez-vous samedi pour la rencontre du club.",
   playerName: "Léa Martin", eventType: "Entraînement", dateTime: "20.10.2026 à 17:00",
-  locationPart: " · Practice", changesSummary: "Entraînement déplacé au 20.10.2026 à 17:00 · Practice",
+  locationPart: "Practice", changesSummary: "Entraînement déplacé au 20.10.2026 à 17:00 · Practice",
   threadName: "Groupe Juniors", count: "2", competitionName: "Tournoi juniors", message: "Les inscriptions se terminent le 18 octobre.",
 };
 export function templateVariables(text: string) { return [...new Set([...text.matchAll(/\{([a-zA-Z0-9_]+)\}/g)].map(match => match[1]))].sort(); }
@@ -368,8 +368,9 @@ export function renderNotificationTemplate(key: string, locale: NotificationLoca
     "Training": { fr: "Entraînement", en: "Training", de: "Training", it: "Allenamento" },
     "Activité": { fr: "Activité", en: "Activity", de: "Aktivität", it: "Attività" },
   };
-  params = { ...params, ...(params.eventType && eventLabels[String(params.eventType)] ? { eventType: eventLabels[String(params.eventType)][locale] } : {}) };
-  const fill = (text: string) => text.replace(/\{([a-zA-Z0-9_]+)\}/g, (_match, variable) => String(params[variable] ?? ""));
+  params = { ...params, ...(params.locationPart != null ? { locationPart: String(params.locationPart).replace(/^\s*[·•]\s*/, "").trim() } : {}), ...(params.eventType && eventLabels[String(params.eventType)] ? { eventType: eventLabels[String(params.eventType)][locale] } : {}) };
+  const fill = (text: string) => text.replace(/\{dateTime\}\{locationPart\}/g, "{dateTime} {locationPart}")
+    .replace(/\{([a-zA-Z0-9_]+)\}/g, (_match, variable) => String(params[variable] ?? ""));
   return { title: fill(overrides[`${key}.title`] || definition[locale].title), body: fill(overrides[`${key}.body`] || definition[locale].body) };
 }
 export function notificationKindsForRole(role: NotificationRole) {

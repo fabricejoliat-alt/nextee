@@ -52,7 +52,7 @@ export async function notifyPlanningDeletion(
   const moment = formatTrainingMoment(event.starts_at);
   const location = String(event.location_text ?? "").trim() || "Lieu à définir";
   const template = { templateKey: seriesCount !== undefined ? "notif.coachSeriesDeleted" : "notif.coachEventDeleted", templateParams: {
-    eventType: isTraining ? "Entraînement" : isInterclub ? "Interclub" : "Activité", dateTime: moment, locationPart: ` · ${location}`,
+    eventType: isTraining ? "Entraînement" : isInterclub ? "Interclub" : "Activité", dateTime: moment, locationPart: location,
     changesSummary: `${seriesCount ?? 1} activités annulées · ${moment}`,
   } };
   const { title, body } = await serverNotificationMessage(supabaseAdmin, template.templateKey, "fr", template.templateParams);

@@ -70,7 +70,7 @@ async function createEventNotification(
   const isCompetition = eventType === "competition";
   const template = { templateKey: "notif.coachEventCreated", templateParams: {
     eventType: eventTitle || (eventType === "training" ? "Entraînement" : eventType === "interclub" ? "Interclub" : "Activité"),
-    dateTime, locationPart: ` · ${location}`,
+    dateTime, locationPart: location,
   } };
   const { title, body } = await serverNotificationMessage(supabaseAdmin, template.templateKey, "fr", template.templateParams);
   const url = isCompetition ? "/player/golf/trainings?type=competition" : `/player/golf/trainings/new?club_event_id=${eventId}`;

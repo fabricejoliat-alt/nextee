@@ -17,6 +17,21 @@ test("Coach settings exclude player evaluations and competitions; Player exclude
   assert(notificationKindsForRole("coach").includes("player_marked_absent"));
   assert(!notificationKindsForRole("player").includes("player_marked_absent"));
 });
+test("locationPart contains only the place, including previously stored bullet prefixes", () => {
+  assert.equal(notificationVariableExamples.locationPart, "Practice");
+  for (const locale of NOTIFICATION_LOCALES) {
+    for (const locationPart of ["Practice", " · Practice", " • Practice"]) {
+      const result = renderNotificationTemplate("notif.coachEventCreated", locale, {locationPart}, {
+        "notif.coachEventCreated.body": "Lieu : {locationPart}",
+      });
+      assert.equal(result.body, "Lieu : Practice");
+    }
+    const result = renderNotificationTemplate("notif.coachEventCreated", locale, {eventType:"Training",dateTime:"17:00",locationPart:"Practice"});
+    assert(result.body.endsWith("17:00 Practice"));
+    const legacy = renderNotificationTemplate("notif.coachEventCreated", locale, {dateTime:"17:00",locationPart:" · Practice"}, {"notif.coachEventCreated.body":"{dateTime}{locationPart}"});
+    assert.equal(legacy.body,"17:00 Practice");
+  }
+});
 test("unknown, malformed and moved variables fail validation", () => {
   assert(validateNotificationTemplate("notif.coachPlayerEvaluated", { title: "Hi", body: "{secret}" }));
   assert(validateNotificationTemplate("notif.coachPlayerEvaluated", { title: "Hi", body: "{{playerName}}" }));
@@ -24,14 +39,14 @@ test("unknown, malformed and moved variables fail validation", () => {
   assert(!notificationTranslationsMatch({ title: "{playerName}", body: "message" }, { title: "message", body: "{playerName}" }));
 });
 const request = (value: object) => new Request("https://app.invalid/api/admin/notification-templates", { method: "POST", headers: { authorization: "Bearer fixture", "Content-Type": "application/json" }, body: JSON.stringify(value) });
-function adminRoute(allowed = true, translated?: object) {
+function adminRoute(allowed = true, translated?: object, upstream?: {status:number;code:string}) {
   const { db, writes } = managerDatabase(); let aiCalls = 0;
   const mocks = {
     "next/server": { NextResponse: { json: Response.json } },
     "@/lib/server/adminAudit": { withAdminMutationAudit: (fn: unknown) => fn },
     "../news/_lib": { createAdminClient: () => db, requirePlatformAdmin: async () => allowed ? { ok: true, callerId: "admin" } : { ok: false, status: 403, error: "Forbidden" } },
     "../../news/_lib": { createAdminClient: () => db, requirePlatformAdmin: async () => allowed ? { ok: true, callerId: "admin" } : { ok: false, status: 403, error: "Forbidden" } },
-    fetch: async () => { aiCalls++; return Response.json({ output: [{ content: [{ type: "output_text", text: JSON.stringify(translated) }] }] }); },
+    fetch: async () => { aiCalls++; return upstream ? Response.json({error:{code:upstream.code}}, {status:upstream.status}) : Response.json({ output: [{ content: [{ type: "output_text", text: JSON.stringify(translated) }] }] }); },
   };
   return { db, writes, aiCalls: () => aiCalls, save: loadManagerModule<{ POST: (req: Request) => Promise<Response> }>("app/api/admin/notification-templates/route.ts", mocks).POST,
     translate: loadManagerModule<{ POST: (req: Request) => Promise<Response> }>("app/api/admin/notification-templates/translate/route.ts", mocks, { OPENAI_API_KEY: "test" }).POST };
@@ -53,6 +68,17 @@ test("AI translation requires Admin and preserves variables before returning a d
   assert.equal((await good.translate(request(input))).status, 200); assert.equal(good.writes.length, 0);
   const bad = adminRoute(true, { en: definition.en, de: { title: "Changed", body: "No variables" }, it: definition.it });
   assert.equal((await bad.translate(request(input))).status, 502); assert.equal(bad.writes.length, 0);
+});
+test("translation failures explain the upstream cause and never save drafts", async () => {
+  for (const [status,code,expected] of [[429,"insufficient_quota","facturation"],[401,"invalid_api_key","clé"],[429,"rate_limit_exceeded","temporairement"],[404,"model_not_found","modèle"]] as const) {
+    const route = adminRoute(true,undefined,{status,code});
+    const response = await route.translate(request({key:"notif.coachEventCreated",source:notificationTemplateDefaults["notif.coachEventCreated"].fr}));
+    assert.equal(response.status,502);
+    const result = await response.json();
+    assert(result.error.includes(expected));
+    assert(result.error.includes("Vos textes sont conservés."));
+    assert.equal(route.writes.length,0);
+  }
 });
 test("push renders saved overrides using each device's language", async () => {
   const { db } = managerDatabase({

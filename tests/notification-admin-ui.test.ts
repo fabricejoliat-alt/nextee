@@ -22,7 +22,8 @@ test("changing French invalidates translations, previews variables, and publishe
     h.render(); await flush();
     let tree = h.render();
     const button = (label: string) => elements(tree).find(node => node.type === "button" && textContent(node).includes(label))!;
-    assert(textContent(tree).includes("20.10.2026 à 17:00 · Practice"));
+    button("Nouvelle activité").props.onClick(); tree = h.render();
+    assert(textContent(tree).includes("20.10.2026 à 17:00 Practice"));
     const titleInput = elements(tree).find(node => node.type === "input" && node.props.maxLength === 160)!;
     titleInput.props.onChange({ target: { value: "Nouvelle séance" } }); tree = h.render();
     assert.equal(button("Enregistrer les 4 langues").props.disabled, true);
