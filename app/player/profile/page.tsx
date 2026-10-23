@@ -929,8 +929,8 @@ export default function PlayerProfilePage() {
             onClick={() => { setError(null); setPhotoActionsOpen(true); }}
             disabled={loading || avatarBusy || !userId}
           >
-            <span className={styles.avatar}>
-              {avatarDbUrl ? (
+            <span className={styles.avatar} aria-busy={loading}>
+              {loading ? null : avatarDbUrl ? (
                 <NextImage src={avatarUrl} alt="" fill sizes="(max-width: 760px) 132px, 82px" unoptimized />
               ) : (
                 <span className={styles.avatarFallback}>{getInitials(firstName, lastName)}</span>

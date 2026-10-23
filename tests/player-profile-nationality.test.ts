@@ -58,6 +58,29 @@ async function loaded(fixture: ReturnType<typeof profileFixture>) {
 }
 
 // All writes below stay in the fixture; no profile, photo or nationality is changed remotely.
+test("avatar stays neutral while the profile loads, then shows the saved photo or actual initials", async () => {
+  for (const avatar of [null, "https://example.invalid/profile.jpg"]) {
+    const fixture = profileFixture(null, avatar);
+    try {
+      const initial = fixture.harness.render();
+      const placeholder = elements(initial).find(node => node.props["aria-busy"] === true);
+      assert.ok(placeholder);
+      assert.equal(textContent(placeholder), "");
+      assert.ok(!elements(placeholder).some(node => node.type === "img"));
+      await flush();
+      const tree = fixture.harness.render();
+      const loadedAvatar = elements(tree).find(node => node.props["aria-busy"] === false)!;
+      assert.ok(loadedAvatar);
+      if (avatar) {
+        assert.ok(elements(loadedAvatar).some(node => node.type === "img" && String(node.props.src).startsWith(avatar)));
+        assert.equal(textContent(loadedAvatar), "");
+      } else {
+        assert.equal(textContent(loadedAvatar), "AT");
+      }
+    } finally { fixture.harness.cleanup(); }
+  }
+});
+
 test("player birth date and category appear under the name without duplicate identity fields", async () => {
   const fixture = profileFixture();
   try {
