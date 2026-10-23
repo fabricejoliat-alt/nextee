@@ -1,0 +1,63 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {PGlite} from '@electric-sql/pglite';
+const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+
+test('recipient insertion avoids recursive RLS while keeping ownership, session and organization boundaries',async t=>{
+  const db=new PGlite();t.after(()=>db.close());
+  await db.exec(`create role anon; create role authenticated; create role service_role;
+    create schema auth;
+    create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('test.uid',true),'')::uuid$$;
+    create function is_app_admin(p_actor uuid default auth.uid()) returns boolean language sql stable as $$select p_actor='${id(9)}'::uuid$$;
+    create table notification_access(actor uuid,club uuid,ready boolean,primary key(actor,club));
+    create table notifications(id uuid primary key,actor_user_id uuid,created_by uuid,club_id uuid);
+    create table notification_recipients(notification_id uuid references notifications,user_id uuid,is_deleted boolean default false,primary key(notification_id,user_id));
+    create function organization_notification_visible(p_notification uuid,p_actor uuid) returns boolean language sql stable security definer set search_path=public as $$
+      select exists(select 1 from notifications n join notification_access a on a.club=n.club_id where n.id=p_notification and a.actor=p_actor and a.ready) $$;
+    create function organization_view_scope(p_club uuid) returns boolean language sql stable security definer set search_path=public as $$
+      select exists(select 1 from notification_access where club=p_club and actor=auth.uid() and ready) $$;
+    create function application_session_ready() returns boolean language sql stable as $$ select coalesce(current_setting('test.blocked',true),'false')<>'true' $$;
+    grant usage on schema auth,public to authenticated,anon;
+    grant select,insert,update on notifications,notification_recipients to authenticated;
+    alter table notifications enable row level security;
+    alter table notification_recipients enable row level security;
+    create policy notifications_select on notifications for select to authenticated using(is_app_admin() or exists(select 1 from notification_recipients r where r.notification_id=notifications.id and r.user_id=auth.uid()));
+    create policy notifications_select_for_actor_or_recipient on notifications for select to authenticated using(actor_user_id=auth.uid() or exists(select 1 from notification_recipients r where r.notification_id=notifications.id and r.user_id=auth.uid() and not r.is_deleted));
+    create policy notifications_session on notifications as restrictive for all to authenticated using(application_session_ready()) with check(application_session_ready());
+    create policy notifications_org on notifications as restrictive for all to authenticated using(organization_view_scope(club_id)) with check(organization_view_scope(club_id));
+    create policy notification_recipients_select_self on notification_recipients for select to authenticated using(user_id=auth.uid());
+    create policy organization_notification_read on notification_recipients as restrictive for select to authenticated using(organization_notification_visible(notification_id,auth.uid()));
+    create policy application_session_gate on notification_recipients as restrictive for all to authenticated using(application_session_ready()) with check(application_session_ready());
+    create policy notification_recipients_insert_by_actor on notification_recipients for insert to authenticated with check(exists(select 1 from notifications n where n.id=notification_id and n.actor_user_id=auth.uid()));
+    create policy notification_recipients_insert_admin_or_creator on notification_recipients for insert to authenticated with check(is_app_admin() or exists(select 1 from notifications n where n.id=notification_id and n.created_by=auth.uid()));
+    create function check_notification_recipient() returns trigger language plpgsql security definer set search_path=public as $$begin
+      if not organization_notification_visible(new.notification_id,new.user_id) then raise exception 'Notification recipient outside authorized organization'; end if; return new; end$$;
+    create trigger notification_organization_recipient before insert on notification_recipients for each row execute function check_notification_recipient();
+    insert into notification_access values('${id(1)}','${id(10)}',true),('${id(2)}','${id(10)}',true),('${id(3)}','${id(10)}',false),('${id(4)}','${id(10)}',true),('${id(5)}','${id(11)}',true),('${id(9)}','${id(10)}',true);
+    insert into notifications values('${id(20)}','${id(1)}','${id(1)}','${id(10)}'),('${id(21)}','${id(1)}','${id(1)}','${id(11)}');
+    select set_config('test.uid','${id(1)}',false); set role authenticated;`);
+  const insert=(notification=id(20),user=id(2))=>db.query('insert into notification_recipients(notification_id,user_id) values($1,$2)',[notification,user]);
+  assert.equal((await db.query("select count(*)::int total from pg_policies where tablename='notification_recipients' and cmd='INSERT'")).rows[0].total,2);
+  await db.exec('reset role');
+  const migration=readFileSync(new URL('../supabase/migrations/20261023_notification_recipient_policy_recursion.sql',import.meta.url),'utf8');
+  await db.exec(migration);await db.exec(migration);
+  await db.exec('set role authenticated');
+  await insert();
+  assert.deepEqual((await db.query('select id from notifications')).rows,[{id:id(20)}]);
+  await db.exec(`reset role; select set_config('test.uid','${id(2)}',false); set role authenticated`);
+  assert.deepEqual((await db.query('select notification_id from notification_recipients')).rows,[{notification_id:id(20)}]);
+  assert.deepEqual((await db.query('select id from notifications')).rows,[{id:id(20)}]);
+  await assert.rejects(insert(id(20),id(4)),/row-level security/);
+  await db.exec(`reset role; select set_config('test.uid','${id(1)}',false); set role authenticated`);
+  await assert.rejects(insert(id(20),id(3)),/outside authorized organization/);
+  await assert.rejects(insert(id(21),id(5)),/row-level security/);
+  await db.exec(`select set_config('test.blocked','true',false)`);
+  await assert.rejects(insert(id(20),id(4)),/row-level security/);
+  await db.exec(`reset role; select set_config('test.blocked','false',false); update notification_access set ready=false where actor='${id(1)}'; set role authenticated`);
+  await assert.rejects(insert(id(20),id(4)),/row-level security/);
+  await db.exec(`reset role; select set_config('test.uid','',false); set role anon`);
+  await assert.rejects(db.query('select can_assign_notification_recipient_v1($1)',[id(20)]),/permission denied/);
+  await db.exec('reset role');
+  assert.equal((await db.query('select count(*)::int total from notification_recipients')).rows[0].total,1);
+});
