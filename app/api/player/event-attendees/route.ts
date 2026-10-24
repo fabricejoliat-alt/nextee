@@ -161,10 +161,13 @@ export async function GET(req: NextRequest) {
       if (!pid) return;
       statusByPlayerId[pid] = (r.status ?? "expected") as "expected" | "present" | "absent" | "excused";
     });
+    // A lingering group link does not register a player for this activity.
+    const eventPlayerIds = groupPlayerIds.filter(pid => statusByPlayerId[pid] !== undefined);
+    if (!eventPlayerIds.length) return NextResponse.json({ attendees: [] });
 
     const namesById: Record<string, { first_name: string | null; last_name: string | null; avatar_url: string | null }> = {};
-    if (groupPlayerIds.length > 0) {
-      const profilesRes = await supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", groupPlayerIds);
+    if (eventPlayerIds.length > 0) {
+      const profilesRes = await supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", eventPlayerIds);
       if (profilesRes.error) return NextResponse.json({ error: profilesRes.error.message }, { status: 400 });
       (profilesRes.data ?? []).forEach((p: { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }) => {
         namesById[String(p.id)] = {
@@ -175,7 +178,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const attendees = groupPlayerIds
+    const attendees = eventPlayerIds
       .map((pid) => ({
         player_id: pid,
         status: statusByPlayerId[pid] ?? "expected",

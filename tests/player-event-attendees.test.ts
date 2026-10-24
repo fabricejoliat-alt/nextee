@@ -47,9 +47,21 @@ for (const eventType of ["training", "camp"]) {
   });
 }
 
-test("active group players keep their attendance status, including expected when no attendance exists", async () => {
+test("group links never add players who are not registered for the activity, even with an active club membership", async () => {
   const { tables, route } = fixture();
-  tables.club_event_attendees = tables.club_event_attendees.filter(row => row.player_id !== "hugo");
+  for (const row of tables.club_members) {
+    if (["jules", "ines"].includes(row.user_id)) row.is_active = true;
+  }
+  tables.club_event_attendees = tables.club_event_attendees.filter(row => !["jules", "ines"].includes(row.player_id));
+  const response = await route.GET(request());
+  assert.equal(response.status, 200);
+  const { attendees } = await response.json();
+  assert.deepEqual(attendees.map((p: { player_id: string }) => p.player_id).sort(), ["hugo", "lea"]);
+});
+
+test("registered active players keep their explicit expected attendance status", async () => {
+  const { tables, route } = fixture();
+  tables.club_event_attendees.find(row => row.player_id === "hugo")!.status = "expected";
   const response = await route.GET(request());
   assert.equal(response.status, 200);
   const { attendees } = await response.json();
