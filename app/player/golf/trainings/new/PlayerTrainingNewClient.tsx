@@ -567,6 +567,12 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
           if (!existingSessionRes.error) {
             const existing = ((existingSessionRes.data ?? [])[0] ?? null) as ExistingSessionRow | null;
             if (existing?.id) {
+              // Old notification links must open the same saved summary as the calendar.
+              if (viewOnly) {
+                const context = new URLSearchParams({ child_id: uid });
+                router.replace(`/player/golf/trainings/${encodeURIComponent(existing.id)}?${context}`);
+                return;
+              }
               setExistingSessionId(existing.id);
               setStartAt(normalizeToQuarterHour(toLocalDateTimeInputValue(existing.start_at)));
               setPlace((existing.location_text ?? ev.location_text ?? "").trim());
@@ -622,7 +628,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
       setLoading(false);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [clubEventId]);
+  }, [clubEventId, viewOnly]);
 
   useEffect(() => {
     (async () => {
