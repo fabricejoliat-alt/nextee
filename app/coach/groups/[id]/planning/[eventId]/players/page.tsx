@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { supabase } from "@/lib/supabaseClient";
 import { loadCoachEventFeedback } from "@/lib/coachFeedbackClient";
 import { ArrowLeft, Pencil } from "lucide-react";
@@ -120,6 +121,7 @@ function categoryLabel(cat: string) {
 }
 
 export default function CoachEventPlayerDetailPage() {
+  const { t } = useI18n();
   const params = useParams<{ id: string; eventId: string; playerId: string }>();
   const groupId = String(params?.id ?? "").trim();
   const eventId = String(params?.eventId ?? "").trim();
@@ -400,7 +402,7 @@ export default function CoachEventPlayerDetailPage() {
                       <div style={{ fontSize: 12, fontWeight: 850, color: "rgba(0,0,0,0.62)" }}>
                         Sensations :{" "}
                         <span style={{ fontWeight: 950, color: "rgba(0,0,0,0.78)" }}>
-                          M {playerFb.motivation ?? "—"} • D {playerFb.difficulty ?? "—"} • S {playerFb.satisfaction ?? "—"}
+                          {t("common.motivation")} {playerFb.motivation ?? "—"} • {t("common.difficulty")} {playerFb.difficulty ?? "—"} • {t("common.satisfaction")} {playerFb.satisfaction ?? "—"}
                         </span>
                       </div>
 

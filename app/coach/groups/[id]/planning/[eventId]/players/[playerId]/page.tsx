@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { supabase } from "@/lib/supabaseClient";
 import { ArrowLeft, Mountain, Smile, Target } from "lucide-react";
 import { DifficultyIcon, EvaluationIconBadge, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
@@ -208,6 +209,7 @@ function StatBar({ icon, label, value }: { icon: ReactNode; label: string; value
 }
 
 export default function CoachEventPlayerDetailPage() {
+  const { t } = useI18n();
   const params = useParams<{ id: string; eventId: string; playerId: string }>();
   const groupId = String(params?.id ?? "").trim();
   const eventId = String(params?.eventId ?? "").trim();
@@ -513,7 +515,7 @@ export default function CoachEventPlayerDetailPage() {
                   ) : (
                     <div style={{ display: "grid", gap: 8 }}>
                       <StatBar icon={<EvaluationIconBadge><MotivationIcon size={17} /></EvaluationIconBadge>} label="Motivation" value={effectivePlayerFeedback.motivation} />
-                      <StatBar icon={<EvaluationIconBadge><DifficultyIcon size={17} /></EvaluationIconBadge>} label="Difficulté" value={effectivePlayerFeedback.difficulty} />
+                      <StatBar icon={<EvaluationIconBadge><DifficultyIcon size={17} /></EvaluationIconBadge>} label={t("common.difficulty")} value={effectivePlayerFeedback.difficulty} />
                       <StatBar icon={<EvaluationIconBadge><SatisfactionIcon size={17} /></EvaluationIconBadge>} label="Satisfaction" value={effectivePlayerFeedback.satisfaction} />
                       {effectivePlayerFeedback.player_note ? (
                         <div

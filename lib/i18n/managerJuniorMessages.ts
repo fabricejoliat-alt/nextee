@@ -384,7 +384,7 @@ export const managerJuniorEntries: Record<string, readonly [string, string, stri
   "stats.noCategories": ["Aucune catégorie détaillée sur cette période.", "No detailed categories for this period.", "Keine detaillierten Kategorien für diesen Zeitraum.", "Nessuna categoria dettagliata in questo periodo."],
   "stats.feelings": ["Ressenti déclaré par le junior", "Feelings reported by the junior", "Vom Junior angegebenes Empfinden", "Sensazioni dichiarate dal junior"],
   "stats.beforeSession": ["ressenti avant la séance", "feelings before the session", "Empfinden vor der Einheit", "sensazioni prima della sessione"],
-  "stats.reportedDifficulty": ["difficulté déclarée", "reported difficulty", "angegebene Schwierigkeit", "difficoltà dichiarata"],
+  "stats.reportedDifficulty": ["implication déclarée", "reported involvement", "angegebener Einsatz", "impegno dichiarato"],
   "stats.regularityHelp": ["La régularité repose uniquement sur les activités enregistrées et ne signifie pas qu’aucun entraînement réel n’a eu lieu.", "Consistency is based only on recorded activities; missing records do not mean no training took place.", "Die Regelmässigkeit basiert nur auf erfassten Aktivitäten. Fehlende Einträge bedeuten nicht, dass kein Training stattgefunden hat.", "La regolarità si basa solo sulle attività registrate; l’assenza di registrazioni non significa che non ci siano stati allenamenti."],
   "stats.eagles": ["Eagles", "Eagles", "Eagles", "Eagle"],
   "stats.birdies": ["Birdies", "Birdies", "Birdies", "Birdie"],

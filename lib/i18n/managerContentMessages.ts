@@ -341,7 +341,7 @@ export const managerContentEntries: Record<string, readonly [string, string, str
   "coachHeading": ["COACH", "COACH", "TRAINER", "COACH"],
   "playerEvaluationHeading": ["AUTO-ÉVALUATION JOUEUR", "PLAYER SELF-EVALUATION", "SELBSTBEWERTUNG SPIELER", "AUTOVALUTAZIONE GIOCATORE"],
   "coachStandards": ["Standards : Engagement · Attitude · Application", "Standard criteria: Engagement · Attitude · Application", "Standardkriterien: Engagement · Einstellung · Umsetzung", "Criteri standard: Impegno · Atteggiamento · Applicazione"],
-  "playerStandards": ["Standards : Motivation · Difficulté · Satisfaction", "Standard criteria: Motivation · Difficulty · Satisfaction", "Standardkriterien: Motivation · Schwierigkeit · Zufriedenheit", "Criteri standard: Motivazione · Difficoltà · Soddisfazione"],
+  "playerStandards": ["Standards : Motivation · Implication · Satisfaction", "Standard criteria: Motivation · Involvement · Satisfaction", "Standardkriterien: Motivation · Einsatz · Zufriedenheit", "Criteri standard: Motivazione · Impegno · Soddisfazione"],
 };
 
 export const managerContentMessages = Object.fromEntries((["fr", "en", "de", "it"] as const).map((locale, index) => [locale,
