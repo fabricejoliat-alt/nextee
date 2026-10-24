@@ -6,6 +6,27 @@ export async function runCreationSqlTests(t,db,ids,asActor){
   await db.exec("alter table club_event_series alter column id set default gen_random_uuid()");
   const migration=readFileSync(new URL("../../supabase/migrations/20261005_coach_event_creation.sql",import.meta.url),"utf8");
   await db.exec(migration);await db.exec(migration);
+  const evaluationFix=readFileSync(new URL("../../supabase/migrations/20261024_coach_training_evaluation_default.sql",import.meta.url),"utf8");
+  await db.exec(evaluationFix);await db.exec(evaluationFix);
+  await t.test('evaluation migration preserves the legal wrapper and existing execution privileges',async()=>{
+    await db.exec(`alter function public.create_coach_events_v1(uuid,uuid,text,jsonb,uuid[],uuid[],jsonb) rename to create_coach_events_v1_business;
+      create function public.create_coach_events_v1(uuid,uuid,text,jsonb,uuid[],uuid[],jsonb) returns jsonb language sql as $$ select '{"legal_wrapper":true}'::jsonb $$;`);
+    const before=(await db.query("select pg_get_functiondef('public.create_coach_events_v1(uuid,uuid,text,jsonb,uuid[],uuid[],jsonb)'::regprocedure) definition")).rows[0].definition;
+    // Restore the pre-fix business body to exercise the actual replacement.
+    await db.exec(`do $$ declare definition text; begin
+      definition:=pg_get_functiondef('public.create_coach_events_v1_business(uuid,uuid,text,jsonb,uuid[],uuid[],jsonb)'::regprocedure);
+      definition:=replace(definition,'coach_note,created_by,requires_evaluation)','coach_note,created_by)');
+      definition:=replace(definition,',v_type in (''training'',''camp'') and coalesce((p_template->>''requires_evaluation'')::boolean,true)) returning id into v_event_id;',') returning id into v_event_id;');
+      execute definition;
+    end $$`);
+    await db.exec(evaluationFix);
+    const after=(await db.query("select pg_get_functiondef('public.create_coach_events_v1(uuid,uuid,text,jsonb,uuid[],uuid[],jsonb)'::regprocedure) definition")).rows[0].definition;
+    assert.equal(after,before);
+    const privileges=(await db.query("select has_function_privilege('anon','public.create_coach_events_v1_business(uuid,uuid,text,jsonb,uuid[],uuid[],jsonb)','execute') anon,has_function_privilege('authenticated','public.create_coach_events_v1_business(uuid,uuid,text,jsonb,uuid[],uuid[],jsonb)','execute') authenticated")).rows[0];
+    assert.deepEqual(privileges,{anon:false,authenticated:true});
+    await db.exec(`drop function public.create_coach_events_v1(uuid,uuid,text,jsonb,uuid[],uuid[],jsonb);
+      alter function public.create_coach_events_v1_business(uuid,uuid,text,jsonb,uuid[],uuid[],jsonb) rename to create_coach_events_v1;`);
+  });
   let sequence=1000;
   const single={event_type:'training',title:null,starts_at:'2090-03-19T09:00:00Z',ends_at:'2090-03-19T10:00:00Z',duration_minutes:60};
   const recurring={event_type:'training',title:null,start_date:'2090-03-19',end_date:'2090-04-02',weekday:0,time_of_day:'10:00',interval_weeks:1,duration_minutes:60};
@@ -33,11 +54,21 @@ export async function runCreationSqlTests(t,db,ids,asActor){
     let result;await asActor(coach,async()=>{result=(await call({coaches:[coach,coach],players:[player,player]})).rows[0].result;});
     assert.equal(result.ok,true);assert.equal(result.event_ids.length,1);
     const id=result.event_ids[0];
-    assert.deepEqual((await db.query('select group_id,club_id,created_by from club_events where id=$1',[id])).rows,[{group_id:groupA,club_id:clubA,created_by:coach}]);
+    assert.deepEqual((await db.query('select group_id,club_id,created_by,requires_evaluation from club_events where id=$1',[id])).rows,[{group_id:groupA,club_id:clubA,created_by:coach,requires_evaluation:true}]);
     assert.deepEqual((await db.query('select status,coach_recorded_status,coach_recorded_at from club_event_attendees where event_id=$1',[id])).rows,
       [{status:'present',coach_recorded_status:null,coach_recorded_at:null}]);
     assert.equal((await db.query('select count(*)::int n from club_event_coaches where event_id=$1',[id])).rows[0].n,1);
     assert.equal((await db.query('select note from club_event_structure_items where event_id=$1',[id])).rows[0].note,'Station');
+  });
+  await t.test('Coach evaluation defaults apply to single events and every series occurrence, respecting explicit opt-out',async()=>{
+    for(const mode of ['single','series']) for(const type of ['training','camp','event']) for(const enabled of [undefined,false,true]) {
+      const template={...(mode==='single'?single:recurring),event_type:type,title:'Activity'};
+      if(enabled!==undefined)template.requires_evaluation=enabled;
+      let result;await asActor(coach,async()=>{result=(await call({mode,template})).rows[0].result;});
+      const rows=(await db.query('select requires_evaluation from club_events where id=any($1::uuid[])',[result.event_ids])).rows;
+      assert.ok(rows.length>0);
+      assert.ok(rows.every(row=>row.requires_evaluation===(type!=='event'&&enabled!==false)));
+    }
   });
   await t.test('a repeated request returns the original IDs without duplicating a single event or series',async()=>{
     for(const mode of ['single','series']){
