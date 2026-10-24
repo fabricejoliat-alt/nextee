@@ -1,10 +1,24 @@
 import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   bearerTokenFromRequest,
   playerAccessErrorStatus,
   resolveAuthenticatedPlayerAccess,
 } from "@/app/api/player/access";
+
+async function activePlayerIds(db: SupabaseClient, clubId: string, candidates: string[]) {
+  if (!candidates.length) return [];
+  const members = await db.from("club_members")
+    .select("user_id")
+    .eq("club_id", clubId)
+    .eq("role", "player")
+    .eq("is_active", true)
+    .in("user_id", candidates);
+  if (members.error) throw new Error(members.error.message);
+  const active = new Set((members.data ?? []).map(row => String(row.user_id)));
+  return candidates.filter(id => active.has(id));
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -39,6 +53,7 @@ export async function GET(req: NextRequest) {
     if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
     if (!eventRes.data) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     const eventType = String((eventRes.data as { event_type?: string | null } | null)?.event_type ?? "").trim();
+    const clubId = String(eventRes.data.club_id);
 
     if (eventType === "camp") {
       const campDayRes = await supabaseAdmin
@@ -57,13 +72,13 @@ export async function GET(req: NextRequest) {
         .eq("registration_status", "registered");
       if (registeredPlayersRes.error) return NextResponse.json({ error: registeredPlayersRes.error.message }, { status: 400 });
 
-      const registeredPlayerIds = Array.from(
+      const registeredPlayerIds = await activePlayerIds(supabaseAdmin, clubId, Array.from(
         new Set(
           ((registeredPlayersRes.data ?? []) as Array<{ player_id: string | null }>)
             .map((row) => String(row.player_id ?? "").trim())
             .filter(Boolean)
         )
-      );
+      ));
       if (registeredPlayerIds.length === 0) return NextResponse.json({ attendees: [] });
 
       const attendeesRes = await supabaseAdmin
@@ -120,13 +135,13 @@ export async function GET(req: NextRequest) {
       .eq("group_id", groupId);
     if (groupPlayersRes.error) return NextResponse.json({ error: groupPlayersRes.error.message }, { status: 400 });
 
-    const groupPlayerIds = Array.from(
+    const groupPlayerIds = await activePlayerIds(supabaseAdmin, clubId, Array.from(
       new Set(
         ((groupPlayersRes.data ?? []) as Array<{ player_user_id: string | null }>)
           .map((r) => String(r.player_user_id ?? "").trim())
           .filter(Boolean)
       )
-    );
+    ));
     if (groupPlayerIds.length === 0) return NextResponse.json({ attendees: [] });
 
     const attendeesRes = await supabaseAdmin
