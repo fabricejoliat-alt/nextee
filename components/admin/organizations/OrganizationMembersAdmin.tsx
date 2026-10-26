@@ -10,12 +10,24 @@ import { supabase } from "@/lib/supabaseClient";
 import styles from "./OrganizationMembersAdmin.module.css";
 
 type Club = { id: string; name: string; slug: string | null };
-type Profile = { id: string; first_name: string | null; last_name: string | null };
+type Profile = { id: string; first_name: string | null; last_name: string | null; app_role: string | null };
 type ManagerMembership = { id: string; club_id: string; user_id: string; role: "manager"; is_active: boolean | null; created_at: string | null };
 
 function fullName(profile?: Profile | null) {
   if (!profile) return "";
   return `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim();
+}
+
+const userRoleLabels: Record<string, string> = {
+  player: "Joueur", coach: "Coach", manager: "Manager", parent: "Parent", captain: "Capitaine", staff: "Staff",
+};
+const userNameCollator = new Intl.Collator("fr", { sensitivity: "base", numeric: true });
+function userOptionLabel(profile: Profile) {
+  const name = `${profile.last_name ?? ""} ${profile.first_name ?? ""}`.trim() || "Sans nom";
+  return `${name} (${userRoleLabels[profile.app_role ?? ""] ?? "Fonction non renseignée"})`;
+}
+function normalizeUserSearch(text: string) {
+  return text.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("fr");
 }
 
 function formatDate(date: string | null) {
@@ -31,6 +43,7 @@ export default function OrganizationMembersAdmin() {
   const [profilesById, setProfilesById] = useState<Record<string, Profile>>({});
   const [allUsers, setAllUsers] = useState<Profile[]>([]);
   const [selectedUserId, setSelectedUserId] = useState("");
+  const [userSearch, setUserSearch] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
   const [tablePage, setTablePage] = useState(1);
@@ -51,7 +64,7 @@ export default function OrganizationMembersAdmin() {
         supabase.from("organizations").select("id,name,slug").eq("id", organizationId).maybeSingle(),
         supabase.from("app_admins").select("user_id"),
         supabase.from("club_members").select("id,club_id,user_id,role,is_active,created_at").eq("club_id", organizationId).eq("role", "manager").order("created_at", { ascending: false }),
-        supabase.from("profiles").select("id,first_name,last_name").order("created_at", { ascending: false }),
+        supabase.from("profiles").select("id,first_name,last_name,app_role").order("last_name", { ascending: true }).order("first_name", { ascending: true }),
       ]);
 
       if (clubRes.error) throw new Error(clubRes.error.message);
@@ -80,7 +93,16 @@ export default function OrganizationMembersAdmin() {
   }, [organizationId]);
 
   const managerUserIds = useMemo(() => new Set(managers.map((manager) => manager.user_id)), [managers]);
-  const addableUsers = useMemo(() => allUsers.filter((user) => !managerUserIds.has(user.id)).sort((a, b) => fullName(a).localeCompare(fullName(b), "fr")), [allUsers, managerUserIds]);
+  const addableUsers = useMemo(() => allUsers.filter((user) => !managerUserIds.has(user.id)).sort((a, b) =>
+    userNameCollator.compare(a.last_name ?? "", b.last_name ?? "") ||
+    userNameCollator.compare(a.first_name ?? "", b.first_name ?? "") || a.id.localeCompare(b.id)), [allUsers, managerUserIds]);
+  const matchingUsers = useMemo(() => {
+    const terms = normalizeUserSearch(userSearch).trim().split(/\s+/).filter(Boolean);
+    return addableUsers.filter((user) => {
+      const label = normalizeUserSearch(userOptionLabel(user));
+      return terms.every((term) => label.includes(term));
+    });
+  }, [addableUsers, userSearch]);
   const filteredManagers = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase("fr");
     return managers.filter((manager) => {
@@ -114,6 +136,7 @@ export default function OrganizationMembersAdmin() {
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(String(result?.error ?? "Erreur lors de l’ajout du manager"));
       setSelectedUserId("");
+      setUserSearch("");
       await loadAll();
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : "Erreur lors de l’ajout du manager");
@@ -179,10 +202,13 @@ export default function OrganizationMembersAdmin() {
           <div><h2>Ajouter un manager</h2></div>
         </div>
         <form className={styles.formGrid} onSubmit={addManager}>
-          <label className={styles.field}><span>Utilisateur</span><select value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)} disabled={busy}><option value="">— Sélectionner un utilisateur —</option>{addableUsers.map((user) => <option key={user.id} value={user.id}>{fullName(user) || "Sans nom"}</option>)}</select></label>
+          <div className={styles.userPicker}>
+            <label className={styles.field}><span>Rechercher un utilisateur</span><span className={styles.userSearch}><Search size={16} aria-hidden="true" /><input type="search" value={userSearch} onChange={(event) => { setUserSearch(event.target.value); setSelectedUserId(""); }} placeholder="Nom, prénom ou fonction" disabled={busy || loading} /></span></label>
+            <label className={styles.field}><span>Utilisateur</span><select value={selectedUserId} onChange={(event) => setSelectedUserId(event.target.value)} disabled={busy || loading || matchingUsers.length === 0}><option value="">— Sélectionner un utilisateur —</option>{matchingUsers.map((user) => <option key={user.id} value={user.id}>{userOptionLabel(user)}</option>)}</select></label>
+          </div>
           <div className={styles.submitField}><button type="submit" className={styles.primaryButton} disabled={!selectedUserId || busy}><Plus size={16} /> Ajouter le manager</button></div>
         </form>
-        {addableUsers.length === 0 ? <p className={styles.helper}>Aucun utilisateur disponible à ajouter.</p> : null}
+        {!loading && <p className={styles.userSearchResult} role="status">{matchingUsers.length === 0 ? (addableUsers.length === 0 ? "Aucun utilisateur disponible à ajouter." : "Aucun utilisateur ne correspond à votre recherche.") : `${matchingUsers.length} utilisateur${matchingUsers.length > 1 ? "s" : ""} disponible${matchingUsers.length > 1 ? "s" : ""}`}</p>}
       </section>
 
       <section className={styles.tablePanel}>
