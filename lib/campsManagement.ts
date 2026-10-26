@@ -3,6 +3,11 @@ export type CampLifecycle = "upcoming" | "in_progress" | "completed" | "draft" |
 
 const ATTENDANCE = new Set<CampAttendanceStatus>(["expected", "present", "absent", "excused", "not_registered"]);
 
+/** Legacy camp days inherit the camp's head coach unless explicitly assigned. */
+export function campDayResponsibleCoach(dayCoachId: string | null | undefined, headCoachId: string | null | undefined) {
+  return String(dayCoachId ?? "").trim() || String(headCoachId ?? "").trim() || null;
+}
+
 export function normalizeCampAttendanceStatus(value: unknown): CampAttendanceStatus {
   const normalized = String(value ?? "").trim().toLowerCase() as CampAttendanceStatus;
   return ATTENDANCE.has(normalized) ? normalized : "expected";

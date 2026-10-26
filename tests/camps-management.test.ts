@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   dedupeCampParticipants,
+  campDayResponsibleCoach,
   deriveCampLifecycle,
   evaluationToggleEffect,
   isSelectableCampGroup,
@@ -10,6 +11,14 @@ import {
   remainingCampCapacity,
   validateCampDays,
 } from "../lib/campsManagement.ts";
+
+test("les journées historiques héritent du responsable du camp sans écraser un responsable distinct", () => {
+  assert.equal(campDayResponsibleCoach(null, "head"), "head");
+  assert.equal(campDayResponsibleCoach(undefined, "head"), "head");
+  assert.equal(campDayResponsibleCoach("", "head"), "head");
+  assert.equal(campDayResponsibleCoach("day-coach", "head"), "day-coach");
+  assert.equal(campDayResponsibleCoach(null, null), null);
+});
 
 test("déduplique les juniors ajoutés par groupe et individuellement", () => {
   assert.deepEqual(dedupeCampParticipants(["a", "b"], ["b", "c"]), ["a", "b", "c"]);

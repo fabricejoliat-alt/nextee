@@ -8,6 +8,8 @@ import {
   uniq,
 } from "@/app/api/camps/_lib";
 import { saveManagerCamp } from "@/lib/server/managerCampSave";
+import { campDayResponsibleCoach } from "@/lib/campsManagement";
+import { readRelatedRows } from "@/lib/server/paginatedRead";
 
 export type CampCreateDayInput = {
   event_id?: string | null;
@@ -127,6 +129,7 @@ export async function GET(req: NextRequest) {
     (clubRes.data ?? []).forEach((club: any) => clubNameById.set(String(club.id), String(club.name ?? "Club")));
     const headCoachById = new Map<string, any>();
     (profileRes.data ?? []).forEach((profile: any) => headCoachById.set(String(profile.id), profile));
+    const headCoachIdByCamp = new Map<string, string | null>(camps.map((camp: any) => [String(camp.id), camp.head_coach_user_id ?? null]));
 
     const daysByCampId: Record<string, any[]> = {};
     const dayIndexByEventId: Record<string, number> = {};
@@ -167,7 +170,7 @@ export async function GET(req: NextRequest) {
         starts_at: row.starts_at ?? null,
         ends_at: row.ends_at ?? null,
         location_text: row.location_text ?? null,
-        responsible_coach_id: row.responsible_coach_id ?? null,
+        responsible_coach_id: campDayResponsibleCoach(row.responsible_coach_id, headCoachIdByCamp.get(campId)),
         evaluation_enabled: Boolean(row.evaluation_enabled ?? row.club_events?.requires_evaluation),
         coach_ids: [] as string[],
         status: row.club_events?.status ?? "scheduled",
@@ -291,19 +294,14 @@ export async function GET(req: NextRequest) {
 
     const eventIds = Array.from(dayByEventId.keys());
     if (eventIds.length > 0) {
-      const [attendeesRes, participantAttendanceRes, feedbackRes, eventCoachesRes, eventCriteriaRes] = await Promise.all([
-        supabaseAdmin.from("club_event_attendees").select("event_id,player_id,status").in("event_id", eventIds),
-        supabaseAdmin
-          .from("club_event_attendees")
-          .select("event_id,player_id,status")
-          .in("event_id", eventIds)
-          .eq("status", "present"),
+      const [attendees, feedbackRes, eventCoachesRes, eventCriteriaRes] = await Promise.all([
+        readRelatedRows<{ event_id: string; player_id: string; status: string }>(eventIds, (ids, from, to) => supabaseAdmin
+          .from("club_event_attendees").select("event_id,player_id,status").in("event_id", ids)
+          .order("event_id").order("player_id").range(from, to)),
         supabaseAdmin.from("club_event_coach_feedback").select("event_id,player_id").in("event_id", eventIds),
         supabaseAdmin.from("club_event_coaches").select("event_id,coach_id").in("event_id", eventIds),
         supabaseAdmin.from("club_event_evaluation_criteria").select("event_id,criterion_id,position").in("event_id", eventIds).eq("is_enabled", true).order("position"),
       ]);
-      if (attendeesRes.error) return NextResponse.json({ error: attendeesRes.error.message }, { status: 400 });
-      if (participantAttendanceRes.error) return NextResponse.json({ error: participantAttendanceRes.error.message }, { status: 400 });
       if (feedbackRes.error) return NextResponse.json({ error: feedbackRes.error.message }, { status: 400 });
       if (eventCoachesRes.error) return NextResponse.json({ error: eventCoachesRes.error.message }, { status: 400 });
       if (eventCriteriaRes.error) return NextResponse.json({ error: eventCriteriaRes.error.message }, { status: 400 });
@@ -323,7 +321,8 @@ export async function GET(req: NextRequest) {
         day.coach_ids.push(coachId);
       });
 
-      const participantIds = uniq((participantAttendanceRes.data ?? []).map((row: any) => String(row.player_id ?? "").trim()));
+      const participantAttendance = attendees.filter((row) => row.status === "present");
+      const participantIds = uniq(participantAttendance.map((row) => String(row.player_id ?? "").trim()));
       const participantProfilesRes = participantIds.length
         ? await supabaseAdmin.from("profiles").select("id,first_name,last_name,avatar_url").in("id", participantIds)
         : ({ data: [], error: null } as const);
@@ -335,7 +334,7 @@ export async function GET(req: NextRequest) {
       });
 
       const participantsByEventId: Record<string, ProfileLite[]> = {};
-      (participantAttendanceRes.data ?? []).forEach((row: any) => {
+      participantAttendance.forEach((row) => {
         const eventId = String(row.event_id ?? "").trim();
         const playerId = String(row.player_id ?? "").trim();
         if (!eventId || !playerId) return;
@@ -350,7 +349,7 @@ export async function GET(req: NextRequest) {
         });
       });
 
-      (attendeesRes.data ?? []).forEach((attendee: any) => {
+      attendees.forEach((attendee) => {
         const eventId = String(attendee.event_id ?? "").trim();
         const day = dayByEventId.get(eventId);
         if (!day) return;

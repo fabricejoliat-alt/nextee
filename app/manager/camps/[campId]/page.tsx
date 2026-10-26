@@ -192,7 +192,7 @@ export default function CampDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/manager/camps", {
+      const response = await fetch(`/api/manager/camps?camp_id=${encodeURIComponent(campId)}`, {
         headers: await headers(),
         cache: "no-store",
       });
