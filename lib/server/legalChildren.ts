@@ -32,7 +32,7 @@ export async function legalChildren(db: SupabaseClient, actorId: string) {
     return [{ child_id: scope.player_id, club_id: scope.organization_id, organization_id: scope.organization_id,
       child_name: [profile?.first_name, profile?.last_name].filter(Boolean).join(" ") || null,
       club_name: org?.name ?? null, organization_name: org?.name ?? null, org_type: org?.org_type ?? null,
-      can_authorize: editable && (verified || ["father","mother","legal_guardian"].includes(link?.relation ?? "")),
+      can_authorize: editable && (verified || ["parent","father","mother","legal_guardian"].includes(link?.relation ?? "")),
       other_clubs_pending: [], representation_verified: verified, consent_status: membership.player_consent_status,
       states: (states.data ?? []).filter(row => row.beneficiary_id === scope.player_id && row.club_scope === scope.organization_id) }];
   });

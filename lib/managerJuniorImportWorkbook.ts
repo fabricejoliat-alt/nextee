@@ -47,7 +47,7 @@ export function createJuniorImportWorkbook(clubId: string, fields: JuniorImportF
     [t("manager.junior.import.columnLabel"), t("manager.junior.import.expected"), t("manager.junior.import.description")],
     ...columns.map(column => [column.header, column.field
       ? `${t(`manager.fields.${column.field.field_type}`)}${column.field.options_json?.length ? `: ${column.field.options_json.join(" | ")}` : ""}`
-      : column.key.endsWith("birth_date") ? "YYYY-MM-DD" : column.key.endsWith("relation") ? ["mother", "father", "legal_guardian", "other"].map(key => t(`manager.junior.relation.${key}`)).join(" | ")
+      : column.key.endsWith("birth_date") ? "YYYY-MM-DD" : column.key.endsWith("relation") ? ["parent", "mother", "father", "legal_guardian", "other"].map(key => t(`manager.junior.relation.${key}`)).join(" | ")
       : column.key.endsWith("is_primary") ? `${t("manager.junior.import.yes")} | ${t("manager.junior.import.no")}` : "", [column.key.startsWith("parent") && (column.field?.is_required || /_(first_name|last_name|email)$/.test(column.key)) ? t("manager.junior.import.parentFieldRequired") : "", column.field?.description ?? ""].filter(Boolean).join(" · ")]),
   ];
   const help = XLSX.utils.aoa_to_sheet(instructions); help["!cols"] = [{ wch: 65 }, { wch: 65 }, { wch: 65 }];

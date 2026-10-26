@@ -24,7 +24,7 @@ export async function pendingEditableParentChildren(db: SupabaseClient, links: G
     if (!(parentMemberships?.data ?? []).some((parent) => parent.club_id === row.club_id)) return false;
     const assertion = (assertions.data ?? []).find((entry) => entry.child_id === row.user_id && entry.club_id === row.club_id);
     return assertion?.status !== "revoked" && (assertion?.status === "verified"
-      || (relationships.data ?? []).some((entry) => entry.player_id === row.user_id && ["father", "mother", "legal_guardian"].includes(entry.relation)));
+      || (relationships.data ?? []).some((entry) => entry.player_id === row.user_id && ["parent", "father", "mother", "legal_guardian"].includes(entry.relation)));
   });
   const clubIds = [...new Set(scopedMemberships.map((row) => row.club_id))];
   const documents = clubIds.length ? await db.from("legal_documents").select("id,club_id")

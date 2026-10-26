@@ -33,13 +33,14 @@ test("another club, a new version, a refusal or conflict never inherits an autho
 
 test("linked father is listed for both children without granting verified authority for optional AI", async () => {
   const { db } = managerDatabase({
+    player_guardian_scopes: ["one", "two", "hidden"].map(player_id => ({ player_id, guardian_user_id: "parent", organization_id: "A", status: "active", can_view: player_id !== "hidden", can_edit: true })),
     player_guardians: ["one", "two", "hidden"].map((id) => ({ player_id: id, guardian_user_id: "parent",
       can_view: id !== "hidden", can_edit: true, relation: "father" })),
-    club_members: [{ user_id: "parent", role: "parent", club_id: "A", is_active: true },
-      ...["one", "two", "hidden"].map((id) => ({ user_id: id, role: "player", club_id: "A", is_active: true, player_consent_status: "pending" })),
-      { user_id: "one", role: "player", club_id: "B", is_active: true, player_consent_status: "pending" }],
+    organization_members: [{ user_id: "parent", role: "parent", organization_id: "A", is_active: true },
+      ...["one", "two", "hidden"].map((id) => ({ user_id: id, role: "player", organization_id: "A", is_active: true, player_consent_status: "pending" })),
+      { user_id: "one", role: "player", organization_id: "B", is_active: true, player_consent_status: "pending" }],
     profiles: [{ id: "one", first_name: "Junior", last_name: "One" }, { id: "two", first_name: "Junior", last_name: "Two" }],
-    clubs: [{ id: "A", name: "Club A" }], legal_representative_assertions: [], legal_current_state: [],
+    organizations: [{ id: "A", name: "Club A" }], legal_representative_assertions: [], legal_current_state: [],
   });
   const { legalChildren } = loadManagerModule("lib/server/legalChildren.ts", {});
   const result = await legalChildren(db, "parent");
@@ -50,13 +51,14 @@ test("linked father is listed for both children without granting verified author
 
 test("read-only, other contacts and revoked legal authority cannot authorize", async () => {
   const { db } = managerDatabase({
+    player_guardian_scopes: ["readonly", "other", "revoked"].map(player_id => ({ player_id, guardian_user_id: "parent", organization_id: "A", status: "active", can_view: true, can_edit: player_id !== "readonly" })),
     player_guardians: [
       { player_id: "readonly", guardian_user_id: "parent", can_view: true, can_edit: false, relation: "father" },
       { player_id: "other", guardian_user_id: "parent", can_view: true, can_edit: true, relation: "other" },
       { player_id: "revoked", guardian_user_id: "parent", can_view: true, can_edit: true, relation: "father" },
     ],
-    club_members: [{ user_id: "parent", role: "parent", club_id: "A", is_active: true },
-      ...["readonly", "other", "revoked"].map((id) => ({ user_id: id, role: "player", club_id: "A", is_active: true }))],
+    organization_members: [{ user_id: "parent", role: "parent", organization_id: "A", is_active: true },
+      ...["readonly", "other", "revoked"].map((id) => ({ user_id: id, role: "player", organization_id: "A", is_active: true }))],
     legal_representative_assertions: [{ guardian_id: "parent", child_id: "revoked", club_id: "A", status: "revoked" }],
   });
   const { legalChildren } = loadManagerModule("lib/server/legalChildren.ts", {});

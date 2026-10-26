@@ -1,8 +1,8 @@
 import { juniorImportFields, type JuniorImportField } from "./managerImportFields.ts";
 import { encodeMemberFieldValue } from "./memberFieldValues.ts";
 export type ExistingJuniorImportMember = { role: string; user_id: string; auth_email?: string | null; profiles?: { first_name?: string | null; last_name?: string | null; birth_date?: string | null } | null };
-export type JuniorImportParent = { first_name: string; last_name: string; email: string; relation: "mother" | "father" | "legal_guardian" | "other"; is_primary: boolean; exists: boolean; profile: Record<string, string>; field_values: Record<string, unknown> };
-export type JuniorImportRow = { parents: JuniorImportParent[]; profile: Record<string, string>; field_values: Record<string, unknown>; field_errors: Array<{ label: string; key: string }>; row: number; junior_first_name: string; junior_last_name: string; junior_birth_date: string; junior_email: string; parent_first_name: string; parent_last_name: string; parent_email: string; relation: "mother" | "father" | "legal_guardian" | "other"; is_primary: boolean; errors: string[]; possible_duplicate: boolean; parent_exists: boolean };
+export type JuniorImportParent = { first_name: string; last_name: string; email: string; relation: "parent" | "mother" | "father" | "legal_guardian" | "other"; is_primary: boolean; exists: boolean; profile: Record<string, string>; field_values: Record<string, unknown> };
+export type JuniorImportRow = { parents: JuniorImportParent[]; profile: Record<string, string>; field_values: Record<string, unknown>; field_errors: Array<{ label: string; key: string }>; row: number; junior_first_name: string; junior_last_name: string; junior_birth_date: string; junior_email: string; parent_first_name: string; parent_last_name: string; parent_email: string; relation: "parent" | "mother" | "father" | "legal_guardian" | "other"; is_primary: boolean; errors: string[]; possible_duplicate: boolean; parent_exists: boolean };
 
 const normalized = (value: string) => value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
 const email = (value: string) => value.trim().toLowerCase();
@@ -22,6 +22,7 @@ export function juniorImportDate(value: string) {
 
 function relation(value: string): JuniorImportRow["relation"] {
   const key = normalized(value);
+  if (["parent", "elternteil", "genitore"].includes(key)) return "parent";
   if (["mere", "mother", "maman", "mutter", "madre"].includes(key)) return "mother";
   if (["pere", "father", "papa", "vater", "padre"].includes(key)) return "father";
   if (["representant legal", "legal guardian", "legal_guardian", "tuteur", "gesetzliche vertretung", "erziehungsberechtigte", "rappresentante legale", "tutore"].includes(key)) return "legal_guardian";
@@ -89,7 +90,7 @@ export function parseJuniorImportRows(raw: Record<string, unknown>[], existing: 
       if (!address || invalidEmail(address)) errors.push("manager.junior.import.parentEmailInvalid");
       if (!first_name || !last_name) errors.push("manager.junior.import.parentNameMissing");
       if (primaryText && importBoolean(primaryText) == null) errors.push("manager.junior.import.primaryInvalid");
-      if (relationText && !["mother", "father", "legal_guardian", "other"].includes(normalized(relationText)) && relation(relationText) === "other" && !["autre", "andere", "altro"].includes(normalized(relationText))) errors.push("manager.junior.import.relationInvalid");
+      if (relationText && !["parent", "mother", "father", "legal_guardian", "other"].includes(normalized(relationText)) && relation(relationText) === "other" && !["autre", "andere", "altro"].includes(normalized(relationText))) errors.push("manager.junior.import.relationInvalid");
       parents.push({ first_name, last_name, email: address, relation: relation(relationText), is_primary: importBoolean(primaryText) === true, exists: parentEmails.has(address), profile: profile(prefix), field_values: fieldValues(prefix, "parent") });
     }
     if (juniorEmail && parents.some(parent => parent.email === juniorEmail)) errors.push("manager.junior.import.sharedJuniorEmail");

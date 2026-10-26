@@ -31,6 +31,7 @@ export const managerJuniorEntries: Record<string, readonly [string, string, stri
   "create": ["Créer le junior", "Create junior", "Junior erstellen", "Crea il junior"],
   "noFields": ["Aucun champ configuré pour cette zone.", "No fields configured for this section.", "Für diesen Bereich sind keine Felder konfiguriert.", "Nessun campo configurato per questa sezione."],
   "restricted": ["Champ restreint à compléter depuis la fiche junior.", "Restricted field to complete in the junior’s profile.", "Geschütztes Feld, das im Juniorenprofil ausgefüllt wird.", "Campo riservato da compilare nel profilo junior."],
+  "relation.parent": ["Parent", "Parent", "Elternteil", "Genitore"],
   "relation.mother": ["Mère", "Mother", "Mutter", "Madre"],
   "relation.father": ["Père", "Father", "Vater", "Padre"],
   "relation.legal_guardian": ["Représentant légal", "Legal guardian", "Gesetzliche Vertretung", "Rappresentante legale"],

@@ -31,7 +31,7 @@ export default function OrganizationRosterWorkspace() {
   const [country,setCountry] = useState("CH"), [region,setRegion] = useState("");
   const [searched,setSearched] = useState(false), [verifiedGuardian,setVerifiedGuardian] = useState("");
   const [externalId,setExternalId] = useState<string|null>(null), [newFamily,setNewFamily] = useState(false);
-  const [family,setFamily] = useState({first_name:"",last_name:"",birth_date:"",parent_first_name:"",parent_last_name:"",email:"",relation:"father"});
+  const [family,setFamily] = useState({first_name:"",last_name:"",birth_date:"",parent_first_name:"",parent_last_name:"",email:"",relation:"parent"});
   const currentOrg = useRef(orgId); currentOrg.current=orgId;
   const mutation = useRef(false), searchRevision = useRef(0);
   const isAcademy = (resource.data?.organization.org_type ?? scope.clubs.find(row=>row.id===orgId)?.org_type) === "academy";
@@ -134,7 +134,7 @@ export default function OrganizationRosterWorkspace() {
             <form className={styles.dialogForm} onSubmit={event=>{event.preventDefault();void post(`/api/manager/organizations/${orgId}/external`,{action:"identity",username,subject_role:"parent"});}}>
               {field("exactIdentifier",username,setUsername)}<p className={styles.hint}>{orgText("identityHint")}</p><div className={styles.formActions}><button type="submit" className={styles.secondaryButton} disabled={busy||username.trim().length<3}>{orgText("reviewIdentity")}</button></div>
             </form>
-            <label className={styles.field}><span>{orgText("relation")}</span><select disabled={busy} value={family.relation} onChange={event=>setFamily({...family,relation:event.target.value})}>{["father","mother","legal_guardian"].map(value=><option key={value} value={value}>{orgText(value)}</option>)}</select></label>
+            <label className={styles.field}><span>{orgText("relation")}</span><select disabled={busy} value={family.relation} onChange={event=>setFamily({...family,relation:event.target.value})}>{["parent","father","mother","legal_guardian"].map(value=><option key={value} value={value}>{orgText(value)}</option>)}</select></label>
             <div className={styles.itemList}>{identities.data?.matches.filter(match=>['approved','used'].includes(match.status)&&match.subject_role==='parent').map(match=><article key={match.id} className={styles.listRow}><strong>{matchName(match)}</strong><button type="button" className={styles.secondaryButton} disabled={busy} onClick={async()=>{const result=await post(`/api/manager/organizations/${orgId}/external`,{action:"attach_guardian",entry_id:currentDialog.entry,guardian_id:match.player_id,relation:family.relation});if(result)close();}}>{orgText("attachParent")}</button></article>)}</div>
           </section>
           <details className={styles.disclosure}><summary>{orgText("newParent")}</summary><form className={styles.dialogForm} onSubmit={async event=>{event.preventDefault();const result=await post(`/api/manager/organizations/${orgId}/external`,{action:"provision_guardian",entry_id:currentDialog.entry,parent:{first_name:family.parent_first_name,last_name:family.parent_last_name,email:family.email},relation:family.relation});if(result)close();}}>
@@ -162,7 +162,7 @@ export default function OrganizationRosterWorkspace() {
             <fieldset className={styles.dialogSection}><legend>{orgText("parent")}</legend><div className={styles.dialogForm}>
               <label className={styles.field}><span>{orgText("parent")}</span><select disabled={busy} value={verifiedGuardian} onChange={event=>setVerifiedGuardian(event.target.value)}><option value="">{orgText("newParent")}</option>{identities.data?.matches.filter(match=>['approved','used'].includes(match.status)&&match.subject_role==='parent'&&match.player_id).map(match=><option key={match.id} value={match.player_id}>{matchName(match)} · {orgText("existingParent")}</option>)}</select></label>
               {!verifiedGuardian&&<div className={styles.grid2}>{field("firstName",family.parent_first_name,value=>setFamily({...family,parent_first_name:value}))}{field("lastName",family.parent_last_name,value=>setFamily({...family,parent_last_name:value}))}{field("email",family.email,value=>setFamily({...family,email:value}),"email")}</div>}
-              <label className={styles.field}><span>{orgText("relation")}</span><select disabled={busy} value={family.relation} onChange={event=>setFamily({...family,relation:event.target.value})}>{["father","mother","legal_guardian"].map(value=><option key={value} value={value}>{orgText(value)}</option>)}</select></label>
+              <label className={styles.field}><span>{orgText("relation")}</span><select disabled={busy} value={family.relation} onChange={event=>setFamily({...family,relation:event.target.value})}>{["parent","father","mother","legal_guardian"].map(value=><option key={value} value={value}>{orgText(value)}</option>)}</select></label>
             </div></fieldset>
             <p className={styles.hint}>{orgText("invitationHint")}</p><div className={styles.formActions}><button type="submit" disabled={busy||(Boolean(externalName)&&!externalId)} className={styles.primaryButton}><UserPlus size={15} aria-hidden="true"/>{orgText("provision")}</button></div>
           </form>:<section className={styles.dialogSection}><h3>{orgText("identity")}</h3>

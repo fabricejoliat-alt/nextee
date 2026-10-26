@@ -38,7 +38,7 @@ export async function createJuniorImportExcel(clubId: string, fields: JuniorImpo
     // Reapply header style after setting the column style.
     column.alignment = { vertical: "top", wrapText: true };
     const options = boolean ? [t("manager.junior.import.yes"), t("manager.junior.import.no")]
-      : relation ? ["mother", "father", "legal_guardian", "other"].map(key => t(`manager.junior.relation.${key}`))
+      : relation ? ["parent", "mother", "father", "legal_guardian", "other"].map(key => t(`manager.junior.relation.${key}`))
       : ["select", "radio"].includes(definition.field?.field_type ?? "") ? definition.field?.options_json ?? [] : [];
     if (!options.length) continue;
     listColumn++;

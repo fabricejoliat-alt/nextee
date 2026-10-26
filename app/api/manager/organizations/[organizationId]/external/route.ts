@@ -31,7 +31,7 @@ export async function POST(req: Request, ctx: Context) {
     }
     if (input.action === "provision_guardian") {
       const parent=input.parent as {first_name?:string;last_name?:string;email?:string};
-      if(!parent?.first_name?.trim()||!parent.last_name?.trim()||!/^\S+@\S+\.\S+$/.test(parent.email??"")||!["father","mother","legal_guardian"].includes(input.relation))
+      if(!parent?.first_name?.trim()||!parent.last_name?.trim()||!/^\S+@\S+\.\S+$/.test(parent.email??"")||!["parent","father","mother","legal_guardian"].includes(input.relation))
         return organizationReply({error:"organization.invalidInput"},400);
       const entry=await access.db.from("academy_roster_entries").select("academy_id").eq("id",input.entry_id).single();
       if(entry.error||entry.data.academy_id!==organizationId)return organizationReply({error:"Forbidden"},403);
@@ -60,7 +60,7 @@ export async function POST(req: Request, ctx: Context) {
     const parent = input.parent as { first_name?: string; last_name?: string; email?: string };
     if (!player?.first_name?.trim() || !player.last_name?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(player.birth_date ?? "")
       || (!input.guardian_id && (!parent?.first_name?.trim() || !parent.last_name?.trim() || !/^\S+@\S+\.\S+$/.test(parent.email ?? "")))
-      || !["father","mother","legal_guardian"].includes(input.relation)) return organizationReply({ error: "organization.invalidInput" }, 400);
+      || !["parent","father","mother","legal_guardian"].includes(input.relation)) return organizationReply({ error: "organization.invalidInput" }, 400);
     // A possible name/date match triggers human review, never automatic reuse.
     const existing = await access.db.from("profiles").select("id").ilike("first_name", player.first_name.trim())
       .ilike("last_name", player.last_name.trim()).eq("birth_date", player.birth_date!).limit(1);
