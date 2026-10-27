@@ -75,10 +75,6 @@ type ClubEventMeta = {
   event_type: string | null;
   coach_note: string | null;
 };
-type HoleScoreRow = {
-  round_id: string | null;
-  score: number | string | null;
-};
 type ClubMemberClubRow = {
   club_id: string | null;
 };
@@ -313,17 +309,6 @@ export default function PlayerOrderOfMeritPage() {
         .in("id", roundIds);
       if (roundsRes.error) throw new Error(roundsRes.error.message);
       roundById = new Map<string, RoundMeta>(((roundsRes.data ?? []) as RoundMeta[]).map((r) => [r.id, r]));
-    }
-    const scoreByRoundId = new Map<string, number>();
-    if (roundIds.length > 0) {
-      const holesRes = await supabase.from("golf_round_holes").select("round_id,score").in("round_id", roundIds);
-      if (holesRes.error) throw new Error(holesRes.error.message);
-      ((holesRes.data ?? []) as HoleScoreRow[]).forEach((h) => {
-        const rid = String(h?.round_id ?? "");
-        const score = typeof h?.score === "number" ? h.score : Number(h?.score);
-        if (!rid || !Number.isFinite(score)) return;
-        scoreByRoundId.set(rid, (scoreByRoundId.get(rid) ?? 0) + score);
-      });
     }
 
     let contestById = new Map<string, Contest>();
