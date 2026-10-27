@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
@@ -47,7 +48,7 @@ function sameDay(iso: string, date: Date) {
 export default function CoachHomePage() {
   const { locale, t } = useI18n();
   const [data, setData] = useState<HomeData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [error, setError] = useState("");
   const [activeNews, setActiveNews] = useState<CoachNewsLite[]>([]);
 
@@ -83,7 +84,7 @@ export default function CoachHomePage() {
       }
     })();
     return () => { active = false; controller.abort(); };
-  }, [locale, reload]);
+  }, [locale, reload, setLoading]);
 
   const today = useMemo(() => (data?.upcomingEvents ?? []).filter((event) => sameDay(event.starts_at, new Date())), [data]);
   const weekEnd = useMemo(() => Date.now() + 7 * 24 * 60 * 60 * 1000, []);

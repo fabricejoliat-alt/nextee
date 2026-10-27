@@ -16,7 +16,7 @@ export default function PlayerLayoutShell({ children }: { children: ReactNode })
       <PlayerHeader />
       <PlayerConnectivityStatus />
       <div className={`player-scroll-area${isPlayerHome ? " player-scroll-area--home" : ""}`} data-scroll-container>
-        <main className="app-shell player-shell"><div key={`${pathname}:${params.get("child_id")??"self"}`}>{children}</div></main>
+        <main className="app-shell player-shell"><div key={params.get("child_id")??"self"}>{children}</div></main>
       </div>
       <PlayerMobileNav />
 

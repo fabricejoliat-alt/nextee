@@ -1,11 +1,12 @@
+import { connection } from "next/server";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FileText } from "lucide-react";
 import { legalDb } from "@/lib/server/legalAccess";
 import styles from "../LegalPublic.module.css";
 
-export const dynamic = "force-dynamic";
 export default async function LegalText({ params, searchParams }: { params: Promise<{ kind: string }>; searchParams: Promise<{ lang?: string }> }) {
+  await connection();
   const { kind } = await params; const { lang } = await searchParams;
   const locale = ["fr", "en", "de", "it"].includes(lang ?? "") ? lang! : "fr";
   const db = legalDb(); const doc = await db.from("legal_documents").select("id,kind").eq("document_key", kind)

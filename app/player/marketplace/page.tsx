@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
@@ -69,7 +70,7 @@ function MarketplaceCardsSkeleton() {
 
 export default function PlayerMarketplaceHome() {
   const { t, locale } = useI18n();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [error, setError] = useState<string | null>(null);
 
   const [items, setItems] = useState<Item[]>([]);
@@ -121,15 +122,20 @@ export default function PlayerMarketplaceHome() {
     } finally {
       setLoading(false);
     }
-  }, [t]);
+  }, [t, setLoading]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  // Reset page quand on change de catégorie
+  const previousCategory = useRef(selectedCategory);
+
+  // Reset only when the category changes, not when Activity restores the page.
   useEffect(() => {
-    setPage(1);
+    if (previousCategory.current !== selectedCategory) {
+      previousCategory.current = selectedCategory;
+      setPage(1);
+    }
   }, [selectedCategory]);
 
   // Liste des catégories (depuis les items chargés)

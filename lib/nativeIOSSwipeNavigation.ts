@@ -41,7 +41,7 @@ export function installIOSSwipeNavigation(win: Window, blocked: () => boolean) {
   const observer = new MutationObserver(schedule);
   observer.observe(win.document.documentElement, {
     subtree: true, childList: true, attributes: true,
-    attributeFilter: ["open", "role", "aria-modal", "data-swipe-navigation", "contenteditable"],
+    attributeFilter: ["open", "role", "aria-modal", "data-swipe-navigation", "contenteditable", "style", "hidden"],
   });
   win.document.addEventListener("focusin", schedule);
   win.document.addEventListener("focusout", schedule);

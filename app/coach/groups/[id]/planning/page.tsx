@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 /* eslint-disable @next/next/no-img-element */
@@ -39,7 +40,7 @@ export default function CoachGroupPlanningPage() {
   const params = useParams<{ id: string }>();
   const groupId = String(params?.id ?? "").trim();
   const [data, setData] = useState<CoachPlanningData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [tab, setTab] = useState<CoachPlanningTab>("upcoming");
@@ -82,7 +83,7 @@ export default function CoachGroupPlanningPage() {
     } finally {
       if (version === loadVersion.current) setLoading(false);
     }
-  }, [groupId]);
+  }, [groupId, setLoading]);
 
   useEffect(() => {
     setData(null); setNotice(null); setDeleteTarget(null); setDeleteError(null);

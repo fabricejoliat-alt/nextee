@@ -54,7 +54,6 @@ export default function MobileFooter() {
     // double raf = plus fiable sur certains layouts / transitions
     requestAnimationFrame(() => requestAnimationFrame(() => {
       setQuickActionsOpen(false);
-      scrollTop();
     }));
   }, [pathname]);
 

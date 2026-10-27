@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 /* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link";
@@ -23,7 +24,7 @@ function initials(profile: Profile) { return `${profile.first_name?.[0] ?? ""}${
 export default function CoachPlayersPage() {
   const { locale, t } = useI18n();
   const [reload, setReload] = useState(0);
-  const [players, setPlayers] = useState<Player[]>([]); const [clubs, setClubs] = useState<Club[]>([]); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [query, setQuery] = useState(""); const [clubFilter, setClubFilter] = useState("all"); const [sexFilter, setSexFilter] = useState("all");
+  const [players, setPlayers] = useState<Player[]>([]); const [clubs, setClubs] = useState<Club[]>([]); const [loading, setLoading] = useRetainedLoading(); const [error, setError] = useState(""); const [query, setQuery] = useState(""); const [clubFilter, setClubFilter] = useState("all"); const [sexFilter, setSexFilter] = useState("all");
   useEffect(() => { let active = true; void (async () => {
     setLoading(true); setError("");
     try {
@@ -54,7 +55,7 @@ export default function CoachPlayersPage() {
       const memberClubs = new Map<string, Set<string>>(); playerMembers.forEach((row) => { const current = memberClubs.get(row.user_id) ?? new Set<string>(); current.add(row.club_id); memberClubs.set(row.user_id, current); });
       if (active) setPlayers(((profilesResult.data ?? []) as Profile[]).map((profile) => { const ids = [...(memberClubs.get(profile.id) ?? [])]; return { ...profile, club_ids: ids, club_names: ids.map((id) => clubNames.get(id) ?? "") }; }));
     } catch (cause) { if (active) { setError(coachCaughtErrorKey(cause, "coach.error.load")); setPlayers([]); } } finally { if (active) setLoading(false); }
-  })(); return () => { active = false; }; }, [reload]);
+  })(); return () => { active = false; }; }, [reload, setLoading]);
   const filtered = useMemo(() => { const q = query.trim().toLocaleLowerCase(locale); return players.filter((player) => (clubFilter === "all" || player.club_ids.includes(clubFilter)) && (sexFilter === "all" || (sexFilter === "none" ? !player.sex : player.sex === sexFilter)) && (!q || `${name(player)} ${player.club_names.join(" ")}`.toLocaleLowerCase(locale).includes(q))).sort((a, b) => name(a).localeCompare(name(b), locale)); }, [players, query, clubFilter, sexFilter, locale]);
   return <main className={styles.page}>
     <nav data-ui="breadcrumb" className={styles.breadcrumb} aria-label={t("common.breadcrumb")}><Link href="/coach">{t("common.coach")}</Link><span>/</span><strong>{t("coach.nav.players")}</strong></nav>

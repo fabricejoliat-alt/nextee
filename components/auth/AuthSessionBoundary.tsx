@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { invalidateClientPageCacheByPrefix } from "@/lib/clientPageCache";
+import { CLEAR_PRESERVED_PAGES_EVENT } from "@/lib/pageScrollRestoration";
 import { syncBiometricSession } from "@/lib/nativeBiometricLock";
 
 const LAST_USER_KEY = "app:last_user_id";
@@ -40,6 +41,7 @@ function clearPerUserCaches() {
   safeRemove(PLAYER_DRAWER_CACHE_KEY);
   safeRemove(PARENT_SELECTED_CHILD_KEY);
   invalidateClientPageCacheByPrefix("page-cache:");
+  window.dispatchEvent(new Event(CLEAR_PRESERVED_PAGES_EVENT));
 }
 
 export default function AuthSessionBoundary() {

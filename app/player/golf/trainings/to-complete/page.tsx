@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { readPlayerPage } from "@/lib/playerPageRead";
 
@@ -59,7 +60,7 @@ function dateLocale(locale: string) {
 
 export default function PlayerTrainingsToCompletePage() {
   const { t, locale } = useI18n();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<Row[]>([]);
   const [clubNameById, setClubNameById] = useState<Record<string, string>>({});
@@ -79,7 +80,7 @@ export default function PlayerTrainingsToCompletePage() {
       setRows([]); setClubNameById({}); setGroupNameById({}); setEventById({});
     }).finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
-  }, []);
+  }, [setLoading]);
 
   return (
     <div className={`player-dashboard-bg ${styles.page}`}>

@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import CalendarSubscriptionButton from "@/components/calendar/CalendarSubscriptionButton";
 
@@ -55,7 +56,7 @@ function dedupePlannedActivities(items:Activity[]){const unique=new Map<string,A
 export default function PlayerActivitiesPage(){
   const {locale,t}=useI18n(); const searchParams=useSearchParams(); const tr=useCallback((fr:string,en:string)=>pickLocaleText(locale,fr,en),[locale]);
   const dateLocale=locale==="fr"?"fr-CH":locale==="de"?"de-CH":locale==="it"?"it-CH":"en-US";
-  const [now]=useState(()=>Date.now()); const [loading,setLoading]=useState(true); const [error,setError]=useState<string|null>(null);
+  const [now]=useState(()=>Date.now()); const [loading,setLoading]=useRetainedLoading(); const [error,setError]=useState<string|null>(null);
   const [sessions,setSessions]=useState<SessionRow[]>([]); const [events,setEvents]=useState<PlannedEventRow[]>([]); const [personal,setPersonal]=useState<PersonalEventRow[]>([]);
   const [attendanceChangeableEventIds,setAttendanceChangeableEventIds]=useState<Set<string>>(new Set());
   const [attendance,setAttendance]=useState<Record<string,AttendanceStatus>>({}); const [clubs,setClubs]=useState<Record<string,string>>({}); const [groups,setGroups]=useState<Record<string,string>>({});
@@ -80,7 +81,7 @@ export default function PlayerActivitiesPage(){
     else if(!selectedChildId)window.localStorage.removeItem("parent:selected_child_id");
     const loaded=json.sessions??[];const done=new Set(json.completedSessionIds??[]);
     setSessions(loaded);setEvents(json.attendeeEvents??[]);setPersonal(json.competitionEvents??[]);setAttendance(json.attendeeStatusByEventId??{});setCampRegistrationByEventId(json.campRegistrationByEventId??{});setAttendanceChangeableEventIds(new Set(json.attendanceChangeableEventIds??[]));setClubs(json.clubNameById??{});setGroups(json.groupNameById??{});setActiveClubCount(Number(json.activeClubCount??0));setCompleteIds(done);setPerformance(Boolean(json.performanceEnabled));setPlayerId(json.effectiveUserId??"");
-  }catch(e){if(!cancelled)setError(e instanceof Error?e.message:"Unable to load calendar")}finally{if(!cancelled)setLoading(false)}})();return()=>{cancelled=true}},[reloadKey,selectedChildId]);
+  }catch(e){if(!cancelled)setError(e instanceof Error?e.message:"Unable to load calendar")}finally{if(!cancelled)setLoading(false)}})();return()=>{cancelled=true}},[reloadKey,selectedChildId,setLoading]);
 
   const activities=useMemo<Activity[]>(()=>{
     const byEvent=new Map<string,SessionRow>();sessions.forEach(s=>{if(s.club_event_id&&!byEvent.has(s.club_event_id))byEvent.set(s.club_event_id,s)});

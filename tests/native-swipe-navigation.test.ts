@@ -95,9 +95,9 @@ function mountedNavigation(native = true, iosBridge = false) {
     closest() { return this.guarded ? this : null; }
     matches() { return this.guarded; }
   }
-  let blocked = false, now = 1000;
+  let blocked: boolean | "hidden" = false, now = 1000;
   const listeners = new Map<string, (event: unknown) => void>();
-  const doc = { body: new Target(), activeElement: null, querySelector: () => blocked ? {} : null,
+  const doc = { body: new Target(), activeElement: null, querySelectorAll: () => blocked ? [{ getClientRects: () => blocked === "hidden" ? [] : [{}] }] : [],
     addEventListener: (type: string, fn: (event: unknown) => void) => listeners.set(type, fn),
     removeEventListener: (type: string) => listeners.delete(type) };
   let effect: () => (() => void) | undefined;
@@ -122,7 +122,7 @@ function mountedNavigation(native = true, iosBridge = false) {
     now += 100; const touch = { clientX: x, clientY: y }, event = { target, cancelable: true, defaultPrevented: false, touches: type === "touchend" ? [] : [touch], changedTouches: [touch], preventDefault() { this.defaultPrevented = true; } };
     listeners.get(type)?.(event); return event;
   };
-  return { ...b, send, Target, listeners, block: (value: boolean) => { blocked = value; }, advance: () => { now += 1000; }, cleanup };
+  return { ...b, send, Target, listeners, block: (value: boolean | "hidden") => { blocked = value; }, advance: () => { now += 1000; }, cleanup };
 }
 
 test("native touch listeners navigate in both directions; form controls, horizontal scrollers, modal forms and vertical movement retain control", () => {
@@ -167,4 +167,10 @@ test("new iOS shells delegate to WebKit without installing JS touch handlers or 
   assert.equal(b.listeners.size, 0);
   assert.equal(b.history.state.__activiteeSwipeHistory, undefined);
   b.cleanup!();
+});
+
+test("hidden forms in preserved pages do not disable the visible page swipe", () => {
+  const b = mountedNavigation(); b.history.pushState({ __NA: true }, "", "/player/om");
+  b.block("hidden"); b.send("touchstart", 10, 300); b.send("touchmove", 110, 305); b.send("touchend", 110, 305);
+  assert.equal(b.location.href, "https://activitee.app/player"); b.cleanup!();
 });

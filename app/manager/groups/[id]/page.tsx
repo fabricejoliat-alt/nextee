@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { managerGroupFeedback, managerGroupFormat } from "@/lib/managerGroupPresentation";
@@ -115,7 +116,7 @@ export default function CoachGroupEditPage() {
   const requestedSeasonId = searchParams.get("season") ?? "";
 
   const mutationPending = useRef(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 

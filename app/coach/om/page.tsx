@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
@@ -152,7 +153,7 @@ export default function CoachOrderOfMeritPage() {
   const todayInZurich = useMemo(() => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(new Date()), []);
   const yearStartInZurich = useMemo(() => `${todayInZurich.slice(0, 4)}-01-01`, [todayInZurich]);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [error, setError] = useState<string | null>(null);
   const [rankingLoading, setRankingLoading] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);

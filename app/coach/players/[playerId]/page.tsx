@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
@@ -713,7 +714,7 @@ export default function GolfDashboardPage() {
     return "/coach/players";
   }, [returnToParam]);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [loadingPrev, setLoadingPrev] = useState(false);
   const [loadingRounds, setLoadingRounds] = useState(false);
   const [loadingPrevRounds, setLoadingPrevRounds] = useState(false);
@@ -888,7 +889,7 @@ export default function GolfDashboardPage() {
         setAccessChecked(true);
       }
     })();
-  }, [playerId]);
+  }, [playerId, setLoading]);
 
   useEffect(() => {
     if (!accessChecked) return;
@@ -1170,7 +1171,7 @@ export default function GolfDashboardPage() {
       }
     })();
     return () => controller.abort();
-  }, [canLoadData, dashboardView, playerId, fromDate, toDate, prevRange, dashboardRetry, t]);
+  }, [canLoadData, dashboardView, playerId, fromDate, toDate, prevRange, dashboardRetry, t, setLoading]);
 
   // ===== LOAD COACH EVALUATIONS (past trainings) =====
   useEffect(() => {

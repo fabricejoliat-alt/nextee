@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 /* eslint-disable @next/next/no-img-element */
@@ -111,7 +112,7 @@ export default function CoachGroupEditPage() {
   const { locale, t } = useI18n();
   const params = useParams<{ id: string }>();
   const groupId = String(params?.id ?? "");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -215,7 +216,7 @@ export default function CoachGroupEditPage() {
     } finally {
       if (version === loadVersion.current) setLoading(false);
     }
-  }, [groupId]);
+  }, [groupId, setLoading]);
 
   useEffect(() => {
     nameEdited.current = false;
@@ -232,7 +233,7 @@ export default function CoachGroupEditPage() {
       scopeVersion.current += 1;
       mutationInFlight.current = false;
     };
-  }, [groupId, load]);
+  }, [groupId, load, setLoading]);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 60_000);

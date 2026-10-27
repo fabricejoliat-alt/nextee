@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import Link from "next/link";
 import { MessageCircle } from "lucide-react";
 import PublicPageShell from "@/components/public/PublicPageShell";
@@ -5,10 +6,10 @@ import { publicContactEmail } from "@/lib/server/publicContact";
 import ContactForm from "./ContactForm";
 import styles from "../legal/LegalPublic.module.css";
 
-export const dynamic = "force-dynamic";
 const TEST_SITE_KEY = "1x00000000000000000000AA";
 
 export default async function ContactPage() {
+  await connection();
   const email = await publicContactEmail();
   const siteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY
     || (process.env.NODE_ENV === "production" ? "" : TEST_SITE_KEY);

@@ -1,12 +1,13 @@
+import { connection } from "next/server";
 import Link from "next/link";
 import { marketplaceLegalPaths, marketplaceRulesContent } from "@/lib/marketplaceRulesContent";
 import { marketplaceSafetyText } from "@/lib/marketplaceSafetyLabels";
 import { publicContactEmail } from "@/lib/server/publicContact";
 import styles from "../LegalPublic.module.css";
 
-export const dynamic = "force-dynamic";
 
 export default async function MarketplaceRules({ searchParams }: { searchParams: Promise<{ lang?: string }> }) {
+  await connection();
   const { lang } = await searchParams;
   const locale = lang === "en" || lang === "de" || lang === "it" ? lang : "fr";
   const [title, ...paragraphs] = marketplaceRulesContent[locale];

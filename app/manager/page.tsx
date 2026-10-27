@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -116,7 +117,7 @@ export default function ManagerHomePage() {
   const count = (key: string, value: number) => managerCount(t, locale, `manager.home.${key}`, value);
   const format = (key: string, values: Record<string, string | number>) => managerFormat(t, `manager.home.${key}`, values);
   const dateLocale = managerLocaleTag(locale);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [refreshNonce, setRefreshNonce] = useState(0);
   const marketplaceCounts = useMarketplaceModerationCounts(refreshNonce);
   const [statsError, setStatsError] = useState<string | null>(null);
@@ -196,7 +197,7 @@ export default function ManagerHomePage() {
         setLoading(false);
       }
     })();
-  }, [t, refreshNonce]);
+  }, [t, refreshNonce, setLoading]);
 
   function eventTypeLabel(v: EventLite["event_type"]) {
     return managerActivityLabel(t, v);

@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
@@ -122,7 +123,7 @@ export default function PlayerCampsPage() {
   const { locale, t } = useI18n();
   const tr = (fr: string, en: string, de: string) => pickLocaleText(locale, fr, en, de);
   const searchParams = useSearchParams();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [busyKey, setBusyKey] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [camps, setCamps] = useState<CampRow[]>([]);
@@ -150,7 +151,7 @@ export default function PlayerCampsPage() {
     } finally {
       setLoading(false);
     }
-  }, [childId, headers, locale]);
+  }, [childId, headers, locale, setLoading]);
 
   useEffect(() => { void load(); }, [load]);
 

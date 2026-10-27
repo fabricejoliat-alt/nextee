@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
@@ -30,11 +31,11 @@ export default function CompetitionDetailPage(){
   const params=useParams<{eventId:string}>();
   const eventId=String(params?.eventId??"").trim();
   const [data,setData]=useState<Payload|null>(null);
-  const [loading,setLoading]=useState(true);
+  const [loading,setLoading]=useRetainedLoading();
   const [error,setError]=useState<string|null>(null);
   const dateLocale=locale==="fr"?"fr-CH":locale==="de"?"de-CH":locale==="it"?"it-CH":"en-US";
 
-  useEffect(()=>{let cancelled=false;const controller=new AbortController();void(async()=>{try{setLoading(true);setError(null);const [{effectiveUserId},{data:auth}]=await Promise.all([resolveEffectivePlayerContext(),supabase.auth.getSession()]);const token=auth.session?.access_token??"";if(!token)throw new Error(pickLocaleText(locale,"Session invalide.","Invalid session."));const query=new URLSearchParams({child_id:effectiveUserId});const response=await fetch(`/api/player/competitions/${encodeURIComponent(eventId)}?${query}`,{headers:{Authorization:`Bearer ${token}`},cache:"no-store",signal:controller.signal});const json=await response.json();if(!response.ok)throw new Error(String(json.error??pickLocaleText(locale,"Chargement impossible.","Unable to load.")));if(!cancelled)setData(json as Payload)}catch(caught){if(!cancelled)setError(caught instanceof Error?caught.message:pickLocaleText(locale,"Chargement impossible.","Unable to load."))}finally{if(!cancelled)setLoading(false)}})();return()=>{cancelled=true;controller.abort()}},[eventId,locale]);
+  useEffect(()=>{let cancelled=false;const controller=new AbortController();void(async()=>{try{setLoading(true);setError(null);const [{effectiveUserId},{data:auth}]=await Promise.all([resolveEffectivePlayerContext(),supabase.auth.getSession()]);const token=auth.session?.access_token??"";if(!token)throw new Error(pickLocaleText(locale,"Session invalide.","Invalid session."));const query=new URLSearchParams({child_id:effectiveUserId});const response=await fetch(`/api/player/competitions/${encodeURIComponent(eventId)}?${query}`,{headers:{Authorization:`Bearer ${token}`},cache:"no-store",signal:controller.signal});const json=await response.json();if(!response.ok)throw new Error(String(json.error??pickLocaleText(locale,"Chargement impossible.","Unable to load.")));if(!cancelled)setData(json as Payload)}catch(caught){if(!cancelled)setError(caught instanceof Error?caught.message:pickLocaleText(locale,"Chargement impossible.","Unable to load."))}finally{if(!cancelled)setLoading(false)}})();return()=>{cancelled=true;controller.abort()}},[eventId, locale, setLoading]);
 
   if(loading)return <div className="player-dashboard-bg"><div className="app-shell marketplace-page"><div className={styles.loadingPanel} role="status" aria-busy="true" aria-label={pickLocaleText(locale,"Chargement…","Loading…","Wird geladen…","Caricamento…")}/></div></div>;
   const event=data?.event;

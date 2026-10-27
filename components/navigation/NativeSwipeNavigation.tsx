@@ -18,7 +18,8 @@ function blockedTarget(target: EventTarget | null) {
   return false;
 }
 function blockedPage() {
-  return !isSwipeAppPath(location.pathname) || isSwipeEditingPath(location.pathname) || Boolean(document.querySelector("form,dialog[open],[role='dialog'][aria-modal='true'],[data-swipe-navigation='off']")) || Boolean(document.activeElement?.matches("input,textarea,select,[contenteditable]:not([contenteditable='false'])"));
+  const visibleBlocker = Array.from(document.querySelectorAll("form,dialog[open],[role='dialog'][aria-modal='true'],[data-swipe-navigation='off']")).some(element => element.getClientRects().length > 0);
+  return !isSwipeAppPath(location.pathname) || isSwipeEditingPath(location.pathname) || visibleBlocker || Boolean(document.activeElement?.matches("input,textarea,select,[contenteditable]:not([contenteditable='false'])"));
 }
 
 export default function NativeSwipeNavigation() {

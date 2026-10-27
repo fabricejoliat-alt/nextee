@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { trainingPlanCompletion } from "@/lib/trainingPlanCompletion";
 
@@ -50,7 +51,7 @@ export default function PlayerTrainingDetailPage(){
   const router=useRouter();
   const [playerId,setPlayerId]=useState("");const [canEdit,setCanEdit]=useState(false);const [isCampDay,setIsCampDay]=useState(false);const [deleteOpen,setDeleteOpen]=useState(false);const [deleting,setDeleting]=useState(false);const [deleteError,setDeleteError]=useState("");
   const [reload,setReload]=useState(0);const [eventReady,setEventReady]=useState(false);const [documentsReady,setDocumentsReady]=useState(false);const [attendeesReady,setAttendeesReady]=useState(false);const [ownAttendance,setOwnAttendance]=useState<string|null>(null);
-  const [loading,setLoading]=useState(true);const [error,setError]=useState<string|null>(null);const [performanceEnabled,setPerformanceEnabled]=useState(false);
+  const [loading,setLoading]=useRetainedLoading();const [error,setError]=useState<string|null>(null);const [performanceEnabled,setPerformanceEnabled]=useState(false);
   const [session,setSession]=useState<SessionRow|null>(null);const [items,setItems]=useState<StructureItem[]>([]);const [plannedItems,setPlannedItems]=useState<StructureItem[]>([]);
   const [clubName,setClubName]=useState("");const [groupName,setGroupName]=useState("");const [linkedEvent,setLinkedEvent]=useState<LinkedEvent|null>(null);
   const [coachFeedback,setCoachFeedback]=useState<CoachFeedback[]>([]);const [coachProfiles,setCoachProfiles]=useState<Record<string,CoachProfile>>({});const [documents,setDocuments]=useState<TrainingDocument[]>([]);
@@ -107,7 +108,7 @@ export default function PlayerTrainingDetailPage(){
       }catch{if(!signal.aborted)setError(message)}finally{if(!signal.aborted)setLoading(false)}
     })();
     return()=>controller.abort();
-  },[sessionId,reload,locale]);
+  },[sessionId, reload, locale, setLoading]);
 
   const actualTotal=totalMinutes(items);const planProgress=trainingPlanCompletion(plannedItems,items);const plannedTotal=planProgress.plannedMinutes;const duration=actualTotal||Number(session?.total_minutes??0)||plannedTotal||Number(linkedEvent?.duration_minutes??0);
   const categories=useMemo(()=>Array.from(new Set([...plannedItems,...items].map(item=>item.category))),[plannedItems,items]);const categoryLabel=(category:string)=>CATEGORY_KEYS[category]?t(CATEGORY_KEYS[category]):category;

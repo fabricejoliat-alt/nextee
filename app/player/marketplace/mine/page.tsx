@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
@@ -54,7 +55,7 @@ function priceLabel(it: Item, t: (key: string) => string) {
 
 export default function MarketplaceMine() {
   const { t, locale } = useI18n();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -103,7 +104,7 @@ export default function MarketplaceMine() {
     setMainImageByItemId((json?.mainImageByItemId ?? {}) as Record<string, string>);
 
     setLoading(false);
-  }, [t]);
+  }, [setLoading, t]);
 
   useEffect(() => {
     // Remote data loading is the synchronization performed by this effect.

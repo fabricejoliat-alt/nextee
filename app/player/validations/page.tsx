@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
@@ -62,7 +63,7 @@ function ValidationsPageSkeleton() {
 
 export default function PlayerValidationsPage() {
   const { locale, t } = useI18n();
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [submittingId, setSubmittingId] = useState("");
   const [deletingAttemptId, setDeletingAttemptId] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -142,7 +143,7 @@ export default function PlayerValidationsPage() {
       }
     })();
     return () => { active = false; };
-  }, []);
+  }, [setLoading]);
 
   const selectedSection = useMemo(
     () => dashboard?.sections.find((section) => section.id === selectedSectionId) ?? dashboard?.sections[0] ?? null,

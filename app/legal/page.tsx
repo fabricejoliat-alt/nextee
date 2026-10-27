@@ -1,11 +1,12 @@
+import { connection } from "next/server";
 import Link from "next/link";
 import DeleteAccountLink from "@/components/legal/DeleteAccountLink";
 import { ArrowRight, FileText, ShieldCheck, UserRound } from "lucide-react";
 import { legalDb } from "@/lib/server/legalAccess";
 import styles from "./LegalPublic.module.css";
 
-export const dynamic = "force-dynamic";
 export default async function LegalLanding() {
+  await connection();
   let documents: Array<{ document_key: string; kind: string }> = [];
   try {
     const result = await legalDb().from("legal_documents").select("document_key,kind").eq("active", true)

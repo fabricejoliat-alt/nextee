@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 /* eslint-disable @next/next/no-img-element -- Camp and profile images are dynamic Storage URLs. */
@@ -94,7 +95,7 @@ export default function CoachCampsPage() {
   const { locale, t } = useI18n();
   const saveInFlight = useRef(false);
   const loadVersion = useRef(0);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [error, setError] = useState<string | null>(null);
   const [camps, setCamps] = useState<CampRow[]>([]);
   const [coachClubCount, setCoachClubCount] = useState(0);
@@ -131,7 +132,7 @@ export default function CoachCampsPage() {
     } finally {
       if (version === loadVersion.current) setLoading(false);
     }
-  }, []);
+  }, [setLoading]);
 
   useEffect(() => {
     void loadCamps();

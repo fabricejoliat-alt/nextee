@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -178,7 +179,7 @@ export default function CampDetailPage() {
   const [coachProfiles, setCoachProfiles] = useState<Record<string, Profile>>(
     {},
   );
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);

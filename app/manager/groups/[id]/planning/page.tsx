@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
@@ -39,7 +40,7 @@ export default function CoachGroupPlanningPage() {
   const groupId = String(params?.id ?? "").trim();
   const seasonId = searchParams.get("season") ?? "";
   const loadVersion = useRef(0), deletePending = useRef(false);
-  const [loading, setLoading] = useState(true), [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useRetainedLoading(), [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [group, setGroup] = useState<GroupRow | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);

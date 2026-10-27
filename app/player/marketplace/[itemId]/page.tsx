@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
@@ -77,7 +78,7 @@ export default function MarketplaceDetailPage() {
     return fromParams ?? getIdFromPathname(pathname);
   }, [params, pathname]);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [error, setError] = useState<string | null>(null);
 
   const [item, setItem] = useState<Item | null>(null);

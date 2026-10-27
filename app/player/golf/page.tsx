@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
@@ -576,7 +577,7 @@ export default function GolfDashboardPage() {
   const { t, locale } = useI18n();
   const routeSearchParams = useSearchParams();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading(true);
   const [activeSection, setActiveSection] = useState<DashboardSection>("overview");
   const [mobileGolfMenuOpen, setMobileGolfMenuOpen] = useState(false);
   const mobileGolfMenuRef = useRef<HTMLDivElement>(null);
@@ -606,8 +607,8 @@ export default function GolfDashboardPage() {
       document.removeEventListener("keydown", closeOnEscape);
     };
   }, [mobileGolfMenuOpen]);
-  const [loadingRounds, setLoadingRounds] = useState(false);
-  const [loadingHoles, setLoadingHoles] = useState(false);
+  const [loadingRounds, setLoadingRounds] = useRetainedLoading(false);
+  const [loadingHoles, setLoadingHoles] = useRetainedLoading(false);
   const [error, setError] = useState<string | null>(null);
   const [effectivePlayerId, setEffectivePlayerId] = useState("");
   const [isPerformanceEnabled, setIsPerformanceEnabled] = useState(false);
@@ -657,7 +658,7 @@ export default function GolfDashboardPage() {
   const [overviewEvents, setOverviewEvents] = useState<OverviewEvent[]>([]);
   const [overviewAttendance, setOverviewAttendance] = useState<Record<string, string | null>>({});
   const [pendingEvaluationCount, setPendingEvaluationCount] = useState(0);
-  const [overviewActivitiesLoading, setOverviewActivitiesLoading] = useState(true);
+  const [overviewActivitiesLoading, setOverviewActivitiesLoading] = useRetainedLoading(true);
 
   useEffect(() => {
     const now = new Date();
@@ -690,7 +691,7 @@ export default function GolfDashboardPage() {
 
   const needsDashboardData = sectionReady && activeSection !== "rounds";
   useEffect(() => {
-    if (!needsDashboardData || golfData) return;
+    if (!needsDashboardData) return;
     let alive = true;
     setLoading(true); setLoadingRounds(true); setLoadingHoles(true); setOverviewActivitiesLoading(true); setError(null);
     void readPlayerPage<GolfData>("/api/player/golf-data?view=dashboard").then(data => {
@@ -714,7 +715,7 @@ export default function GolfDashboardPage() {
     }).catch(error => { if (alive) setError(error instanceof Error ? error.message : "Unable to load golf data"); })
       .finally(() => { if (alive) { setLoading(false); setLoadingRounds(false); setLoadingHoles(false); setOverviewActivitiesLoading(false); } });
     return () => { alive = false; };
-  }, [golfData, needsDashboardData]);
+  }, [needsDashboardData, setLoading, setLoadingRounds, setLoadingHoles, setOverviewActivitiesLoading]);
 
   function shortDate(iso: string, localeCode: string) {
     return new Intl.DateTimeFormat(localeCode, { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(iso));

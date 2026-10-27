@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import CalendarSubscriptionButton from "@/components/calendar/CalendarSubscriptionButton";
 
@@ -44,7 +45,7 @@ export default function CoachCalendarPage() {
   const searchParams = useSearchParams();
   const { locale, t } = useI18n();
   const dateLocale = coachDateLocale(locale);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [error, setError] = useState<string | null>(null);
   const [events, setEvents] = useState<EventRow[]>([]);
   const [groupNames, setGroupNames] = useState<Record<string, string>>({});
@@ -95,7 +96,7 @@ export default function CoachCalendarPage() {
       finally { if (active) setLoading(false); }
     })();
     return () => { active = false; controller.abort(); };
-  }, [reload]);
+  }, [reload, setLoading]);
 
   const pendingEvaluationIds = useMemo(() => new Set(events
     .filter((event) => coachCalendarActionState(event, trainingEvaluationCompleteByEventId[event.id] === true, referenceNow) === "needs_evaluation")

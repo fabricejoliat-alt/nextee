@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -83,7 +84,7 @@ export default function ScorecardPage() {
   const params = useParams<{ roundId: string | string[] }>();
   const roundId = useMemo(() => getRouteParam(params?.roundId), [params]);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [error, setError] = useState<string | null>(null);
   const [round, setRound] = useState<Round | null>(null);
   const [holes, setHoles] = useState<Hole[]>([]);

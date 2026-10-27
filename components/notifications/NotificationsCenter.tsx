@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -50,7 +51,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
       ? tr("Coach", "Coach", "Trainer", "Allenatore")
       : tr("Joueur", "Player", "Spieler", "Giocatore");
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [userId, setUserId] = useState("");

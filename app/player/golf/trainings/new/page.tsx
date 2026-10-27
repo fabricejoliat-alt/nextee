@@ -1,10 +1,10 @@
+import { connection } from "next/server";
 import { Suspense } from "react";
 import PlayerTrainingNewClient from "./PlayerTrainingNewClient";
 
-export const revalidate = 0;
-export const dynamic = "force-dynamic";
 
-export default function Page() {
+export default async function Page() {
+  await connection();
   return (
     <Suspense fallback={null}>
       <PlayerTrainingNewClient />

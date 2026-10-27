@@ -1,8 +1,9 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 import { playerMeritRead } from "@/lib/playerMeritRead";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Award, CalendarDays, ChevronDown, CircleHelp, Medal, SlidersHorizontal, Sparkles, Target, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
@@ -136,7 +137,7 @@ export default function PlayerOrderOfMeritPage() {
   const todayInZurich = useMemo(() => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(new Date()), []);
   const yearStartInZurich = useMemo(() => `${todayInZurich.slice(0, 4)}-01-01`, [todayInZurich]);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [error, setError] = useState<string | null>(null);
   const [rankingLoading, setRankingLoading] = useState(false);
   const [detailsLoading, setDetailsLoading] = useState(false);
@@ -148,6 +149,8 @@ export default function PlayerOrderOfMeritPage() {
   const rankingFrom = yearStartInZurich;
   const rankingTo = todayInZurich;
   const [rankingMode, setRankingMode] = useState<"net" | "brut">("net");
+  const rankingScope = useRef("");
+  const detailsScope = useRef("");
   const [rankingRows, setRankingRows] = useState<OMRankingRow[]>([]);
   const [avatarByPlayerId, setAvatarByPlayerId] = useState<Record<string, string | null>>({});
   const [pointDetails, setPointDetails] = useState<PointDetailCard[]>([]);
@@ -230,10 +233,11 @@ export default function PlayerOrderOfMeritPage() {
     }
     const rangeFrom = fromDate <= toDate ? fromDate : toDate;
     const rangeTo = fromDate <= toDate ? toDate : fromDate;
-    setRankingLoading(true);
+    setRankingLoading(rankingScope.current !== orgId);
     const rows = await playerMeritRead<OMRankingRow>(orgId, rangeFrom, rangeTo).catch(error => { setRankingLoading(false); throw error; });
     setRankingLoading(false);
     setRankingRows(rows);
+    rankingScope.current = orgId;
 
     const playerIds = Array.from(new Set(rows.map((row) => row.player_id).filter(Boolean)));
     if (playerIds.length === 0) {
@@ -256,7 +260,7 @@ export default function PlayerOrderOfMeritPage() {
     }
     const rangeFrom = fromDate <= toDate ? fromDate : toDate;
     const rangeTo = fromDate <= toDate ? toDate : fromDate;
-    setDetailsLoading(true);
+    setDetailsLoading(detailsScope.current !== `${playerId}:${orgId}`);
 
     const [scoreRes, bonusRes] = await Promise.all([
       supabase
@@ -429,6 +433,7 @@ export default function PlayerOrderOfMeritPage() {
 
     const merged = [...scoreCards, ...bonusCards].sort((a, b) => String(b.date).localeCompare(String(a.date)));
     setPointDetails(merged);
+    detailsScope.current = `${playerId}:${orgId}`;
   }
 
   async function loadInitialData() {
@@ -473,7 +478,7 @@ export default function PlayerOrderOfMeritPage() {
         .map((id) => ({ id, name: clubNameById.get(id) ?? "Club" }))
         .filter((o: Org) => Boolean(o.id));
       setOrgs(orgList);
-      const firstOrg = orgList[0]?.id ?? "";
+      const firstOrg = orgList.find(org => org.id === organizationId)?.id ?? orgList[0]?.id ?? "";
       setOrganizationId(firstOrg);
 
       if (firstOrg) {

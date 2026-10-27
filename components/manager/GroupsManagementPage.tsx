@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 /* eslint-disable @next/next/no-img-element */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -40,7 +41,7 @@ export default function GroupsManagementPage() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [hideArchived, setHideArchived] = useState(true);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [error, setError] = useState("");
 
   function selectClub(nextId: string) {

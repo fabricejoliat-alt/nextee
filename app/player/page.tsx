@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 import PlayerHomeMerit from "@/components/player/PlayerHomeMerit";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
@@ -486,7 +487,7 @@ export default function PlayerHomePage() {
   const [upcomingActivities, setUpcomingActivities] = useState<HomeUpcomingItem[]>([]);
   const [upcomingLoading, setUpcomingLoading] = useState(true);
   const [latestNews, setLatestNews] = useState<HomeNewsItem[]>([]);
-  const [newsLoading, setNewsLoading] = useState(true);
+  const [newsLoading, setNewsLoading] = useRetainedLoading();
   const [attendanceBusyEventId, setAttendanceBusyEventId] = useState<string>("");
   const [trainingVolumeRows, setTrainingVolumeRows] = useState<TrainingVolumeTargetRow[]>([]);
   const [trainingSeasonMonths, setTrainingSeasonMonths] = useState<number[]>([]);

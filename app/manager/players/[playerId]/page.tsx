@@ -1,4 +1,5 @@
 "use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -351,7 +352,7 @@ export default function GolfDashboardPage() {
     return "/manager/groups";
   }, [returnToParam]);
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useRetainedLoading();
   const [loadingPrev, setLoadingPrev] = useState(false);
   const [loadingRounds, setLoadingRounds] = useState(false);
   const [loadingPrevRounds, setLoadingPrevRounds] = useState(false);
@@ -482,7 +483,7 @@ export default function GolfDashboardPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [playerId]);
+  }, [playerId, setLoading]);
 
   useEffect(() => {
     setFromDate("");
@@ -628,7 +629,7 @@ export default function GolfDashboardPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [canLoadData, fromDate, playerId, toDate]);
+  }, [canLoadData, fromDate, playerId, setLoading, toDate]);
 
   // ===== LOAD TRAININGS (prev KPIs) =====
   useEffect(() => {

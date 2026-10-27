@@ -4,6 +4,7 @@ const storageUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const validationImages = storageUrl ? new URL("/storage/v1/object/public/validation-exercise-images/**", storageUrl) : null;
 
 const nextConfig: NextConfig = {
+  cacheComponents: true,
   async headers() {
     return [
       { source: "/:path*", headers: [
