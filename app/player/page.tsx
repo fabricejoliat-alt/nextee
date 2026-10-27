@@ -1,5 +1,5 @@
 "use client";
-import { playerMeritRead } from "@/lib/playerMeritRead";
+import PlayerHomeMerit from "@/components/player/PlayerHomeMerit";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
@@ -28,8 +28,6 @@ import EtiquetteVisual from "@/components/etiquette/EtiquetteVisual";
 import etiquetteVisualStyles from "@/components/etiquette/EtiquetteVisual.module.css";
 import RulesVisual from "@/components/rules/RulesVisual";
 import rulesVisualStyles from "@/components/rules/RulesVisual.module.css";
-import dynamic from "next/dynamic";
-import { buildManagementVolumeChartOption } from "@/lib/managementCharts";
 import HomeActivityCard from "@/components/dashboard/HomeActivityCard";
 import playerUiStyles from "@/components/player/PlayerUI.module.css";
 import overviewStyles from "@/app/player/golf/PlayerGolfOverview.module.css";
@@ -188,16 +186,10 @@ type HomeNewsItem = {
 
 type PendingTraining = { id: string; dateIso: string; title: string; href: string };
 type AttendanceInsight = { present: number; expected: number; rate: number; change: number | null };
-type MeritInsight = { rank: number; total: number; points: number | null; change: number | null } | null;
 
 const PLAYER_HOME_CACHE_TTL_MS = 45_000;
 const playerHomeCacheKey = (userId: string, viewerId: string, organizationIds: string[]) =>
   `page-cache:player-home:v4:${viewerId}:${userId}:${[...organizationIds].sort().join(",")}`;
-
-const ActiviteeEChart = dynamic(() => import("@/components/ui/ActiviteeEChart"), {
-  ssr: false,
-  loading: () => <div className={playerUiStyles.skeleton} style={{ height: 260 }}><span /><span /><span /></div>,
-});
 
 function displayHello(p: Profile | null | undefined, t: (key: string) => string) {
   const f = (p?.first_name ?? "").trim();
@@ -479,7 +471,6 @@ export default function PlayerHomePage() {
   const [monthSessions, setMonthSessions] = useState<TrainingSessionRow[]>([]);
   const [monthClubEventDurationById, setMonthClubEventDurationById] = useState<Record<string, number>>({});
   const [monthPlannedClubMinutes, setMonthPlannedClubMinutes] = useState<number>(0);
-  const [monthPlannedClubEvents, setMonthPlannedClubEvents] = useState<Array<{ starts_at: string; ends_at: string | null; duration_minutes: number | null }>>([]);
   const [monthItems, setMonthItems] = useState<TrainingItemRow[]>([]);
   const [viewerUserId, setViewerUserId] = useState<string>("");
   const [effectiveUserId, setEffectiveUserId] = useState<string>("");
@@ -502,7 +493,6 @@ export default function PlayerHomePage() {
   const [trainingOffseasonMonths, setTrainingOffseasonMonths] = useState<number[]>([]);
   const [insightsLoading, setInsightsLoading] = useState(true);
   const [validationsLoading, setValidationsLoading] = useState(true);
-  const [meritLoading, setMeritLoading] = useState(true);
   const [homeContext, setHomeContext] = useState<{
     userId: string; viewerId: string; role: "player" | "parent";
     organizationIds: string[]; performanceEnabled: boolean; handicap: number | null;
@@ -510,7 +500,6 @@ export default function PlayerHomePage() {
   const [insightsError, setInsightsError] = useState(false);
   const [pendingTrainings, setPendingTrainings] = useState<PendingTraining[]>([]);
   const [attendanceInsight, setAttendanceInsight] = useState<AttendanceInsight | null>(null);
-  const [meritInsight, setMeritInsight] = useState<MeritInsight>(null);
   const [validationDashboard, setValidationDashboard] = useState<ValidationDashboardPayload | null>(null);
   const [showProfilePhotoPrompt, setShowProfilePhotoPrompt] = useState(false);
   const [hidePhotoPromptForever, setHidePhotoPromptForever] = useState(false);
@@ -544,7 +533,6 @@ export default function PlayerHomePage() {
           setMonthSessions(data.monthSessions);
           setMonthItems(data.monthItems as TrainingItemRow[]);
           setMonthClubEventDurationById(data.monthClubEventDurationById);
-          setMonthPlannedClubEvents(data.monthPlannedClubEvents);
           setMonthPlannedClubMinutes(data.monthPlannedClubMinutes);
           const month = new Date().getMonth() + 1;
           const best = data.volumeConfigs.map(config => {
@@ -571,33 +559,10 @@ export default function PlayerHomePage() {
         } catch { if (!signal.aborted) setInsightsError(true); }
         finally { if (!signal.aborted) setValidationsLoading(false); }
       };
-      const merit = async () => {
-        try {
-          const organizationId = homeContext.organizationIds[0];
-          if (!homeContext.performanceEnabled || !organizationId) return;
-          const today = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Zurich" }).format(new Date());
-          const yearStart = `${today.slice(0, 4)}-01-01`;
-          const previousMonthEnd = new Date(Date.UTC(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 0)).toISOString().slice(0, 10);
-          const [ranking, previousRanking] = await Promise.all([
-            playerMeritRead<{player_id:string;rank_net:number;total_points_net:number | string | null}>(organizationId,yearStart,today,signal),
-            previousMonthEnd >= yearStart ? playerMeritRead<{player_id:string;rank_net:number;total_points_net:number | string | null}>(organizationId,yearStart,previousMonthEnd,signal).catch(()=>[]) : Promise.resolve([]),
-          ]);
-          if (signal.aborted) return;
-          const rows = ranking;
-          const mine = rows.find(row => row.player_id === homeContext.userId);
-          if (mine && Number.isFinite(Number(mine.rank_net))) {
-            const previousMine = previousRanking.find(row => row.player_id === homeContext.userId);
-            setMeritInsight({ rank: Number(mine.rank_net), total: rows.length,
-              points: mine.total_points_net != null && Number.isFinite(Number(mine.total_points_net)) ? Number(mine.total_points_net) : null,
-              change: previousMine && Number.isFinite(Number(previousMine.rank_net)) ? Number(previousMine.rank_net) - Number(mine.rank_net) : null });
-          }
-        } catch { if (!signal.aborted) setInsightsError(true); }
-        finally { if (!signal.aborted) setMeritLoading(false); }
-      };
-      await Promise.all([summary(), validations(), merit()]);
+      await Promise.all([summary(), validations()]);
     };
     void loadSummaries().catch(() => {
-      if (!signal.aborted) { setInsightsError(true); setInsightsLoading(false); setValidationsLoading(false); setMeritLoading(false); setLoading(false); }
+      if (!signal.aborted) { setInsightsError(true); setInsightsLoading(false); setValidationsLoading(false); setLoading(false); }
     });
     return () => controller.abort();
   }, [homeContext]);
@@ -853,7 +818,7 @@ export default function PlayerHomePage() {
         setError(cause instanceof Error ? cause.message : t("common.errorLoading"));
         setLoading(false); setHeroLoading(false); setUpcomingLoading(false);
         setMarketplaceLoading(false); setNewsLoading(false);
-        setInsightsLoading(false); setValidationsLoading(false); setMeritLoading(false);
+        setInsightsLoading(false); setValidationsLoading(false);
       }
     };
     void load();
@@ -1038,42 +1003,6 @@ export default function PlayerHomePage() {
       return { section, next };
     });
   }, [validationDashboard]);
-  const weeklyVolume = useMemo(() => {
-    const now = new Date();
-    const first = new Date(now.getFullYear(), now.getMonth(), 1);
-    const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const buckets: Array<{ key: string; label: string; minutes: number; objective: number | null }> = [];
-    for (const date = new Date(first), index = { value: 1 }; date < end; date.setDate(date.getDate() + (index.value === 1 ? 7 - ((date.getDay() + 6) % 7) : 7)), index.value += 1) {
-      const key = String(index.value);
-      buckets.push({
-        key,
-        label: `${pickLocaleText(locale, "Sem.", "Week")} ${index.value}`,
-        minutes: 0,
-        objective: trainingVolumeObjective > 0 ? trainingVolumeObjective : null,
-      });
-    }
-    for (const session of monthSessions) {
-      const date = new Date(session.start_at);
-      if (date < first || date >= end) continue;
-      const week = Math.floor((date.getDate() + ((first.getDay() + 6) % 7) - 1) / 7);
-      const bucket = buckets[week];
-      if (bucket) {
-        const itemsMinutes = monthItems.filter((item) => item.session_id === session.id).reduce((sum, item) => sum + Number(item.minutes ?? 0), 0);
-        const sessionMinutes = isPerformanceEnabled ? itemsMinutes : session.club_event_id ? 0 : Number(session.total_minutes ?? 0);
-        bucket.minutes += sessionMinutes || 0;
-      }
-    }
-    if (!isPerformanceEnabled) for (const event of monthPlannedClubEvents) {
-      const date = new Date(event.starts_at);
-      const week = Math.floor((date.getDate() + ((first.getDay() + 6) % 7) - 1) / 7);
-      const bucket = buckets[week];
-      if (!bucket) continue;
-      const duration = Number(event.duration_minutes ?? 0);
-      const fallback = event.ends_at ? Math.max(0, Math.round((new Date(event.ends_at).getTime() - date.getTime()) / 60000)) : 0;
-      bucket.minutes += duration > 0 ? duration : fallback;
-    }
-    return buckets;
-  }, [locale, monthSessions, monthItems, isPerformanceEnabled, monthPlannedClubEvents, trainingVolumeObjective]);
   const allNewsHref = useMemo(() => {
     if (viewerRole === "parent" && effectiveUserId) {
       return `/player/news?child_id=${encodeURIComponent(effectiveUserId)}`;
@@ -1278,10 +1207,19 @@ export default function PlayerHomePage() {
 
           <section className={styles.benchmarksSection}>
             <div className={styles.benchmarksHeader}><div><h2>{pickLocaleText(locale, "Mes repères", "My benchmarks")}</h2><p>{pickLocaleText(locale, "Quelques indices en un coup d'oeil", "Your progress at a glance.")}</p></div></div>
-            {insightsLoading || meritLoading ? <div className={styles.benchmarks}>{Array.from({ length: 2 }, (_, index) => <div className={`${styles.benchmark} ${styles.benchmarkSkeleton}`} key={index}><span /><span /><span /></div>)}</div> : <div className={styles.benchmarks}>
+            <div className={styles.benchmarks}>
+              <article id="player-training-volume" className={playerUiStyles.panel}>
+                <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume d’entraînement du mois", "Monthly training volume")}</h2><p>{thisMonthTitle}</p></div></div>
+                {loading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : <div className={styles.monthVolume}>
+                  {trainingsSummary.objective > 0 ? <AnimatedProgressRing percent={trainingsSummary.percent} label={pickLocaleText(locale, "Volume d’entraînement", "Training volume")} /> : <div className={playerUiStyles.empty}>{t("playerVolume.unavailable")}</div>}
+                  <strong>{trainingsSummary.totalMinutes} {t("common.min")}</strong>
+                  {trainingsSummary.objective > 0 ? <span>{pickLocaleText(locale, "sur", "of")} {trainingsSummary.objective} {t("common.min")} {t("playerVolume.recommendedMinutes")}</span> : null}
+                  {trainingVolumeMotivation ? <p>{trainingVolumeMotivation}</p> : null}
+                </div>}
+              </article>
               <article className={playerUiStyles.panel}>
                 <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Assiduité de la saison", "Season attendance", "Anwesenheit in dieser Saison", "Presenze della stagione")}</h2></div><Link className={styles.benchmarkLink} href="/player/golf?section=stats" aria-label={pickLocaleText(locale, "Voir les statistiques d’assiduité", "View attendance statistics")}><ArrowRight size={15} /></Link></div>
-                {attendanceInsight ? <>
+                {insightsLoading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : attendanceInsight ? <>
                   <div className={styles.monthVolume}>
                     <AnimatedProgressRing percent={attendanceInsight.rate} label={pickLocaleText(locale, "Assiduité", "Attendance")} />
                     <div className={styles.benchmarkDetails}>
@@ -1299,40 +1237,9 @@ export default function PlayerHomePage() {
                   </div>
                 </> : <p>{pickLocaleText(locale, "L’assiduité apparaîtra après vos premières activités confirmées.", "Attendance will appear after your first confirmed activities.")}</p>}
               </article>
-              <article className={playerUiStyles.panel}>
-                <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Ordre du mérite", "Order of merit")}</h2></div><Link className={styles.benchmarkLink} href="/player/om" aria-label={pickLocaleText(locale, "Voir l’ordre du mérite", "View order of merit")}><ArrowRight size={15} /></Link></div>
-                {meritInsight ? <div className={styles.monthVolume}>
-                  <div className={styles.meritMedallion}>
-                    <svg width="150" height="150" viewBox="0 0 140 140" aria-hidden="true"><circle cx="70" cy="70" r="54" strokeWidth="14" stroke="#e9eee7" fill="none" /></svg>
-                    <strong className={styles.meritRank}>{locale === "fr" ? <>{meritInsight.rank}<sup>{meritInsight.rank === 1 ? "er" : "e"}</sup></> : `#${meritInsight.rank}`}</strong>
-                  </div>
-                  <strong>{meritInsight.points == null ? "—" : new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(meritInsight.points)} {pickLocaleText(locale, "points de la saison", "season points", "Saisonpunkte", "punti della stagione")}</strong>
-                  <span>{pickLocaleText(locale, "sur", "of")} {meritInsight.total} {meritInsight.total === 1 ? pickLocaleText(locale, "joueur actif", "active player", "aktiver Spieler", "giocatore attivo") : pickLocaleText(locale, "joueurs actifs", "active players", "aktive Spieler", "giocatori attivi")}</span>
-                  {meritInsight.change != null ? <div className={styles.benchmarkSignals}>
-                    {meritInsight.change > 0 ? <BenchmarkBadge icon={ArrowUp} tone="positive">{meritInsight.change} {pickLocaleText(locale, meritInsight.change === 1 ? "place gagnée" : "places gagnées", meritInsight.change === 1 ? "place gained" : "places gained")}</BenchmarkBadge>
-                      : meritInsight.change < 0 ? <BenchmarkBadge icon={ArrowDown} tone="caution">{Math.abs(meritInsight.change)} {pickLocaleText(locale, Math.abs(meritInsight.change) === 1 ? "place de moins" : "places de moins", Math.abs(meritInsight.change) === 1 ? "place lower" : "places lower")}</BenchmarkBadge>
-                        : <BenchmarkBadge icon={ArrowRight} tone="neutral">{pickLocaleText(locale, "Classement stable", "Ranking stable")}</BenchmarkBadge>}
-                  </div> : <p>{pickLocaleText(locale, "Tendance disponible dès le prochain classement mensuel.", "Trend available with the next monthly ranking.", "Trend ab der nächsten monatlichen Rangliste verfügbar.", "Tendenza disponibile dalla prossima classifica mensile.")}</p>}
-                </div> : <p>{pickLocaleText(locale, "Aucun classement net disponible pour le moment.", "No net ranking available yet.")}</p>}
-              </article>
-            </div>}
+              <PlayerHomeMerit context={homeContext} />
+            </div>
           </section>
-
-          <div id="player-training-volume" className={styles.volumeRow}>
-            <section className={playerUiStyles.panel}>
-              <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume d’entraînement du mois", "Monthly training volume")}</h2><p>{thisMonthTitle}</p></div></div>
-              {loading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : <div className={styles.monthVolume}>
-                {trainingsSummary.objective > 0 ? <AnimatedProgressRing percent={trainingsSummary.percent} label={pickLocaleText(locale, "Volume d’entraînement", "Training volume")} /> : <div className={playerUiStyles.empty}>{t("playerVolume.unavailable")}</div>}
-                <strong>{trainingsSummary.totalMinutes} {t("common.min")}</strong>
-                {trainingsSummary.objective > 0 ? <span>{pickLocaleText(locale, "sur", "of")} {trainingsSummary.objective} {t("common.min")} {t("playerVolume.recommendedMinutes")}</span> : null}
-                {trainingVolumeMotivation ? <p>{trainingVolumeMotivation}</p> : null}
-              </div>}
-            </section>
-            <section className={playerUiStyles.panel}>
-              <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume par semaine", "Weekly training volume")}</h2><p>{t("playerVolume.weeklyComparison")}</p></div></div>
-              {loading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : <><ActiviteeEChart ariaLabel={pickLocaleText(locale, "Volume hebdomadaire d’entraînement en minutes", "Weekly training volume in minutes")} option={buildManagementVolumeChartOption({ labels: weeklyVolume.map((item) => item.label), values: weeklyVolume.map((item) => item.minutes), valueLabel: t("golfDashboard.minutesPerWeek"), objective: weeklyVolume.map((item) => item.objective), objectiveLabel: t("playerVolume.recommended") })} />{weeklyVolume.some((item) => item.objective != null) ? <small className={styles.chartNote}>{t("playerVolume.fullWeek")}</small> : null}</>}
-            </section>
-          </div>
 
           <section className={styles.marketplaceSection}>
             <div className={styles.benchmarksHeader}><div><h2>{t("nav.marketplace")}</h2><p>{pickLocaleText(locale, "Acheter, vendre et échanger au sein de vos clubs.", "Buy, sell and exchange within your clubs.")}</p></div></div>
