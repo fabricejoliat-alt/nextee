@@ -7,6 +7,7 @@ import RouteLoadingIndicator from "@/components/ui/RouteLoadingIndicator";
 import AuthSessionBoundary from "@/components/auth/AuthSessionBoundary";
 import GlobalHeaderBoundary from "@/components/public/GlobalHeaderBoundary";
 import NativePushLifecycle from "@/components/notifications/NativePushLifecycle";
+import NativeSwipeNavigation from "@/components/navigation/NativeSwipeNavigation";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -78,6 +79,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         <Suspense fallback={null}>
           <AuthSessionBoundary />
           <NativePushLifecycle />
+          <NativeSwipeNavigation />
           <RouteLoadingIndicator />
         </Suspense>
         <GlobalHeaderBoundary>{children}</GlobalHeaderBoundary>
