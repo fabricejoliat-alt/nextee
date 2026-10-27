@@ -9,6 +9,7 @@ private class BrandedBridgeViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(BiometricLockPlugin())
         bridge?.registerPluginInstance(NativePushContextPlugin())
+        bridge?.registerPluginInstance(NativeSwipeNavigationPlugin())
     }
 
     override func webView(with frame: CGRect, configuration: WKWebViewConfiguration) -> WKWebView {

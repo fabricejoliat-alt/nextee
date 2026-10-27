@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F60000000000000000000004 /* NativeSwipePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000000003 /* NativeSwipePolicy.swift */; };
+		F60000000000000000000002 /* NativeSwipeNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = F60000000000000000000001 /* NativeSwipeNavigation.swift */; };
 		F50000000000000000000002 /* NativePushContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = F50000000000000000000001 /* NativePushContext.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		4D22ABE92AF431CB00220026 /* CapApp-SPM in Frameworks */ = {isa = PBXBuildFile; productRef = 4D22ABE82AF431CB00220026 /* CapApp-SPM */; };
@@ -25,6 +27,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		F60000000000000000000003 /* NativeSwipePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSwipePolicy.swift; sourceTree = "<group>"; };
+		F60000000000000000000001 /* NativeSwipeNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeSwipeNavigation.swift; sourceTree = "<group>"; };
 		F50000000000000000000001 /* NativePushContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativePushContext.swift; sourceTree = "<group>"; };
 		F50000000000000000000003 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -84,6 +88,8 @@
 			isa = PBXGroup;
 			children = (
 				F50000000000000000000001 /* NativePushContext.swift */,
+				F60000000000000000000003 /* NativeSwipePolicy.swift */,
+				F60000000000000000000001 /* NativeSwipeNavigation.swift */,
 				F50000000000000000000003 /* App.entitlements */,
 				F10000000000000000000001 /* BiometricLock.swift */,
 				F10000000000000000000003 /* BiometricLockState.swift */,
@@ -194,6 +200,8 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				F50000000000000000000002 /* NativePushContext.swift in Sources */,
+				F60000000000000000000004 /* NativeSwipePolicy.swift in Sources */,
+				F60000000000000000000002 /* NativeSwipeNavigation.swift in Sources */,
 				F10000000000000000000002 /* BiometricLock.swift in Sources */,
 				F10000000000000000000004 /* BiometricLockState.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,

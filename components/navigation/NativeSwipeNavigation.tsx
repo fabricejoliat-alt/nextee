@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { installIOSSwipeNavigation, supportsIOSSwipeNavigation } from "@/lib/nativeIOSSwipeNavigation";
 import { installNativeSwipeHistory } from "@/lib/nativeSwipeHistory";
 import { edgeSwipeMovement, isSwipeAppPath, isSwipeEditingPath, startEdgeSwipe, type EdgeSwipe, type SwipeDirection } from "@/lib/nativeSwipeNavigation";
 import styles from "./NativeSwipeNavigation.module.css";
@@ -25,6 +26,7 @@ export default function NativeSwipeNavigation() {
   useEffect(() => {
     // Safari/Chrome retain their own gestures. Only the hosted mobile app needs this.
     if (!Capacitor.isNativePlatform()) return;
+    if (supportsIOSSwipeNavigation()) return installIOSSwipeNavigation(window, blockedPage);
     let gesture: EdgeSwipe | null = null, locked = false, lastNavigation = 0;
     const reset = () => { gesture = null; locked = false; setIndicator(null); };
     const history = installNativeSwipeHistory(window, reset);

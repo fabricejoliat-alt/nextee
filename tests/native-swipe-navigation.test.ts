@@ -86,7 +86,7 @@ test("reload keeps owned history, and cleanup does not overwrite a newer router 
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import ts from "typescript";
-function mountedNavigation(native = true) {
+function mountedNavigation(native = true, iosBridge = false) {
   const b = browser();
   Object.defineProperty(b.location, "pathname", { get: () => new URL(b.location.href).pathname });
   Object.assign(b.win, { innerWidth: 390, innerHeight: 844 });
@@ -109,6 +109,7 @@ function mountedNavigation(native = true) {
     require: (name: string) => {
       if (name === "react") return { useEffect: (fn: typeof effect) => { effect = fn; }, useState: () => [null, () => {}] };
       if (name === "@capacitor/core") return { Capacitor: { isNativePlatform: () => native } };
+      if (name === "@/lib/nativeIOSSwipeNavigation") return { supportsIOSSwipeNavigation: () => iosBridge, installIOSSwipeNavigation: () => () => {} };
       if (name === "@/lib/nativeSwipeHistory") return { installNativeSwipeHistory };
       if (name === "@/lib/nativeSwipeNavigation") return { edgeSwipeMovement, isSwipeAppPath, isSwipeEditingPath, startEdgeSwipe };
       if (name === "lucide-react" || name.endsWith(".css")) return {};
@@ -159,4 +160,11 @@ test("older native runtimes and unavailable session storage still support bounde
   assert.equal(tracker.navigate("back"), false);
   assert.equal(tracker.navigate("forward"), true);
   tracker.dispose();
+});
+
+test("new iOS shells delegate to WebKit without installing JS touch handlers or a second history tracker", () => {
+  const b = mountedNavigation(true, true);
+  assert.equal(b.listeners.size, 0);
+  assert.equal(b.history.state.__activiteeSwipeHistory, undefined);
+  b.cleanup!();
 });
