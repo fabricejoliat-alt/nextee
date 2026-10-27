@@ -1,3 +1,4 @@
+import { isMatchPlayRound, type MatchPlayRound } from "@/lib/golfRoundPresentation";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
 import { resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
@@ -6,8 +7,8 @@ import { personalOrOrganizationFilter } from "@/lib/personalHistoryScope";
 import { coachRows } from "@/lib/server/coachRows";
 import { dashboardTrainingPeriod, inDashboardPeriod, type DashboardSession, type DashboardItem, type DashboardEvent, type DashboardAttendance } from "@/lib/coachPlayerDashboard";
 
-const ROUND_COLUMNS = "id,start_at,round_type,score_entry_mode,competition_name,course_name,location,tee_name,handicap_start,slope_rating,course_rating,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus";
-type Round = { id: string; start_at: string };
+const ROUND_COLUMNS = "id,start_at,round_type,om_competition_format,om_match_result,match_score_text,score_entry_mode,competition_name,course_name,location,tee_name,handicap_start,slope_rating,course_rating,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus";
+type Round = MatchPlayRound & { id: string; start_at: string };
 type Hole = { round_id: string; hole_no: number; par: number | null; score: number | null; putts: number | null; fairway_hit: boolean | null };
 
 function validDate(value: string) {
@@ -44,7 +45,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
       if (latest) query = query.lt(key, new Date(Date.parse(`${latest}T00:00:00Z`) + 86_400_000).toISOString());
       return query;
     };
-    const [sessions, attendance, performanceResult, rounds] = await Promise.all([
+    const [sessions, attendance, performanceResult, loadedRounds] = await Promise.all([
       training ? coachRows<DashboardSession>((from, to) => bounded(db.from("training_sessions")
         .select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,club_id,coach_user_id")
         .eq("user_id", playerId).or(scope), "start_at").order("start_at").order("id").range(from, to)) : [],
@@ -58,6 +59,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
         return query.order("start_at").order("id").range(from, to);
       }),
     ]);
+    const rounds = allRounds ? loadedRounds : loadedRounds.filter(round => !isMatchPlayRound(round));
     if (performanceResult.error) throw new Error(performanceResult.error.message);
     const performance = Boolean(performanceResult.data?.length);
     const items: DashboardItem[] = [];

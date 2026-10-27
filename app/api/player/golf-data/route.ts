@@ -1,3 +1,4 @@
+import { isMatchPlayRound, type MatchPlayRound } from "@/lib/golfRoundPresentation";
 import { NextResponse, type NextRequest } from "next/server";
 import { bearerTokenFromRequest, playerAccessErrorStatus, resolveAuthenticatedPlayerAccess } from "@/app/api/player/access";
 import { requestedOrganizationId } from "@/lib/organizationPolicy";
@@ -13,7 +14,7 @@ const readRelatedRows = <T,>(ids:string[], query:Parameters<typeof readRelatedRo
 
 type Session = HomeHistorySession & { location_text: string | null; coach_name: string | null; notes: string | null };
 type Event = HomeHistoryEvent & { club_id: string; group_id: string | null; location_text: string | null };
-type Round = { id: string; start_at: string };
+type Round = MatchPlayRound & { id: string; start_at: string };
 type Item = HomeHistoryItem & { id: string };
 type PersonalActivity = { id: string; event_type: "competition" | "camp"; starts_at: string; ends_at: string; status: string };
 
@@ -29,9 +30,10 @@ export async function GET(req: NextRequest) {
     const scope = (column: "club_id" | "organization_id") => personal ? personalOrOrganizationFilter(column, orgIds) : `${column}.in.(${orgIds.join(",")})`;
     const identity = { viewerUserId: access.actorUserId, effectiveUserId: playerId, role: access.viewerRole, organizationIds: orgIds };
     const readRounds = async () => {
-      const rounds = await readAllRows<Round>((from, to) => db.from("golf_rounds")
-        .select("id,start_at,round_type,competition_name,course_name,location,tee_name,slope_rating,course_rating,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus,score_entry_mode")
+      const loadedRounds = await readAllRows<Round>((from, to) => db.from("golf_rounds")
+        .select("id,start_at,round_type,competition_name,course_name,location,tee_name,slope_rating,course_rating,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus,om_competition_format,om_match_result,match_score_text,score_entry_mode")
         .eq("user_id", playerId).or(scope("club_id")).order("start_at").order("id").range(from, to));
+      const rounds = view === "rounds" ? loadedRounds : loadedRounds.filter(round => !isMatchPlayRound(round));
       const holes = await readRelatedRows(rounds.map(row => row.id), (ids, from, to) => db.from("golf_round_holes")
         .select("id,round_id,hole_no,par,score,putts,fairway_hit,stroke_index,note").in("round_id", ids).order("id").range(from, to));
       return { rounds, holes };

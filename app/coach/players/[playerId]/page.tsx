@@ -127,6 +127,9 @@ type GolfRoundRow = {
   start_at: string;
   round_type: string; // training | competition | ...
   score_entry_mode?: string | null;
+  om_competition_format?: string | null;
+  om_match_result?: "won" | "lost" | null;
+  match_score_text?: string | null;
   competition_name?: string | null;
   course_name: string | null;
   location: string | null;

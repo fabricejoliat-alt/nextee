@@ -88,3 +88,5 @@
   .scorecardSummary { min-width: 0!important; }
   .scoreToken { box-sizing: border-box; min-width: 18px; min-height: 20px; }
 }
+
+.matchScore strong { font-size: 20px; white-space: normal; overflow-wrap: anywhere; }

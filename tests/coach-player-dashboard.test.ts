@@ -135,3 +135,21 @@ test("overview skips hole details and separates current and previous training pe
   assert.equal(body.training.previous.count, 1);
   assert.ok(!api.reads.includes("golf_round_holes"));
 });
+
+
+test("coach graphs exclude current and comparison match play while competition history retains them", async () => {
+  const rounds = [
+    { id: "stroke", start_at: "2026-01-10T12:00:00Z" },
+    { id: "match", start_at: "2026-01-11T12:00:00Z", om_competition_format: "match_play_individual", om_match_result: "won" },
+    { id: "previous-stroke", start_at: "2025-01-10T12:00:00Z" },
+    { id: "previous-match", start_at: "2025-01-11T12:00:00Z", om_competition_format: "match_play_individual", om_match_result: "lost" },
+  ].map(row => ({ ...row, user_id: "player", club_id: club }));
+  const api = route({ golf_rounds: rounds, golf_round_holes: rounds.map(row => ({ round_id: row.id, hole_no: 1, par: 4, score: 3 })) });
+  const stats = await (await api.get("view=stats&from=2026-01-01&to=2026-01-31&prev_from=2025-01-01&prev_to=2025-01-31")).json();
+  assert.deepEqual(stats.rounds.map((row: Row) => row.id), ["stroke"]);
+  assert.deepEqual(stats.prevRounds.map((row: Row) => row.id), ["previous-stroke"]);
+  assert.deepEqual(stats.holes.map((row: Row) => row.round_id), ["stroke"]);
+  assert.deepEqual(stats.prevHoles.map((row: Row) => row.round_id), ["previous-stroke"]);
+  const history = await (await api.get("view=competition")).json();
+  assert.equal(history.rounds.length, 4);
+});

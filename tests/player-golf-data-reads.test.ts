@@ -6,6 +6,14 @@ function fixture(performance = true) {
   const org = '10000000-0000-4000-8000-000000000001';
   const tables:Record<string,Row[]> = {
     club_members:[{id:'member',club_id:org,user_id:'player',role:'player',is_active:true,is_performance:performance}],
+    golf_rounds: [
+      { id: 'stroke', user_id: 'player', club_id: null, start_at: '2026-01-01', om_competition_format: 'stroke_play_individual' },
+      { id: 'match', user_id: 'player', club_id: null, start_at: '2026-01-02', om_competition_format: 'match_play_individual', om_match_result: 'won', match_score_text: '2 & 1' },
+    ],
+    golf_round_holes: [
+      { id: 'stroke-hole', round_id: 'stroke', hole_no: 1, par: 4, score: 4 },
+      { id: 'match-hole', round_id: 'match', hole_no: 1, par: 4, score: 3 },
+    ],
     profiles:[{id:'player',handicap:14}],
     organizations:[{id:org,name:'Club'}], coach_groups:[{id:'group',club_id:org,name:'Group'}],
     training_sessions:[
@@ -72,4 +80,16 @@ test('basic mode avoids structure reads and dashboard still retains all items',a
 test('unauthorized golf reads return no history',async()=>{
   const {route}=fixture(),response=await route.GET(new Request('http://localhost/api/player/golf-data?view=pending'));
   assert.equal(response.status,403);
+});
+
+
+test('player graphs exclude match play and its holes while round history retains the result', async () => {
+  const { route } = fixture();
+  const dashboard = await (await route.GET(request('dashboard'))).json();
+  assert.deepEqual(dashboard.rounds.map((row: Row) => row.id), ['stroke']);
+  assert.deepEqual(dashboard.holes.map((row: Row) => row.round_id), ['stroke']);
+  const history = await (await route.GET(request('rounds'))).json();
+  assert.deepEqual(history.rounds.map((row: Row) => row.id), ['stroke', 'match']);
+  assert.equal(history.rounds[1].om_match_result, 'won');
+  assert.equal(history.rounds[1].match_score_text, '2 & 1');
 });
