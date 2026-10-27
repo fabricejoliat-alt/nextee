@@ -1,3 +1,4 @@
+import { normalizeCampRichTextHtml } from "@/lib/campsRichText";
 import { createClient } from "@supabase/supabase-js";
 
 export const PLATFORM_NEWS_LOCALES = ["fr", "en", "de", "it"] as const;
@@ -36,7 +37,7 @@ export function normalizeTranslations(value: unknown) {
       locale,
       title: String(raw.title ?? "").trim(),
       summary: String(raw.summary ?? "").trim() || null,
-      body: String(raw.body ?? "").trim(),
+      body: normalizeCampRichTextHtml(String(raw.body ?? "")),
     };
   }).filter((row) => row.title || row.summary || row.body);
 }

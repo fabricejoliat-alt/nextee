@@ -29,7 +29,7 @@ export default function AdminHeader() {
         <div className="app-header-inner">
           <div className="app-header-grid app-header-grid--centered">
             <div className="header-left header-left--icon">
-              <button className="icon-btn" type="button" aria-label={t("common.openMenu")} onClick={() => setOpen(true)}>
+              <button className="icon-btn" type="button" aria-label={open ? t("common.close") : t("common.openMenu")} aria-expanded={open} aria-controls="admin-navigation-drawer" onClick={() => setOpen((current) => !current)}>
                 <BurgerIcon />
               </button>
             </div>

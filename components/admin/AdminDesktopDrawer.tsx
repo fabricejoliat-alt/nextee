@@ -104,7 +104,7 @@ export default function AdminDesktopDrawer({ open, onClose }: Props) {
     <>
       <button type="button" className="drawer-overlay" aria-label="Fermer" onClick={onClose} />
 
-      <aside className="drawer-panel drawer-panel--left" aria-label="Navigation admin">
+      <aside id="admin-navigation-drawer" className="drawer-panel drawer-panel--left" aria-label="Navigation admin">
         <div className="drawer-top">
           <Link href={ROUTES.home} className="drawer-brand" onClick={onClose} aria-label="ActiviTee">
             <span className="drawer-brand-nex">Activi</span>

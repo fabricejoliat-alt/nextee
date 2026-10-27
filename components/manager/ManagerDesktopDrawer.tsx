@@ -216,7 +216,7 @@ export default function ManagerDesktopDrawer({ open, onClose }: Props) {
     <>
       <button type="button" className="drawer-overlay" aria-label={t("common.close")} onClick={onClose} />
 
-      <aside className="drawer-panel drawer-panel--left" aria-label={t("common.navigation")}>
+      <aside id="manager-navigation-drawer" className="drawer-panel drawer-panel--left" aria-label={t("common.navigation")}>
         <div className="drawer-top">
           <Link href={ROUTES.home} className="drawer-brand" onClick={handleNavigate} aria-label="ActiviTee">
             <span className="drawer-brand-nex">Activi</span>
