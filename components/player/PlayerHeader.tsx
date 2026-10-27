@@ -114,8 +114,10 @@ export default function PlayerHeader() {
               <button
                 className="icon-btn"
                 type="button"
-                aria-label={t("common.openMenu")}
-                onClick={() => setOpen(true)}
+                aria-label={open ? t("common.close") : t("common.openMenu")}
+                aria-expanded={open}
+                aria-controls="player-navigation-drawer"
+                onClick={() => setOpen(current => !current)}
               >
                 <Menu size={22} strokeWidth={2} aria-hidden="true" />
               </button>
