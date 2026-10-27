@@ -170,3 +170,22 @@ test("coach API provides the overdue threshold and correct activity destination 
   const route=loadManagerModule("app/api/manager/clubs/[clubId]/performance/coaches/route.ts",{...fixture.mocks,"../_lib":mockedLib,"@/lib/server/coachEvaluation":{loadCoachEvaluationWorkload:async()=>({attendees:[{event_id:"event",player_id:"player",coach_recorded_status:null}],criteria:[],responses:[]})}});
   const response=await route.GET({nextUrl:new URL("http://local?coachId=target")},{params:Promise.resolve({clubId:"A"})});assert.equal(response.status,200);const json=await response.json();assert.deepEqual(json.coach.evaluationTodo,[{eventId:"event",playerId:"player",groupId:"group-A",eventTitle:"Activité maison",overdueAfterDays:7,reason:"Évaluation en retard de plus de 7 jours"}]);assert.equal(fixture.writes.length,0);
 });
+
+test("coach placeholder email can be filled explicitly and is locked after a successful save", async () => {
+ const lang = localized(), writes: any[] = [];
+ const member = { id: "member", user_id: "user", role: "coach", is_active: true, auth_email: "technical@noemail.local", profiles: { first_name: "Patrick", last_name: "Example", username: "coach", staff_function: null } };
+ const h = coachComponentHarness(paths[5], { props: { memberId: "member" }, modules: { "@/components/i18n/AppI18nProvider": lang.module, "next/navigation": navigation }, fetch: async (url, init) => {
+  if (init?.method) { writes.push({ url: String(url), body: JSON.parse(String(init.body)) }); return Response.json({ ok: true, email: "coach@example.test" }); }
+  return Response.json(String(url).endsWith("members") ? { members: [member], playerFields: [] } : String(url).endsWith("seasons") ? { seasons: [season] } : { records: [] });
+ } });
+ let tree = await settle(h);
+ assert.equal(field(tree, label("fr", "loginEmail")).props.value, "");
+ assert.equal(field(tree, label("fr", "loginEmail")).props.readOnly, false);
+ change(tree, label("fr", "loginEmail"), "coach@example.test"); tree = h.render();
+ button(tree, label("fr", "coaches.saveEmail")).props.onClick(); await flush(); tree = h.render();
+ assert.deepEqual(writes, [{ url: "/api/manager/clubs/club/coaches/email", body: { member_id: "member", email: "coach@example.test" } }]);
+ assert.equal(field(tree, label("fr", "loginEmail")).props.readOnly, true);
+ assert.equal(field(tree, label("fr", "loginEmail")).props.value, "coach@example.test");
+ assert.ok(ui(tree).includes(label("fr", "coaches.emailSaved")));
+ h.cleanup();
+});
