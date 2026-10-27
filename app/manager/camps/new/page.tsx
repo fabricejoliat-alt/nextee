@@ -208,6 +208,7 @@ export default function CampEditorPage() {
 
   const router = useRouter();
   const params = useSearchParams();
+  const requestedClubId = String(params.get("club") ?? "");
   const campId = String(params.get("campId") ?? "");
   const duplicateId = String(params.get("duplicateId") ?? "");
   const [loading, setLoading] = useState(true);
@@ -333,7 +334,8 @@ export default function CampEditorPage() {
         );
         if (!managerClubIds.length)
           throw new Error(t("manager.content.noManagerClub"));
-        const activeClubId = managerClubIds[0];
+        if (requestedClubId && !managerClubIds.includes(requestedClubId)) throw new Error(t("manager.clubUnavailable"));
+        const activeClubId = requestedClubId || managerClubIds[0];
         setClubId(activeClubId);
         const memberRows = (memberships.data ?? []).filter(
           (row: any) =>
@@ -360,7 +362,7 @@ export default function CampEditorPage() {
             supabase
               .from("coach_group_players")
               .select("group_id,player_user_id"),
-            fetch(campId || duplicateId ? `/api/manager/camps?camp_id=${encodeURIComponent(campId || duplicateId)}` : "/api/manager/camps", {
+            fetch(campId || duplicateId ? `/api/manager/camps?camp_id=${encodeURIComponent(campId || duplicateId)}${requestedClubId ? `&club_id=${encodeURIComponent(activeClubId)}` : ""}` : `/api/manager/camps?club_id=${encodeURIComponent(activeClubId)}`, {
               headers: await authHeaders(),
               cache: "no-store",
             }).then(async (response) => ({
@@ -422,7 +424,7 @@ export default function CampEditorPage() {
         setLoading(false);
       }
     })();
-  }, [campId, duplicateId]);
+  }, [campId, duplicateId, requestedClubId]);
 
   useEffect(() => {
     setRegistrations((current) =>
@@ -635,7 +637,7 @@ export default function CampEditorPage() {
   return (
     <main className={styles.page}>
       <nav className={styles.breadcrumb} aria-label={t("manager.content.breadcrumb")}>
-        <Link href="/manager/camps">{t("manager.content.camps")}</Link>
+        <Link href={clubId ? `/manager/camps?club=${encodeURIComponent(clubId)}` : "/manager/camps"}>{t("manager.content.camps")}</Link>
         <ChevronRight size={13} />
         <span>{campId && !duplicateId ? t("manager.content.edit") : t("manager.content.create")}</span>
       </nav>

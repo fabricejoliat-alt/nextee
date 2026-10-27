@@ -46,6 +46,7 @@ type Day = {
 };
 type Camp = {
   id: string;
+  club_id: string;
   title: string;
   notes: string | null;
   status: string;
@@ -328,7 +329,7 @@ export default function CampDetailPage() {
   return (
     <main className={styles.page}>
       <nav className={styles.breadcrumb} aria-label={t("manager.content.breadcrumb")}>
-        <Link href="/manager/camps">{t("manager.content.camps")}</Link>
+        <Link href={camp?.club_id ? `/manager/camps?club=${encodeURIComponent(camp.club_id)}` : "/manager/camps"}>{t("manager.content.camps")}</Link>
         <ChevronRight size={13} />
         <span>{camp?.title ?? t("manager.content.camp")}</span>
       </nav>
@@ -340,7 +341,7 @@ export default function CampDetailPage() {
           <div className={styles.actions}>
             <Link
               className={styles.primary}
-              href={`/manager/camps/new?campId=${camp.id}`}
+              href={`/manager/camps/new?campId=${camp.id}&club=${encodeURIComponent(camp.club_id)}`}
             >
               <Pencil size={15} />
               {t("manager.content.editCamp")}

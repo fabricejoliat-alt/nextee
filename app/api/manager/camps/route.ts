@@ -74,15 +74,18 @@ export async function GET(req: NextRequest) {
     if (clubIdsRes.error) return NextResponse.json({ error: clubIdsRes.error.message }, { status: 400 });
 
     const managedClubIds = uniq((clubIdsRes.data ?? []).map((row: any) => row.club_id));
+    const requestedClubId = new URL(req.url).searchParams.get("club_id")?.trim();
+    if (requestedClubId && !managedClubIds.includes(requestedClubId)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    const scopedClubIds = requestedClubId ? [requestedClubId] : managedClubIds;
     if (managedClubIds.length === 0) return NextResponse.json({ camps: [] });
 
     const requestedCampId = new URL(req.url).searchParams.get("camp_id");
     const versions = requestedCampId
-      ? await supabaseAdmin.rpc("get_manager_camp_versions_v1", { p_actor: caller.userId, p_club_ids: managedClubIds, p_camp: requestedCampId })
+      ? await supabaseAdmin.rpc("get_manager_camp_versions_v1", { p_actor: caller.userId, p_club_ids: scopedClubIds, p_camp: requestedCampId })
       : { data: {}, error: null };
     if (versions.error) return NextResponse.json({ error: "Le chargement des stages est indisponible. Réessayez ultérieurement." }, { status: 503 });
 
-    let campsQuery = supabaseAdmin.from("club_camps").select("*").in("club_id", managedClubIds);
+    let campsQuery = supabaseAdmin.from("club_camps").select("*").in("club_id", scopedClubIds);
     if (requestedCampId) campsQuery = campsQuery.eq("id", requestedCampId);
     const campsRes = await campsQuery.order("created_at", { ascending: false });
     if (campsRes.error) return NextResponse.json({ error: campsRes.error.message }, { status: 400 });
