@@ -16,6 +16,7 @@
 .content { display: grid; align-content: center; gap: 7px; min-width: 0; }
 .titleRow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
 .course { display: block; overflow: hidden; margin: 0; color: #293b30; font: 750 20px/1.15 var(--font-inter-tight),var(--font-inter),sans-serif; text-overflow: ellipsis; white-space: nowrap; }
+.competitionName { color: #526d50; font-size: 13px; font-weight: 750; line-height: 1.4; overflow-wrap: anywhere; }
 .meta { display: block; margin: 0; color: #778178; font-size: 11px; font-weight: 650; }
 .roundAside { display: grid; align-self: stretch; align-content: center; justify-items: center; gap: 8px; }
 .score { color: #304438; text-align: center; white-space: nowrap; }

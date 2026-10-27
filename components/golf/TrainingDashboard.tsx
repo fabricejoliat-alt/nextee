@@ -46,9 +46,9 @@ function ProgressDonut({ percent, size = 156 }: { percent: number; size?: number
   return (
     <svg width={size} height={size} viewBox={`0 0 ${view} ${view}`} aria-label={`Progression ${Math.round(p)}%`}>
       <defs>
-        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="rgba(40,146,89,1)" />
-          <stop offset="100%" stopColor="rgba(16,94,51,1)" />
+        <linearGradient id={gradientId} x1="60" y1="16" x2="104" y2="104" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="var(--green-light)" />
+          <stop offset="100%" stopColor="var(--green-dark)" />
         </linearGradient>
       </defs>
       <circle cx={center} cy={center} r={r} strokeWidth="12" className="donut-bg" fill="rgba(255,255,255,0.22)" />
@@ -182,7 +182,7 @@ export default function TrainingDashboard({
     xAxis: { type: "category", data: trainingWeeklyRows.map((row) => row.label), axisTick: { show: false }, axisLine: { lineStyle: { color: "rgba(53,72,59,.12)" } }, axisLabel: { color: "#7d8780", fontSize: 10 } },
     yAxis: { type: "value", name: "min", axisLine: { show: false }, axisTick: { show: false }, splitLine: { lineStyle: { color: "rgba(53,72,59,.08)" } }, axisLabel: { color: "#7d8780", fontSize: 10 } },
     series: [
-      { type: "bar", stack: "volume", name: pickLocaleText(locale, "Club", "Club"), data: trainingWeeklyRows.map((row) => row.club), itemStyle: { borderRadius: [4, 4, 0, 0] } },
+      { type: "bar", stack: "volume", name: pickLocaleText(locale, "Club", "Club"), data: trainingWeeklyRows.map((row) => row.club) },
       { type: "bar", stack: "volume", name: pickLocaleText(locale, "Cours privé", "Private lesson"), data: trainingWeeklyRows.map((row) => row.private) },
       { type: "bar", stack: "volume", name: pickLocaleText(locale, "Individuel", "Individual"), data: trainingWeeklyRows.map((row) => row.individual) },
       { type: "line", name: volumeLabel, data: trainingWeeklyRows.map((row) => row.objective), symbol: "none", lineStyle: { width: 2, type: "dashed", color: "#d9a441" } },
