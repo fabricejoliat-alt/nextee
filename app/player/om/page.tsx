@@ -3,7 +3,7 @@ import { playerMeritRead } from "@/lib/playerMeritRead";
 
 import Image from "next/image";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Award, CalendarDays, ChevronDown, CircleHelp, Medal, Sparkles, Target, Trophy } from "lucide-react";
+import { Award, CalendarDays, ChevronDown, CircleHelp, Medal, SlidersHorizontal, Sparkles, Target, Trophy } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { resolveEffectivePlayerContext } from "@/lib/effectivePlayer";
 import { isEffectivePlayerPerformanceEnabled } from "@/lib/performanceMode";
@@ -145,8 +145,8 @@ export default function PlayerOrderOfMeritPage() {
   const [effectiveUserId, setEffectiveUserId] = useState("");
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [organizationId, setOrganizationId] = useState("");
-  const [rankingFrom, setRankingFrom] = useState(yearStartInZurich);
-  const [rankingTo, setRankingTo] = useState(todayInZurich);
+  const rankingFrom = yearStartInZurich;
+  const rankingTo = todayInZurich;
   const [rankingMode, setRankingMode] = useState<"net" | "brut">("net");
   const [rankingRows, setRankingRows] = useState<OMRankingRow[]>([]);
   const [avatarByPlayerId, setAvatarByPlayerId] = useState<Record<string, string | null>>({});
@@ -158,8 +158,7 @@ export default function PlayerOrderOfMeritPage() {
       title: labelByLocale(locale, "Ordre du mérite", "Order of Merit", "Order of Merit", "Ordine di merito"),
       loading: labelByLocale(locale, "Chargement…", "Loading…", "Laedt…", "Caricamento…"),
       organization: labelByLocale(locale, "Organisation", "Organization", "Organisation", "Organizzazione"),
-      rankingDateFrom: labelByLocale(locale, "Du", "From", "Von", "Dal"),
-      rankingDateTo: labelByLocale(locale, "Au", "To", "Bis", "Al"),
+      thisSeason: labelByLocale(locale, "Cette saison", "This season", "Diese Saison", "Questa stagione"),
       rankingNet: labelByLocale(locale, "Net", "Net", "Netto", "Netto"),
       rankingBrut: labelByLocale(locale, "Brut", "Gross", "Brutto", "Lordo"),
       rankingPos: labelByLocale(locale, "Rang", "Rank", "Rang", "Posizione"),
@@ -541,10 +540,9 @@ export default function PlayerOrderOfMeritPage() {
       {error ? <div className="marketplace-error" role="alert">{error}</div> : null}
       {loading ? <section className={styles.panel}><ListLoadingBlock label={txt.loading} /></section> : !performanceEnabled ?
         <div className="marketplace-error">{txt.perfRequired}</div> : <div className={styles.page}>
-          <section className={`${styles.panel} ${styles.filters}`} aria-label={txt.summaryAsOf}>
+          <section className={`${styles.panel} ${styles.filters} ${orgs.length > 1 ? styles.filtersWithOrganization : ""}`} aria-label={txt.summaryAsOf}>
             {orgs.length > 1 ? <label className={styles.field}><span>{txt.organization}</span><select value={organizationId} onChange={(e) => setOrganizationId(e.target.value)}>{orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label> : null}
-            <label className={styles.field}><span>{txt.rankingDateFrom}</span><input type="date" value={rankingFrom} onChange={(e) => setRankingFrom(e.target.value)} /></label>
-            <label className={styles.field}><span>{txt.rankingDateTo}</span><input type="date" value={rankingTo} onChange={(e) => setRankingTo(e.target.value)} /></label>
+            <label className={styles.field}><span className={styles.filterLabel}><SlidersHorizontal size={16} aria-hidden="true" />{txt.summaryAsOf}</span><select defaultValue="current"><option value="current">{txt.thisSeason}</option></select></label>
             <div className={styles.segmented} aria-label={`${txt.rankingNet} / ${txt.rankingBrut}`}>
               <button type="button" className={rankingMode === "net" ? styles.segmentActive : ""} onClick={() => setRankingMode("net")} aria-pressed={rankingMode === "net"}>{txt.rankingNet}</button>
               <button type="button" className={rankingMode === "brut" ? styles.segmentActive : ""} onClick={() => setRankingMode("brut")} aria-pressed={rankingMode === "brut"}>{txt.rankingBrut}</button>
