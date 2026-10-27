@@ -70,7 +70,7 @@ test("evaluation alerts reach only the player and authorized parents of this org
   const notification = fixture.writes.find(write => write.table === "notifications")!;
   assert.equal(notification.values.kind, "coach_player_evaluated");
   assert.equal(notification.values.club_id, "club");
-  assert.match(notification.values.data.url, /club_event_id=event/);
+  assert.match(notification.values.data.url, /\/player\/golf\/activities\/event\?child_id=/);
   assert.doesNotMatch(JSON.stringify(fixture.sends), /engagement|performance|attitude|private_note|player_note/);
   assert.equal(fixture.writes.find(write => write.table === "notification_recipients")!.values.length, 2);
 });

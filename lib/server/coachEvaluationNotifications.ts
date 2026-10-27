@@ -23,7 +23,7 @@ export async function notifyCoachPlayerEvaluation(db: SupabaseClient, input: {
     eventType: "Entraînement", dateTime: moment,
   } };
   const { title, body } = await serverNotificationMessage(db, template.templateKey, "fr", template.templateParams);
-  const url = `/player/golf/trainings/new?club_event_id=${encodeURIComponent(event.id)}&mode=view&child_id=${encodeURIComponent(playerId)}`;
+  const url = `/player/golf/activities/${encodeURIComponent(event.id)}?child_id=${encodeURIComponent(playerId)}`;
   const notification = await db.from("notifications").insert({
     actor_user_id: actorUserId, club_id: event.club_id, type: "coach_player_evaluated", kind: "coach_player_evaluated",
     title, body, data: { ...notificationTemplateData(template), ...identity, organization_id: event.club_id, child_id: playerId, url },

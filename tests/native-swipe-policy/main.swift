@@ -28,5 +28,8 @@ for path in ["/player/golf/rounds/new", "/coach/players/example/edit", "/manager
     let url = URL(string: "https://activitee.app" + path)!
     assert(!allowed(policy(url), current: url))
 }
+let activity = URL(string: "https://activitee.app/player/golf/activities/event?child_id=child")!
+assert(allowed(policy(activity), current: activity))
+assert(allowed(policy(), back: activity))
 assert(!allowed(policy(), current: nil))
 print("Native swipe policy: 20 boundary, form and navigation checks passed")

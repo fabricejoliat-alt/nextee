@@ -7,7 +7,6 @@ import { loadPlayerActorAuthorization, visibleGuardianLinks } from "@/app/api/pl
 import { selectPrimaryApplicationRole } from "@/lib/playerAccessPolicy";
 import { pendingEditableParentChildren } from "@/lib/server/parentConsentRequirements";
 
-export const runtime = "nodejs";
 
 function resolvePlayerConsentPending(memberships: Array<{ role: string; player_consent_status: string | null }>) {
   return !playerConsentAllowsAccess(

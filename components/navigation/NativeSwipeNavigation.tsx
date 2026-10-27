@@ -11,14 +11,14 @@ import styles from "./NativeSwipeNavigation.module.css";
 type Indicator = { direction: SwipeDirection; progress: number; top: number };
 function blockedTarget(target: EventTarget | null) {
   if (!(target instanceof Element)) return true;
-  if (target.closest("a,button,input,textarea,select,form,[contenteditable]:not([contenteditable='false']),[role='button'],[role='slider'],[role='tablist'],[data-swipe-navigation='off']")) return true;
+  if (target.closest("a,button,input,textarea,select,form:not([data-swipe-readonly='true']),[contenteditable]:not([contenteditable='false']),[role='button'],[role='slider'],[role='tablist'],[data-swipe-navigation='off']")) return true;
   for (let element: Element | null = target; element && element !== document.body; element = element.parentElement) {
     if (element.scrollWidth > element.clientWidth + 2 && /auto|scroll/.test(getComputedStyle(element).overflowX)) return true;
   }
   return false;
 }
 function blockedPage() {
-  const visibleBlocker = Array.from(document.querySelectorAll("form,dialog[open],[role='dialog'][aria-modal='true'],[data-swipe-navigation='off']")).some(element => element.getClientRects().length > 0);
+  const visibleBlocker = Array.from(document.querySelectorAll("form:not([data-swipe-readonly='true']),dialog[open],[role='dialog'][aria-modal='true'],[data-swipe-navigation='off']")).some(element => element.getClientRects().length > 0);
   return !isSwipeAppPath(location.pathname) || isSwipeEditingPath(location.pathname) || visibleBlocker || Boolean(document.activeElement?.matches("input,textarea,select,[contenteditable]:not([contenteditable='false'])"));
 }
 

@@ -6,7 +6,6 @@ import { familyMailAppUrl, cleanFamilyEmail, defaultFamilyMailConfig, renderFami
 import { nextReportDate, type ReportFrequency } from "@/lib/periodicReports";
 import { buildPeriodicReportContent, defaultPeriodicReportSections } from "@/lib/periodicReportContent";
 
-export const runtime = "nodejs";
 
 const defaultSections = defaultPeriodicReportSections;
 function validFrequency(value: string): value is ReportFrequency { return ["monthly", "quarterly", "semiannual"].includes(value); }

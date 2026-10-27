@@ -1,7 +1,6 @@
 import { legalDb } from "@/lib/server/legalAccess";
 import { deletionHeaders, executeAccountDeletion, sendDeletionConfirmation } from "@/lib/server/accountDeletion";
 
-export const runtime = "nodejs";
 export const maxDuration = 300;
 export async function GET(req: Request) {
   if (!process.env.CRON_SECRET || req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`)

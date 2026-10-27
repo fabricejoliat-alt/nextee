@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { fcmConfigured, validAndroidPushDevice } from "@/lib/server/fcm";
 
-export const runtime = "nodejs";
 const headers = { "Cache-Control": "private, no-store" };
 
 async function caller(req: Request) {

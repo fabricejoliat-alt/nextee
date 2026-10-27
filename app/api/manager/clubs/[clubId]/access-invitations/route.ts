@@ -17,7 +17,6 @@ import {
   type InvitationKind,
 } from "@/lib/familyAccess";
 
-export const runtime = "nodejs";
 
 type AuthSummary = { email: string | null; last_sign_in_at: string | null };
 type Profile = { id: string; first_name: string | null; last_name: string | null; username: string | null };

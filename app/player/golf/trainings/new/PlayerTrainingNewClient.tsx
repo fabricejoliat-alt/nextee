@@ -188,12 +188,13 @@ function coachRatingPercent(value: number | null) {
 
 type PlayerTrainingNewPageProps = {
   embedded?: boolean;
+  viewEventId?: string;
   onSaved?: () => void | Promise<void>;
   embeddedSubmitClassName?: string;
   embeddedSubmitLabel?: string;
 };
 
-export default function PlayerTrainingNewPage({ embedded = false, onSaved, embeddedSubmitClassName, embeddedSubmitLabel }: PlayerTrainingNewPageProps) {
+export default function PlayerTrainingNewPage({ embedded = false, onSaved, embeddedSubmitClassName, embeddedSubmitLabel, viewEventId }: PlayerTrainingNewPageProps) {
   const { t, locale } = useI18n();
   const router = useRouter();
   const sp = useSearchParams();
@@ -208,8 +209,8 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
   );
 
   // ✅ support both param names
-  const clubEventId = String(sp.get("club_event_id") ?? sp.get("eventId") ?? "").trim();
-  const viewOnly = sp.get("mode") === "view";
+  const clubEventId = String(viewEventId ?? sp.get("club_event_id") ?? sp.get("eventId") ?? "").trim();
+  const viewOnly = Boolean(viewEventId) || sp.get("mode") === "view";
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -982,7 +983,7 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
           {loading ? (
             <TrainingFormSkeleton label={pickLocaleText(locale, "Chargement...", "Loading...")} evaluation={Boolean(clubEventId)} />
           ) : (
-            <form onSubmit={save} className={clubEventId ? `${styles.evaluationForm} ${styles.actionsInCard}` : styles.individualForm} style={{ display: "grid", gap: 12 }}>
+            <form data-swipe-readonly={viewOnly && clubEventId ? "true" : undefined} onSubmit={save} className={clubEventId ? `${styles.evaluationForm} ${styles.actionsInCard}` : styles.individualForm} style={{ display: "grid", gap: 12 }}>
                 {linkedEvent ? (
                   <>
                     <EvaluationActivitySummary

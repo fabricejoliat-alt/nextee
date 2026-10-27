@@ -3,7 +3,6 @@ import { canReuseClubAccount, requireManagerClub } from "@/lib/server/managerAcc
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-export const runtime = "nodejs";
 
 function mustEnv(name: string) {
   const v = process.env[name];

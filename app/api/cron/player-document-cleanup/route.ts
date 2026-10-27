@@ -4,7 +4,6 @@ import { createClient } from "@supabase/supabase-js";
 import { removePlayerDocumentObject } from "@/lib/playerDocumentStorage";
 import { DOCUMENT_UPLOAD_CLEANUP_GRACE_MS } from "@/lib/playerDocumentUpload";
 
-export const runtime = "nodejs";
 
 function authorized(req: NextRequest) {
   const expected = process.env.CRON_SECRET;

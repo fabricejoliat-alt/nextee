@@ -11,7 +11,6 @@ import {
   type ReminderChannel,
 } from "@/lib/competitions";
 
-export const runtime = "nodejs";
 
 type ReminderRow = {
   id: string;

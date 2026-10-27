@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-export const runtime = "nodejs";
 
 function mustEnv(name: string) {
   const v = process.env[name];

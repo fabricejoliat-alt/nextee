@@ -82,8 +82,8 @@ test("future activities on the Player home open an information view instead of e
     "utf8",
   );
 
-  assert.match(home, /club_event_id=" \+ encodeURIComponent\(event\.id\) \+ "&mode=view"/);
-  assert.match(activityDetail, /const viewOnly = sp\.get\("mode"\) === "view"/);
+  assert.match(home, /\/player\/golf\/activities\/" \+ encodeURIComponent\(event\.id\)/);
+  assert.match(activityDetail, /const viewOnly = Boolean\(viewEventId\) \|\| sp\.get\("mode"\) === "view"/);
   assert.match(activityDetail, /viewOnly \? pickLocaleText\(locale, "Détail de l’activité", "Activity details"\)/);
 });
 

@@ -6,7 +6,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { familyMailAppUrl, cleanFamilyEmail, defaultFamilyMailConfig, renderFamilyTemplate } from "@/lib/familyAccess";
 
-export const runtime = "nodejs";
 type ConsentStatus = "pending" | "granted" | "refused" | "adult";
 
 function mustEnv(name: string) { const value = process.env[name]; if (!value) throw new Error(`Missing env var: ${name}`); return value; }

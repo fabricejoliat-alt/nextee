@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { publicContactEmail } from "@/lib/server/publicContact";
 
-export const runtime = "nodejs";
 const TEST_SITE_KEY = "1x00000000000000000000AA";
 const TEST_SECRET_KEY = "1x0000000000000000000000000000000AA";
 const noStore = { "Cache-Control": "no-store, max-age=0" };

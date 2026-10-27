@@ -4,8 +4,6 @@ import { verifiedAdminAssurance } from "@/lib/server/adminSecurity";
 import { assertCalendarAccount, authorizeCalendar, CalendarAccessError, calendarHeaders, createSubscription,
   findSubscription, parseCalendarScope, publicSubscription, scopeKey } from "@/lib/server/calendarSubscriptions";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
 
 async function handle(req: Request) {
   try {

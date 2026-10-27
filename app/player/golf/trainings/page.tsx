@@ -174,7 +174,7 @@ function ActivityDay({inDialog=false,items,locale,dateLocale,playerId,busyId,att
     const detailHref=a.session?`/player/golf/trainings/${a.session.id}`:null;
     const evalHref=a.session?`/player/golf/trainings/${a.session.id}/edit`:a.event?.event_type==="training"?`/player/golf/trainings/new?club_event_id=${a.event.id}`:null;
     const campHref=a.campRegistration?`/player/camps?${new URLSearchParams({camp_id:a.campRegistration.campId,...(playerId?{child_id:playerId}:{})})}`:null;
-    const eventDetailHref=a.event?(campHref??(a.event.event_type==="competition"||a.event.event_type==="interclub"?`/player/golf/competitions/${a.event.id}`:`/player/golf/trainings/new?club_event_id=${a.event.id}&mode=view`)):null;
+    const eventDetailHref=a.event?(campHref??(a.event.event_type==="competition"||a.event.event_type==="interclub"?`/player/golf/competitions/${a.event.id}`:`/player/golf/activities/${encodeURIComponent(a.event.id)}`)):null;
     const consultHref=detailHref??eventDetailHref;
     const activityHref=inDialog?consultHref:a.needsEvaluation||a.optionalEvaluation?evalHref:consultHref;
     const open=expanded===a.key;

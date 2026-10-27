@@ -5,7 +5,6 @@ import { marketplaceContactEmail, marketplaceContactTextAllowed } from "@/lib/ma
 import { marketplaceSafetyContext, marketplaceUuid } from "@/lib/server/marketplaceSafety";
 import { processMarketplaceMessagePushes } from "@/lib/server/marketplaceMessageNotifications";
 
-export const runtime = "nodejs";
 const reply = (body: object, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "no-store" } });
 
 export async function POST(req: NextRequest, ctx: { params: Promise<{ itemId: string }> }) {

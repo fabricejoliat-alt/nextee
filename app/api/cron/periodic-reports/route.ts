@@ -5,7 +5,6 @@ import { cleanFamilyEmail, defaultFamilyMailConfig, renderFamilyTemplate } from 
 import { deliveryGroupKey, nextReportDate, periodLabel, previousCivilPeriod, type ReportFrequency } from "@/lib/periodicReports";
 import { buildPeriodicReportContent } from "@/lib/periodicReportContent";
 
-export const runtime = "nodejs";
 function authorized(req: NextRequest) { const expected = process.env.CRON_SECRET; return Boolean(expected && (req.headers.get("authorization") === `Bearer ${expected}` || req.nextUrl.searchParams.get("secret") === expected)); }
 function appUrl() { return String(process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "https://www.activitee.golf").replace(/\/+$/, ""); }
 type ConfigRow = { club_id: string; player_user_id: string; frequency: ReportFrequency; send_day: number; next_send_at: string; locale: string; recipient_user_ids: string[]; sections?: Record<string, boolean>; coach_priority?: string | null; coach_objective?: string | null; coach_encouragement?: string | null; coach_comment?: string | null };

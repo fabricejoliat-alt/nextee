@@ -2,7 +2,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createHash, randomBytes } from "crypto";
 
-export const runtime = "nodejs";
 
 type ProfileLiteRow = {
   id: string;

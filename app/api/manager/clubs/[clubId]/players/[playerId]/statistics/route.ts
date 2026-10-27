@@ -15,7 +15,6 @@ import {
   type DateRange,
 } from "@/lib/playerStatistics";
 
-export const runtime = "nodejs";
 
 function validYmd(value: string) { return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T12:00:00Z`).getTime()); }
 function startIso(value: string) { return `${value}T00:00:00.000Z`; }

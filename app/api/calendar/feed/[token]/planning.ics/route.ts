@@ -2,8 +2,6 @@ import { legalDb } from "@/lib/server/legalAccess";
 import { renderCalendar } from "@/lib/calendarSubscription";
 import { assertCalendarAccount, CalendarAccessError, calendarHeaders, calendarTokenPattern, loadCalendarEntries, type Subscription } from "@/lib/server/calendarSubscriptions";
 
-export const dynamic = "force-dynamic";
-export const runtime = "nodejs";
 const feedHeaders = { ...calendarHeaders, "Content-Type": "text/calendar; charset=utf-8", "Content-Disposition": 'inline; filename="activitee.ics"' };
 
 /** Subscription clients have no app session. The opaque token grants only this feed. */

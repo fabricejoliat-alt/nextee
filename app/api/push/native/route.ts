@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { apnsConfigured, validNativePushDevice } from "@/lib/server/apns";
 
-export const runtime = "nodejs";
 const headers = { "Cache-Control": "private, no-store" };
 async function caller(req: Request) {
   const token = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "").trim();

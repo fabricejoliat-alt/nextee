@@ -3,7 +3,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 
-export const runtime = "nodejs";
 
 function mustEnv(name: string) {
   const v = process.env[name];

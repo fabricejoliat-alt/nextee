@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-export const runtime = "nodejs";
 
 function parseMailFrom(raw: string) {
   const value = String(raw ?? "").trim();
