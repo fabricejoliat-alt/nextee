@@ -36,3 +36,17 @@ export function organizationFailure(error: unknown) {
     : ["PGRST202", "PGRST205", "42P01"].includes(e?.code ?? "") ? 503 : 400;
   return organizationReply({ error: "organization.operationFailed", code: e?.code ?? "UNKNOWN" }, status);
 }
+
+/** Known roster prerequisites are definite refusals, not uncertain writes. */
+export function organizationRosterFailure(error: unknown) {
+  const e = error as { code?: string; message?: string };
+  const prerequisites: Record<string, string> = {
+    "Academy authorization required": "organization.parentAuthorizationRequired",
+    "Legal action required": "organization.playerLegalActionRequired",
+    "Source approval required": "organization.sourceApprovalRequired",
+  };
+  if (e?.code === "P0001" && Object.hasOwn(prerequisites, e.message ?? "")) {
+    return organizationReply({ error: prerequisites[e.message!], code: e.code }, 409);
+  }
+  return organizationFailure(error);
+}

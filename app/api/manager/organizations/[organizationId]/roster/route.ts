@@ -1,4 +1,4 @@
-import { organizationActor, organizationReply, organizationFailure } from "@/lib/server/organizationAccess";
+import { organizationActor, organizationReply, organizationFailure, organizationRosterFailure } from "@/lib/server/organizationAccess";
 type Context = { params: Promise<{ organizationId: string }> };
 export async function GET(req: Request, ctx: Context) {
   try {
@@ -45,5 +45,5 @@ export async function POST(req: Request, ctx: Context) {
     const result = await access.db.rpc(rpc, params);
     if (result.error) throw result.error;
     return organizationReply({ ok: true, id: result.data });
-  } catch (error) { return organizationFailure(error); }
+  } catch (error) { return organizationRosterFailure(error); }
 }
