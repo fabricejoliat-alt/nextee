@@ -6,12 +6,16 @@ const containersSelector = "[data-scroll-container],.manager-scroll-area,.parent
 /** Restore app-owned scrolling containers as well as the browser viewport.
  * Positions live only in this document and are cleared on authentication changes.
  */
-export function installPageScrollRestoration(win: Window) {
+export function installPageScrollRestoration(win: Window, options: { nativeIOS?: boolean } = {}) {
   const positions = new Map<string, Position>();
   let current = win.location.href, pending: string | null = null, restoring = false;
   let stopRestore = () => {};
   const previousMode = win.history.scrollRestoration;
-  win.history.scrollRestoration = appPath(new URL(current)) ? "manual" : previousMode;
+  // WebKit rejects a swipe preview when a manual history entry has a different
+  // scroll position. Keep its native restoration enabled; our container restore
+  // still runs after React has revealed the retained page.
+  const appMode = options.nativeIOS ? "auto" : "manual";
+  win.history.scrollRestoration = appPath(new URL(current)) ? appMode : previousMode;
   const containers = () => Array.from(win.document.querySelectorAll<HTMLElement>(containersSelector)).filter(el => el.getClientRects().length > 0);
   const save = () => {
     if (restoring || !appPath(new URL(current))) return;
@@ -47,7 +51,7 @@ export function installPageScrollRestoration(win: Window) {
       const isHistory = pending === href;
       pending = null;
       if (!appPath(new URL(href))) { win.history.scrollRestoration = previousMode; return; }
-      win.history.scrollRestoration = "manual";
+      win.history.scrollRestoration = appMode;
       // Let the router honor explicit section anchors on ordinary navigation.
       if (!isHistory && new URL(href).hash) return;
       // Search/filter changes on the current page retain their own scroll.

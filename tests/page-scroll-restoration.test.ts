@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { installPageScrollRestoration, CLEAR_PRESERVED_PAGES_EVENT } from "../lib/pageScrollRestoration.ts";
 
-function environment() {
+function environment(nativeIOS = false) {
   const listeners = new Map<string, Set<() => void>>();
   const add = (key: string, fn: () => void) => { const set = listeners.get(key) ?? new Set(); set.add(fn); listeners.set(key, set); };
   const remove = (key: string, fn: () => void) => listeners.get(key)?.delete(fn);
@@ -19,7 +19,7 @@ function environment() {
     addEventListener: add, removeEventListener: remove, scrollTo({ left, top }: { left: number; top: number }) { this.scrollX = left; this.scrollY = top; },
     requestAnimationFrame: (fn: () => void) => { const id = ++frameId; frames.set(id, fn); return id; }, cancelAnimationFrame: (id: number) => frames.delete(id), setTimeout: () => 1, clearTimeout() {},
   };
-  const controller = installPageScrollRestoration(win as unknown as Window);
+  const controller = installPageScrollRestoration(win as unknown as Window, { nativeIOS });
   const flush = () => { for (let i = 0; i < 10 && frames.size; i++) { const pending = [...frames.values()]; frames.clear(); pending.forEach(fn => fn()); } };
   const navigate = (path: string, pop = false) => { emit("click"); win.location.href = new URL(path, win.location.href).href; if (pop) emit("popstate"); controller.commit(win.location.href); flush(); };
   return { win, area, emit, navigate, flush, resize: () => resized(), controller };
@@ -64,4 +64,21 @@ test("explicit section anchors and public pages retain the browser's usual behav
   e.navigate("/legal/privacy"); assert.equal(e.win.history.scrollRestoration, "auto");
   e.navigate("/player"); assert.equal(e.win.history.scrollRestoration, "manual");
   e.controller.dispose();
+});
+
+
+test("native iOS keeps automatic history snapshots while restoring retained page and container scroll", () => {
+  const e = environment(true);
+  assert.equal(e.win.history.scrollRestoration, "auto");
+  e.area.scrollTop = 1234; e.win.scrollY = 240; e.emit("scroll");
+  e.navigate("/player/golf");
+  assert.equal(e.win.history.scrollRestoration, "auto");
+  e.area.scrollTop = 400; e.win.scrollY = 600; e.emit("scroll");
+  e.navigate("/player/golf/trainings?type=all", true);
+  assert.equal(e.area.scrollTop, 1234); assert.equal(e.win.scrollY, 240);
+  assert.equal(e.win.history.scrollRestoration, "auto");
+  e.navigate("/player/golf", true);
+  assert.equal(e.area.scrollTop, 400); assert.equal(e.win.scrollY, 600);
+  e.navigate("/legal/privacy"); assert.equal(e.win.history.scrollRestoration, "auto");
+  e.controller.dispose(); assert.equal(e.win.history.scrollRestoration, "auto");
 });
