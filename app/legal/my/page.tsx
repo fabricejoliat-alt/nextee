@@ -4,7 +4,7 @@ import Link from "next/link";
 import DeleteAccountLink from "@/components/legal/DeleteAccountLink";
 import { ArrowRight, Check, ChevronDown, Download, FileText, Globe2, LockKeyhole, LogOut, ShieldCheck, TriangleAlert, X } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
-import type { OrganizationAccessSummary } from "@/lib/organizationPolicy";
+import { organizationAccessLabelKey, type OrganizationAccessSummary } from "@/lib/organizationPolicy";
 import { supabase } from "@/lib/supabaseClient";
 import styles from "./MyLegalPage.module.css";
 import { parentAuthorizationItems, type LegalChild } from "@/lib/parentAuthorization";
@@ -163,9 +163,9 @@ export default function MyLegalPage() {
         <label className={styles.languageSelect}><Globe2 size={17} aria-hidden="true" /><span>Langue</span><select value={locale} onChange={(event) => { setLocale(event.target.value); closePresentation(); }}>{languages.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}</select></label>
       </div>
       <div className={styles.toolbar}><label className={styles.languageSelect}>{t("organization.context")} <select value={organizationFilter} onChange={event => setOrganizationFilter(event.target.value)}>
-        <option value="all">{t("organization.all")}</option>{Array.from(new Map(organizations.map(org => [org.organization_id, org])).values()).map(org => <option key={org.organization_id} value={org.organization_id}>{org.name} · {t(`organization.${org.org_type}`)}</option>)}
+        <option value="all">{t("organization.all")}</option>{Array.from(new Map(organizations.map(org => [org.organization_id, org])).values()).map(org => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
       </select></label><span>{t("organization.ownAccess")}</span></div>
-      {organizations.length > 0 && <div className={styles.childTabs}>{organizations.map(org => <span key={`${org.organization_id}:${org.player_id}`} className={styles.childButton}>{org.name} · {t(`organization.${org.org_type}`)} · {t(org.accessible ? "organization.ready" : "organization.legalNeeded")}</span>)}</div>}
+      {organizations.length > 0 && <div className={styles.childTabs}>{organizations.map(org => <span key={`${org.organization_id}:${org.player_id}`} className={styles.childButton}>{org.name} · {t(organizationAccessLabelKey(org))}</span>)}</div>}
       </div>
       <section className={styles.accessCard} aria-labelledby="access-title">
         <div className={styles.accessHeading}><span className={styles.accessIcon}><ShieldCheck size={21} aria-hidden="true" /></span><div><h2 id="access-title">Accès à ActiviTee</h2>

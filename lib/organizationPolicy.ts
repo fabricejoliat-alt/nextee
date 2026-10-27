@@ -15,3 +15,16 @@ export function organizationGateBlocks(rows: OrganizationAccessSummary[], reques
   return requested ? !rows.some(row => row.organization_id === requested && row.accessible)
     : !rows.some(row => row.accessible);
 }
+
+export function organizationAccessLabelKey(row: OrganizationAccessSummary) {
+  if (row.accessible) return "organization.ready";
+  const reasons: Record<string, string> = {
+    legal_required: "documentsToValidate",
+    parent_authorization_required: "parentAuthorizationAwaited",
+    source_approval_required: "sourceApproval",
+    affiliation_activation_required: "managerActivationAwaited",
+    affiliation_suspended: "affiliationSuspended",
+    affiliation_ended: "affiliationEnded",
+  };
+  return `organization.${reasons[row.reason ?? ""] ?? "accessUnavailable"}`;
+}

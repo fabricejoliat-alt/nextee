@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { legalActor, legalDb, legalNoStore } from "@/lib/server/legalAccess";
 import { loadLegalGateStatus } from "@/lib/server/legalRequirements";
-import { loadOrganizationAccessSummary } from "@/lib/server/organizationSummary";
+import { loadLegalOrganizationAccessSummary } from "@/lib/server/organizationSummary";
 import { requestedOrganizationId } from "@/lib/organizationPolicy";
 export async function GET(req: Request) {
   try {
@@ -9,7 +9,7 @@ export async function GET(req: Request) {
     if (!actor) return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: legalNoStore });
     const [all, organizations] = await Promise.all([
       loadLegalGateStatus(db, actor.id, null, true),
-      loadOrganizationAccessSummary(db, actor.id),
+      loadLegalOrganizationAccessSummary(db, actor.id),
     ]);
     const organizationId = requestedOrganizationId(req.url);
     const missing = all.missing.filter(row => row.club_id === null || row.club_id === organizationId);
