@@ -543,10 +543,6 @@ export default function PlayerOrderOfMeritPage() {
           <section className={`${styles.panel} ${styles.filters} ${orgs.length > 1 ? styles.filtersWithOrganization : ""}`} aria-label={txt.summaryAsOf}>
             {orgs.length > 1 ? <label className={styles.field}><span>{txt.organization}</span><select value={organizationId} onChange={(e) => setOrganizationId(e.target.value)}>{orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}</select></label> : null}
             <label className={styles.field}><span className={styles.filterLabel}><SlidersHorizontal size={16} aria-hidden="true" />{txt.summaryAsOf}</span><select defaultValue="current"><option value="current">{txt.thisSeason}</option></select></label>
-            <div className={styles.segmented} aria-label={`${txt.rankingNet} / ${txt.rankingBrut}`}>
-              <button type="button" className={rankingMode === "net" ? styles.segmentActive : ""} onClick={() => setRankingMode("net")} aria-pressed={rankingMode === "net"}>{txt.rankingNet}</button>
-              <button type="button" className={rankingMode === "brut" ? styles.segmentActive : ""} onClick={() => setRankingMode("brut")} aria-pressed={rankingMode === "brut"}>{txt.rankingBrut}</button>
-            </div>
           </section>
 
           <section className={styles.summarySection} aria-labelledby="my-merit-summary">
@@ -564,7 +560,13 @@ export default function PlayerOrderOfMeritPage() {
 
           <div className={styles.mainGrid}>
             <section className={styles.panel} aria-labelledby="full-ranking-title">
-              <header className={styles.panelHeader}><div><h2 id="full-ranking-title">{txt.fullRanking}</h2><p>{periodLabel}</p></div><span className={styles.modeBadge}>{rankingMode === "net" ? txt.rankingNet : txt.rankingBrut}</span></header>
+              <header className={`${styles.panelHeader} ${styles.rankingHeader}`}>
+                <div><h2 id="full-ranking-title">{txt.fullRanking}</h2><p>{periodLabel}</p></div>
+                <div className={styles.segmented} aria-label={`${txt.rankingNet} / ${txt.rankingBrut}`}>
+                  <button type="button" className={rankingMode === "net" ? styles.segmentActive : ""} onClick={() => setRankingMode("net")} aria-pressed={rankingMode === "net"}>{txt.rankingNet}</button>
+                  <button type="button" className={rankingMode === "brut" ? styles.segmentActive : ""} onClick={() => setRankingMode("brut")} aria-pressed={rankingMode === "brut"}>{txt.rankingBrut}</button>
+                </div>
+              </header>
               {!organizationId || orgs.length === 0 ? <EmptyState text={txt.noOrg} /> : rankingLoading ? <ListLoadingBlock label={txt.loading} /> : sortedRows.length === 0 ? <EmptyState text={txt.rankingEmpty} /> : <div className={styles.rankingList}>
                 {sortedRows.map((row) => {
                   const rank = rankingMode === "net" ? row.rank_net : row.rank_brut;
