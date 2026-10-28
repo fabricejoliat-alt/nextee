@@ -225,6 +225,11 @@
 
 .swipeRow{min-width:0;width:100%;max-width:100%}
 .swipeDelete,.mobileCardLink,.mobileDate,.swipeHint{display:none}
+.newsCard { position: relative; }
+.newsCardLink.newsCardLink { display: block; position: absolute; inset: 0; z-index: 1; border-radius: inherit; }
+.newsCardLink:focus-visible { outline: 3px solid #91aa86; outline-offset: -3px; }
+.newsCard .cardActions { position: relative; z-index: 2; pointer-events: none; }
+.newsCard .cardActions > * { pointer-events: auto; }
 @media(max-width:640px){
   .listPanel.listPanel,.listPanelContent.listPanelContent{padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
   .listSummary{display:none}

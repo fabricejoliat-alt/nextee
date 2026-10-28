@@ -1,6 +1,7 @@
 "use client";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
+import NotificationNewsDetail from "@/components/news/NotificationNewsDetail";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -82,6 +83,7 @@ export default function CoachNewsFeed() {
   const archivedNews = news.filter((item) => item.status === "archived");
 
   return <main className={managerStyles.page}>
+    <NotificationNewsDetail news={news} loading={loading} error={error} homeHref="/coach" />
     <nav data-ui="breadcrumb" className={managerStyles.breadcrumb} aria-label="Fil d’Ariane"><Link href="/coach">Coach</Link><ChevronRight size={13} aria-hidden="true"/><span>Actualités</span></nav>
     <header className={managerStyles.topline}><div><h1>Actualités</h1><p className={managerStyles.lead}>Retrouvez les informations partagées avec vos groupes et votre équipe.</p></div></header>
     {error ? <div className={managerStyles.alertError} role="alert"><span>{error}</span><button type="button" className={managerStyles.secondary} onClick={() => void load()}>Réessayer</button></div> : null}

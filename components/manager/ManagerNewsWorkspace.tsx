@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import NotificationNewsDetail from "@/components/news/NotificationNewsDetail";
 import { managerContentPresentation } from "@/lib/managerContentPresentation";
 import { managerLocaleTag, managerActivityLabel } from "@/lib/managerLocale";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
@@ -312,7 +313,7 @@ export default function ManagerNewsWorkspace() {
     setError(null);
     try {
       const headers = await authHeaders();
-      const query = clubId ? `?club_id=${encodeURIComponent(clubId)}` : "";
+      const query = `?${new URLSearchParams({ locale, ...(clubId ? { club_id: clubId } : {}) })}`;
       const res = await fetch(`/api/manager/news${query}`, {
         method: "GET",
         headers,
@@ -355,7 +356,7 @@ export default function ManagerNewsWorkspace() {
     } finally {
       if (version === requestVersion.current) setLoading(false);
     }
-  }, [authHeaders, t]);
+  }, [authHeaders, t, locale]);
 
   useEffect(() => {
     if (previousRequestedClub.current !== requestedClubId) {
@@ -586,6 +587,7 @@ export default function ManagerNewsWorkspace() {
 
   return (
     <main className={styles.page}>
+      <NotificationNewsDetail news={[...platformNews, ...news]} loading={loading || !scopeReady} error={error} homeHref="/manager" />
       <nav aria-label={t("manager.content.breadcrumb")} style={{ color: "#53675a", fontSize: 12, fontWeight: 700 }}>
         <Link href="/manager">{t("manager.content.manager")}</Link><span aria-hidden="true" style={{ margin: "0 8px" }}>/</span><span>{t("manager.content.news")}</span>
       </nav>

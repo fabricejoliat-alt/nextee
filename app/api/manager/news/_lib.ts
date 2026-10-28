@@ -891,7 +891,7 @@ async function createServerNotification(args: {
   await Promise.all(["player", "coach", "manager"].map(role => sendWebPush(args.supabaseAdmin, { ...template, ...message,
     kind: args.kind, recipientUserIds: deliverable.filter(id => {
       const available = roles.get(id); return (available?.has("manager") ? "manager" : available?.has("coach") ? "coach" : "player") === role;
-    }), url: `/${role}/news` })));
+    }), url: `/${role}/news?${new URLSearchParams({ news_id: String(args.data.news_id), ...(role === "manager" ? { club: String(args.data.club_id) } : {}) })}` })));
   return String(notificationRes.data.id ?? "");
 }
 

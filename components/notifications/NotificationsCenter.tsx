@@ -2,6 +2,8 @@
 import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { newsNotificationHref } from "@/lib/newsNotificationNavigation";
 import { useEffect, useMemo, useState } from "react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import {
@@ -32,6 +34,7 @@ type RowRecord = Record<string, unknown>;
 
 export default function NotificationsCenter({ homeHref, settingsHref, designVariant, titleFr, titleEn, titleDe, titleIt }: Props) {
   const { locale, t } = useI18n();
+  const router = useRouter();
   const managerDesign = designVariant === "management" || homeHref === "/manager";
   const playerScope = homeHref === "/player";
   // The manager deliberately hides message notifications. Coach keeps them because
@@ -362,8 +365,10 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
       const nextUnread = Math.max(0, unreadCount - 1);
       applyPwaBadge(nextUnread);
       window.dispatchEvent(new CustomEvent("notifications:changed", { detail: { unreadCount: nextUnread } }));
+      return true;
     } catch (e: unknown) {
       setError(toErrorMessage(e, tr("Erreur.", "Error.", "Fehler.", "Errore.")));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -428,6 +433,10 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
   }
 
   function resolveNotificationHref(notification: NotificationRow | null) {
+    return newsNotificationHref(notification, homeHref) ?? resolveExistingNotificationHref(notification);
+  }
+
+  function resolveExistingNotificationHref(notification: NotificationRow | null) {
     const data = (notification?.data ?? {}) as Record<string, unknown>;
     const explicit = String(data.url ?? "").trim();
     if (explicit) return normalizeNotificationHref(explicit);
@@ -556,6 +565,16 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                 {visibleRows.map((r) => {
                   const n = r.notification;
                   const href = resolveNotificationHref(n);
+                  const newsHref = newsNotificationHref(n, homeHref);
+                  const openNews = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+                    if (!newsHref) return;
+                    event.preventDefault();
+                    if (busy) return;
+                    // Persist the read before routing, including in a Capacitor WebView.
+                    if (!r.recipient.is_read && !await onRead(r.recipient.id)) return;
+                    applyChildContextFromNotification(n, newsHref);
+                    router.push(newsHref);
+                  };
                   const threadId = n && n.kind === "thread_message" ? String((n.data ?? {}).thread_id ?? "").trim() : "";
                   const threadTitleFromData = n && n.kind === "thread_message" ? String((n.data ?? {}).thread_title ?? "").trim() : "";
                   const threadMeta = threadId ? threadMetaById[threadId] : null;
@@ -600,7 +619,7 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                     new Intl.DateTimeFormat(dateLocale, options).format(notificationDate).replace(".", "");
                   const card = (
                     <div
-                      className={managerDesign ? `${styles.swipeCard} ${styles.notificationItem} ${playerScope ? styles.playerNotificationItem : ""} ${!r.recipient.is_read ? styles.notificationUnread : ""}` : `${styles.swipeCard} marketplace-item`}
+                      className={`${newsHref ? styles.newsCard : ""} ${managerDesign ? `${styles.swipeCard} ${styles.notificationItem} ${playerScope ? styles.playerNotificationItem : ""} ${!r.recipient.is_read ? styles.notificationUnread : ""}` : `${styles.swipeCard} marketplace-item`}`}
                       style={managerDesign ? undefined : {
                         width: "100%",
                         minWidth: 0,
@@ -611,7 +630,8 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                           : {}),
                       }}
                     >
-                      {href ? <Link href={href} className={styles.mobileCardLink} aria-label={notificationTitle} onClick={() => {
+                      {href ? <Link href={href} className={`${styles.mobileCardLink} ${newsHref ? styles.newsCardLink : ""}`} aria-label={notificationTitle} onClick={(event) => {
+                        if (newsHref) { void openNews(event); return; }
                         applyChildContextFromNotification(n, href);
                         if (!r.recipient.is_read) void onRead(r.recipient.id);
                       }} /> : null}
@@ -704,13 +724,14 @@ export default function NotificationsCenter({ homeHref, settingsHref, designVari
                         ) : null}
                         <div className={`${styles.notificationDate} ${playerScope ? styles.mobileDate : ""}`} style={managerDesign ? undefined : { fontSize: 11, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{fmtDate(notificationCreatedAt)}</div>
                         <div className={`${styles.cardActions} ${managerDesign ? `${campsStyles.actions} ${playerScope ? styles.playerNotificationActions : ""}` : ""}`} style={managerDesign ? undefined : { display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
-                          {href ? (
+                          {href && (!newsHref || resolveExistingNotificationHref(n)) ? (
                             <Link
                               href={href}
                               className={managerDesign ? (playerScope ? campsStyles.iconButton : campsStyles.secondary) : "btn"}
                               title={tr("Voir", "View", "Ansehen", "Vedi")}
                               aria-label={tr("Voir la notification", "View notification", "Benachrichtigung ansehen", "Vedi notifica")}
-                              onClick={() => {
+                              onClick={(event) => {
+                                if (newsHref) { void openNews(event); return; }
                                 applyChildContextFromNotification(n, href);
                                 if (!r.recipient.is_read) void onRead(r.recipient.id);
                               }}

@@ -1,6 +1,7 @@
 "use client";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
+import NotificationNewsDetail from "@/components/news/NotificationNewsDetail";
 
 /* eslint-disable @next/next/no-img-element -- News images are dynamic club-managed URLs. */
 
@@ -113,6 +114,7 @@ export default function PlayerNewsFeed() {
   const archivedNews = news.filter((item) => item.status === "archived");
 
   return <main className={`${playerUiStyles.page} ${styles.newsPage}`}>
+    <NotificationNewsDetail news={news} loading={loading} error={error} homeHref="/player" />
     <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: tr("Actualités", "News") }]} />
     <header className={playerUiStyles.topline}><div><h1>{tr("Actualités", "News")}</h1><p className={playerUiStyles.lead}>{tr("Retrouvez les informations publiées par votre club.", "Find the latest information published by your club.")}</p></div></header>
     {error ? <div className={playerUiStyles.alertError} role="alert"><span>{error}</span><button type="button" className={playerUiStyles.secondary} onClick={() => setReloadKey((key) => key + 1)}>{tr("Réessayer", "Try again")}</button></div> : null}

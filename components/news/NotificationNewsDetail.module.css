@@ -1,0 +1,8 @@
+.dialog { width: 760px; box-sizing: border-box; border: 1px solid #e3e9e2; border-radius: 16px; background: #fff; color: #35483b; }
+.header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding: 20px; border-bottom: 1px solid #e3e9e2; }
+.header h2 { margin: 0; font-size: 22px; overflow-wrap: anywhere; }
+.dialog button { cursor: pointer; border: 1px solid #dfe7dd; border-radius: 8px; background: #f6faf4; color: inherit; padding: 10px; }
+.header button { display: grid; place-items: center; flex-shrink: 0; }
+.body { padding: 20px; overflow-wrap: anywhere; line-height: 1.6; }
+.body img { max-width: 100%; height: auto; border-radius: 10px; }
+.body > img { display: block; margin-bottom: 16px; }

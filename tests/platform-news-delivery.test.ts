@@ -40,6 +40,7 @@ test("push worker rechecks access, keeps localized parameters and persists the r
   });
   await processPlatformNewsPushes(db,"news");
   assert.equal(pushes.length,1);
+  assert.equal(pushes[0].url,"/player/news?news_id=news");
   assert.deepEqual(pushes[0].templateParamsByLocale,{de:{newsTitle:"DE"}});
   assert.equal(writes.at(-1)?.values.push_status,"completed");
   visible=false;

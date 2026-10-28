@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NotificationTemplateInput } from "./notificationTemplates";
 import { sendWebPush } from "./webPush";
+import { newsNotificationHref } from "../newsNotificationNavigation";
 
 type Delivery = {
   id: string; user_id: string; news_id: string; notification_id: string; published: boolean;
@@ -27,13 +28,16 @@ export async function processPlatformNewsPushes(db: SupabaseClient, newsId: stri
         } else {
           const notification = delivery.notification;
           const data = notification.data;
+          const currentUrl = String(data.url ?? "/player/news");
+          const roleHome = currentUrl.startsWith("/manager/") ? "/manager" : currentUrl.startsWith("/coach/") ? "/coach" : "/player";
           const template: NotificationTemplateInput = {
             templateKey: String(data.template_key),
             templateParams: data.template_params as NotificationTemplateInput["templateParams"],
             templateParamsByLocale: data.template_params_by_locale as NotificationTemplateInput["templateParamsByLocale"],
           };
           const push = await sendWebPush(db, { ...template, recipientUserIds: [delivery.user_id], kind: notification.kind,
-            title: notification.title, body: notification.body, url: String(data.url ?? "/") });
+            title: notification.title, body: notification.body,
+            url: newsNotificationHref({ kind: notification.kind, data: { ...data, platform_news_id: delivery.news_id } }, roleHome) ?? currentUrl });
           status = push.configured && push.failed === 0 ? "completed" : "failed";
           result = { ...push };
         }
