@@ -437,6 +437,25 @@ export default function PlayerTrainingNewPage({ embedded = false, onSaved, embed
     (async () => {
       setLoading(true);
       setError(null);
+      // Next reuses this page when only its query changes (evaluation → new training).
+      // Clear the previous activity, including the save lock, before loading the new context.
+      setBusy(false);
+      setLinkedEvent(null);
+      setLinkedGroupName("");
+      setExistingSessionId("");
+      setSessionType("individual");
+      setHasChosenTrainingType(sp.get("session_type") === "individual");
+      setStartAt(normalizeToQuarterHour(toLocalDateTimeInputValue(new Date().toISOString())));
+      setPlace("");
+      setNonPerformanceMinutes("");
+      setNotes("");
+      setMotivation("");
+      setDifficulty("");
+      setSatisfaction("");
+      setItems([]);
+      setCoachOptions([]);
+      setSelectedCoachIds([]);
+      setEventAttendees([]);
 
       const { effectiveUserId: uid } = await resolveEffectivePlayerContext();
       setUserId(uid);
