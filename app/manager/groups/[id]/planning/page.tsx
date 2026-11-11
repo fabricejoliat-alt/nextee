@@ -97,6 +97,7 @@ export default function CoachGroupPlanningPage() {
         .from("club_events")
         .select("id,group_id,club_id,event_type,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status,requires_evaluation")
         .eq("group_id", groupId)
+        .neq("status", "cancelled")
         .order("starts_at", { ascending: true });
 
       if (isoFrom) q = q.gte("starts_at", isoFrom);
@@ -109,7 +110,10 @@ export default function CoachGroupPlanningPage() {
       setEvents(eList);
 
       const nowIso = new Date().toISOString();
-      const withType = (qq: ReturnType<ReturnType<typeof supabase.from>["select"]>) => (eventTypeFilter !== "all" ? qq.eq("event_type", eventTypeFilter) : qq);
+      const withType = (qq: ReturnType<ReturnType<typeof supabase.from>["select"]>) => {
+        const active = qq.neq("status", "cancelled");
+        return eventTypeFilter !== "all" ? active.eq("event_type", eventTypeFilter) : active;
+      };
 
       const allCountQ = withType(supabase.from("club_events").select("id", { count: "exact", head: true }).eq("group_id", groupId));
       const upCountQ = withType(

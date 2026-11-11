@@ -70,6 +70,11 @@ test('Manager planning, seasons and camps in isolated PostgreSQL', {skip: !runti
   await db.exec(sql('20260912_add_coach_club_permissions_and_player_transfers.sql').match(/create or replace function public\.can_manage_assigned_group\([\s\S]*?\$\$;/)[0]);
   await db.exec(sql('20261004_coach_occurrence_save.sql'));
   for(const file of ['20261009_manager_reliability_batch2.sql','20261010_manager_camp_save.sql']) { await db.exec(sql(file)); await db.exec(sql(file)); }
+  // Match the production business-function name behind the legal RPC wrapper.
+  const legalGate = sql('20261031_legal_event_edit_rpc_gate.sql');
+  await db.exec(`create function public.legal_required_event_access(uuid) returns boolean language sql as $$ select true $$;`);
+  await db.exec(legalGate.slice(legalGate.indexOf('alter function public.update_manager_event_series_v1('),legalGate.indexOf("notify pgrst")));
+  await db.exec(sql('20261111_manager_series_allow_past_end_date.sql'));
   const postflight = readFileSync(new URL('../supabase/checks/20261009_manager_reliability_postflight.sql', import.meta.url),'utf8');
   const checks = (await db.query(postflight)).rows;
   assert.equal(checks.length,14);
@@ -161,6 +166,34 @@ test('Manager planning, seasons and camps in isolated PostgreSQL', {skip: !runti
       (select count(*)::int from club_event_attendees where event_id=e.id) participants from club_events e where series_id=$1 and starts_at>'2089-01-01' order by starts_at`,[series]);
     assert.equal(future.length,3);assert.ok(future.every(e=>e.title==='Spring'&&e.local_time==='10:00:00'&&e.participants===2));
     assert.deepEqual(await query('select * from club_events where id=$1',[past]),beforePast);
+  });
+  await t.test('shortening a recurrence into the past cancels future slots and preserves history',async()=>{
+    const series=(await query(`insert into club_event_series(club_id,group_id,event_type,title,weekday,time_of_day,interval_weeks,start_date,end_date,duration_minutes,is_active,created_by)
+      values($1,$2,'training','Weekly',6,'10:00',1,current_date-60,current_date+20,60,true,$3) returning id`,[club,group,manager]))[0].id;
+    const dates=(await query(`select (now()-interval '10 days')::text past,(now()+interval '3 days')::text future,
+      (now()+interval '10 days')::text later,(current_date-4)::text new_end`))[0];
+    const past=await makeEvent(series,dates.past),future=await makeEvent(series,dates.future),later=await makeEvent(series,dates.later);
+    const eventSnapshot=async event=>(await query('select manager_event_snapshot_v1($1) data',[event]))[0].data;
+    const unrelated=await makeEvent(null,dates.future),historical=await eventSnapshot(past),outside=await snapshot(unrelated);
+    await query("insert into message_threads values($1,'Keep discussion')",[future]);
+    const attendees=await query('select * from club_event_attendees where event_id=any($1::uuid[]) order by event_id',[[future,later]]);
+    const expected=await snapshot(future);
+    const save=(loaded,values)=>query('select update_manager_event_series_v1($1,$2,$3,$4::uuid[],$5::uuid[],$6,$7::uuid[],$8) data',
+      [future,JSON.stringify(loaded),JSON.stringify({...loaded.series,...values}),[coach],[player],'[]',[criterion],'Europe/Zurich']);
+    const before=await state();
+    await assert.rejects(save(expected,{end_date:'1900-01-01'}),/invalid_series/);
+    assert.deepEqual(await state(),before);
+    const result=(await save(expected,{end_date:dates.new_end}))[0].data;
+    assert.equal(result.ok,true);
+    assert.deepEqual((await query('select status from club_events where id=any($1::uuid[]) order by id',[[future,later]])).map(row=>row.status),['cancelled','cancelled']);
+    assert.equal((await query('select end_date::text from club_event_series where id=$1',[series]))[0].end_date,dates.new_end);
+    assert.deepEqual(await eventSnapshot(past),historical);
+    assert.deepEqual(await snapshot(unrelated),outside);
+    assert.deepEqual(await query('select * from club_event_attendees where event_id=any($1::uuid[]) order by event_id',[[future,later]]),attendees);
+    assert.equal((await query('select body from message_threads where event_id=$1',[future]))[0].body,'Keep discussion');
+    const saved=await state();
+    await assert.rejects(save(expected,{end_date:dates.new_end}),/planning_conflict/);
+    assert.deepEqual(await state(),saved);
   });
   await t.test('camp edit retains event/day IDs, registration timestamps and recorded attendance',async()=>{
     const {body,camp}=await makeCamp();

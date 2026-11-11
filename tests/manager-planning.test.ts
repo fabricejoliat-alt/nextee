@@ -61,6 +61,27 @@ test("planning filters and historic rosters survive language changes; unconfirme
   assert.ok(elements(tree).some(n => n.props.href === "/manager/groups/group?season=season")); x.h.cleanup();
 });
 
+test("cancelled recurrence slots are excluded from every planning list and period count", async () => {
+  const data = tables();
+  data.club_events.push(
+    { ...data.club_events[0], id: "future", starts_at: "2090-11-07T09:00:00Z", title: "Future training" },
+    { ...data.club_events[0], id: "cancelled-past", status: "cancelled", title: "Cancelled past" },
+    { ...data.club_events[0], id: "cancelled-future", starts_at: "2090-11-14T09:00:00Z", status: "cancelled", title: "Cancelled future" },
+  );
+  const x = setup(paths[0], { data });
+  try {
+    let tree = await settle(x.h);
+    for (const [period, count] of [["all", 2], ["upcoming", 1], ["past", 1]] as const) {
+      tabs(tree).props.onChange(period); tree = await settle(x.h);
+      assert.equal(elements(tree).filter(n => n.type === "article").length, count);
+      assert.doesNotMatch(ui(tree), /Cancelled past|Cancelled future/);
+      for (const [value, expected] of [["all", 2], ["upcoming", 1], ["past", 1]] as const) {
+        assert.ok(tabs(tree).props.items.find((item: any) => item.value === value).label.endsWith(`(${expected})`));
+      }
+    }
+  } finally { x.h.cleanup(); }
+});
+
 test("failed deletion keeps its error visible and permits a deliberate retry", async () => {
   const restore = confirmed(); let calls = 0; const wait = deferred<Response>();
   const x = setup(paths[0], { request: async () => { calls++; return calls === 1 ? wait.promise : Response.json({ ok: true }); } });
