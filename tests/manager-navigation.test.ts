@@ -48,6 +48,28 @@ test("calendar paginates over 1000 events and attendees, batches profiles, and i
   assert.equal(fixture.writes.length, 0);
 });
 
+test("calendar excludes cancelled occurrences and overlapping events together with their rosters", async () => {
+  const tables = managerFixture();
+  tables.club_events = [
+    event("retained", "2026-11-07T09:00:00.000Z"),
+    event("cancelled-slot", "2026-11-14T09:00:00.000Z", { status: "cancelled" }),
+    event("cancelled-overlap", "2026-10-31T09:00:00.000Z", { status: "cancelled", ends_at: "2026-11-02T10:00:00.000Z" }),
+    event("active-overlap", "2026-10-31T09:00:00.000Z", { ends_at: "2026-11-02T10:00:00.000Z" }),
+  ];
+  tables.club_event_attendees = tables.club_events.map(row => ({ event_id: row.id, player_id: `junior-${row.id}` }));
+  tables.club_event_coaches = tables.club_events.map(row => ({ event_id: row.id, coach_id: "target" }));
+  const fixture = managerDatabase(tables);
+  const response = await loadManagerModule(routePath, fixture.mocks).GET(req("2026-11-01T00:00:00.000Z", "2026-11-30T23:59:59.999Z"));
+  assert.equal(response.status, 200);
+  const json = await response.json();
+  assert.deepEqual(json.events.map((row: any) => row.id).sort(), ["active-overlap", "retained"]);
+  assert.deepEqual(json.attendees.map((row: any) => row.event_id).sort(), ["active-overlap", "retained"]);
+  assert.deepEqual(json.event_coaches.map((row: any) => row.event_id).sort(), ["active-overlap", "retained"]);
+  assert.ok(!json.players.some((row: any) => row.id.includes("cancelled")));
+  assert.equal(json.stats.total, 2);
+  assert.equal(fixture.writes.length, 0);
+});
+
 test("calendar rejects unauthenticated and invalid windows and never returns partial data on a query error", async () => {
   const fixture = managerDatabase(managerFixture());
   const route = loadManagerModule(routePath, fixture.mocks);

@@ -39,8 +39,8 @@ export async function GET(req: NextRequest) {
     if (!clubIds.length) return NextResponse.json({ events: [], groups: [], clubs: [], attendees: [], event_coaches: [], players: [], stats: { completed: 0, planned: 0, total: 0 } });
     const columns = "id,group_id,club_id,event_type,title,starts_at,ends_at,duration_minutes,location_text,coach_note,series_id,status,competition_level,competition_category,external_registration_url,competition_note";
     const [starting, overlapping, groups, clubs, activePlayers, pastCount, futureCount] = await Promise.all([
-      coachRows<CalendarEvent>((start, end) => db.from("club_events").select(columns).in("club_id", clubIds).gte("starts_at", fromIso).lte("starts_at", toIso).order("starts_at").order("id").range(start, end)),
-      coachRows<CalendarEvent>((start, end) => db.from("club_events").select(columns).in("club_id", clubIds).lt("starts_at", fromIso).gte("ends_at", fromIso).order("starts_at").order("id").range(start, end)),
+      coachRows<CalendarEvent>((start, end) => db.from("club_events").select(columns).in("club_id", clubIds).eq("status", "scheduled").gte("starts_at", fromIso).lte("starts_at", toIso).order("starts_at").order("id").range(start, end)),
+      coachRows<CalendarEvent>((start, end) => db.from("club_events").select(columns).in("club_id", clubIds).eq("status", "scheduled").lt("starts_at", fromIso).gte("ends_at", fromIso).order("starts_at").order("id").range(start, end)),
       byIds<Group>(db, "coach_groups", "id,name,is_active,head_coach_user_id", "club_id", clubIds, ["id"]),
       byIds<{ id: string; name: string | null }>(db, "clubs", "id,name", "id", clubIds, ["id"]),
       coachRows<{ user_id: string }>((start, end) => db.from("club_members").select("user_id").in("club_id", clubIds).eq("role", "player").eq("is_active", true).order("club_id").order("user_id").range(start, end)),
