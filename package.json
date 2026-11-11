@@ -18,7 +18,7 @@
     "test:player-statistics": "node --test --experimental-strip-types tests/player-statistics.test.ts",
     "test:manager-security": "node --experimental-strip-types --test tests/manager-security.test.ts",
     "test:manager-security-sql": "node --test tests/manager-security-sql.test.mjs",
-    "test:manager-reliability": "node --experimental-strip-types --test tests/manager-reliability.test.ts tests/manager-event-editor.test.ts tests/manager-event-deletion.test.ts tests/manager-participants.test.ts tests/manager-global-activities.test.ts tests/manager-reliability-sql.test.mjs",
+    "test:manager-reliability": "node --experimental-strip-types --test tests/manager-reliability.test.ts tests/manager-editor-routing.test.ts tests/manager-event-editor.test.ts tests/manager-event-deletion.test.ts tests/manager-participants.test.ts tests/manager-global-activities.test.ts tests/manager-reliability-sql.test.mjs",
     "test:manager-communications": "node --experimental-strip-types --test tests/manager-communications.test.ts tests/manager-field-controls.test.ts tests/manager-family-access.test.ts tests/manager-communications-sql.test.mjs",
     "test:manager-performance": "node --test --experimental-strip-types tests/manager-performance.test.ts",
     "test:manager-navigation": "node --experimental-strip-types --test tests/manager-navigation.test.ts",

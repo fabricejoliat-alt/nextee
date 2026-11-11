@@ -63,7 +63,7 @@ async function editor(fetcher:typeof fetch,read?:(id:string)=>Promise<any>){
   Object.assign(state.db.auth,{getSession:async()=>({data:{session:{access_token:'test-only'}}})});
   state.db.rpc=async(name,args)=>{if(name==='get_manager_planning_snapshot_v1')return read?read(args.p_event_id):{data:snapshot(args.p_event_id),error:null};state.rpcs.push({name,args});return {data:{ok:true,recipient_ids:[]},error:null};};
   const navigation:string[]=[],params={id:'group',eventId:'event'};
-  const harness=coachComponentHarness('app/manager/groups/[id]/planning/[eventId]/edit/page.tsx',{database:state.db,params,searchParams:'season=2027',fetch:fetcher,navigate:p=>navigation.push(p),modules:{'@/components/evaluations/EventCriteriaSelector':{__esModule:true,default:'criteria-selector'}}});
+  const harness=coachComponentHarness('app/manager/groups/[id]/planning/[eventId]/edit/ManagerEventEditor.tsx',{database:state.db,props:{routeParams:params},searchParams:'season=2027',fetch:fetcher,navigate:p=>navigation.push(p),modules:{'@/components/evaluations/EventCriteriaSelector':{__esModule:true,default:'criteria-selector'}}});
   harness.render();await flush();harness.render();return {harness,navigation,params,...state};
 }
 

@@ -6,7 +6,7 @@ import { managerDatabase, loadManagerModule, managerFixture, managerRequest } fr
 import { coachComponentHarness, elements, textContent, flush, deferred, type Element } from './helpers/coachComponentHarness.ts';
 import { remapCampDayReferences } from '../lib/campsManagement.ts';
 
-const path='app/manager/groups/[id]/planning/[eventId]/edit/page.tsx';
+const path='app/manager/groups/[id]/planning/[eventId]/edit/ManagerEventEditor.tsx';
 const profile={id:'player',first_name:'Junior',last_name:'Test',handicap:12};
 const planning=()=>({event:{id:'event',group_id:'group',club_id:'club',series_id:null as string|null,status:'scheduled',event_type:'training',title:'Weekly',
   starts_at:'2090-01-02T10:00:00Z',ends_at:'2090-01-02T11:00:00Z',duration_minutes:60,location_text:'Practice',coach_note:null,requires_evaluation:false},
@@ -20,8 +20,12 @@ async function editor(save:(name:string,args:any)=>Promise<any>, snapshot=planni
     context.rpcs.push({name,args});return save(name,args);
   };
   const navigation:string[]=[];
-  const harness=coachComponentHarness(path,{database:context.db,params:{id:'group',eventId:'event'},fetch:async()=>{throw new Error('Unexpected HTTP write');},navigate:p=>navigation.push(p),
-    modules:{'@/components/evaluations/EventCriteriaSelector':{__esModule:true,default:'criteria-selector'}}});
+  const harness=coachComponentHarness(path,{database:context.db,props:{routeParams:{id:'group',eventId:'event'}},fetch:async()=>{throw new Error('Unexpected HTTP write');},navigate:p=>navigation.push(p),
+    modules:{'@/components/evaluations/EventCriteriaSelector':{__esModule:true,default:'criteria-selector'},
+      // Simulate the stale prerender hook values reported in production. The
+      // editor must use the resolved route props for every read and mutation.
+      'next/navigation':{useParams:()=>({id:'%%drp:id:placeholder%%',eventId:'%%drp:eventId:542351e75490e%%'}),
+        useSearchParams:()=>new URLSearchParams(),useRouter:()=>({push:(p:string)=>navigation.push(p)})}}});
   harness.render();await flush();harness.render();
   return {harness,navigation,...context};
 }
