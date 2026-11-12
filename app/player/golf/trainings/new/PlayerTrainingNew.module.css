@@ -144,6 +144,7 @@
 @media (max-width: 899px) {
   .evaluationActions { bottom: calc(var(--footer-h) + env(safe-area-inset-bottom) + 8px); }
   .evaluationForm { grid-template-columns: minmax(0, 1fr); gap: 18px !important; }
+  .evaluationPage .evaluationForm.actionsInCard { padding-bottom: calc(var(--footer-h, 60px) + env(safe-area-inset-bottom, 0px) + 24px); }
   .evaluationForm > .activitySummary,
   .evaluationForm > .sectionHeading,
   .evaluationForm > .evaluationFooter { grid-column: 1; }
