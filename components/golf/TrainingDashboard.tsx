@@ -1,4 +1,5 @@
 "use client";
+import { useTrainingDurationDisplay } from "@/components/golf/TrainingDurationPreference";
 import Link from "next/link";
 import { useMemo, useState, useEffect, useId } from "react";
 import type { EChartsOption } from "echarts";
@@ -92,6 +93,7 @@ export default function TrainingDashboard({
  trainingAttendanceOverview, loading, pendingEvaluationCount, latestCoachEvaluation, calendarHref, pendingHref, onEvaluationsClick,
 }: Props) {
  const { locale, t } = useI18n();
+ const { formatDuration } = useTrainingDurationDisplay();
  const dateLocale = coachDateLocale(locale);
  const volumeLabel = playerView ? t("playerVolume.recommended") : pickLocaleText(locale, "Objectif FTEM", "FTEM goal");
  const volumeUnavailable = playerView ? t("playerVolume.unavailable") : pickLocaleText(locale, "Objectif FTEM indisponible", "FTEM goal unavailable");
@@ -240,11 +242,11 @@ export default function TrainingDashboard({
                 <article className={`${trainingStyles.kpi} ${trainingStyles.volumeKpi}`}>
                   <div className={trainingStyles.kpiTitle}><span><Activity size={17} /></span><h2>{pickLocaleText(locale, "Volume d’entraînement", "Training volume")}</h2></div>
                   <div className={trainingStyles.volumeKpiContent}>
-                    {overviewFtemPercent == null ? <div className={trainingStyles.volumeNoGoal}><strong>{totalMinutes} min</strong><p>{volumeUnavailable}</p></div> : <div className={trainingStyles.ftemDonut}><ProgressDonut percent={overviewFtemPercent} size={132} /></div>}
+                    {overviewFtemPercent == null ? <div className={trainingStyles.volumeNoGoal}><strong>{formatDuration(totalMinutes)}</strong><p>{volumeUnavailable}</p></div> : <div className={trainingStyles.ftemDonut}><ProgressDonut percent={overviewFtemPercent} size={132} /></div>}
                     <div className={trainingStyles.volumeKpiDetails}>
-                      <strong>{totalMinutes} min</strong>
-                      <p>{pickLocaleText(locale, "sur", "of")} {overviewObjective || "—"} min{playerView ? ` ${t("playerVolume.recommendedMinutes")}` : ` · ${trainingVolumeTarget?.ftem_code ?? "FTEM"}`}</p>
-                      <div className={trainingStyles.metrics}><span>{displayedTrainingCount} {pickLocaleText(locale, displayedTrainingCount === 1 ? "séance" : "séances", displayedTrainingCount === 1 ? "session" : "sessions")}</span>{overviewFtemPercent != null ? <span>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "restantes", "remaining")}</span> : null}</div>
+                      <strong>{formatDuration(totalMinutes)}</strong>
+                      <p>{pickLocaleText(locale, "sur", "of")} {overviewObjective > 0 ? formatDuration(overviewObjective) : "—"}{playerView ? ` ${t("playerVolume.recommendedMinutes")}` : ` · ${trainingVolumeTarget?.ftem_code ?? "FTEM"}`}</p>
+                      <div className={trainingStyles.metrics}><span>{displayedTrainingCount} {pickLocaleText(locale, displayedTrainingCount === 1 ? "séance" : "séances", displayedTrainingCount === 1 ? "session" : "sessions")}</span>{overviewFtemPercent != null ? <span>{formatDuration(Math.max(0, overviewObjective - totalMinutes))} {pickLocaleText(locale, "restantes", "remaining")}</span> : null}</div>
                       {trainingVolumeMotivation ? <p className={trainingStyles.volumeMotivation}>{trainingVolumeMotivation}</p> : null}
                       <small className={volumeDelta == null ? "" : volumeDelta >= 0 ? trainingStyles.positive : trainingStyles.caution}>{volumeDelta == null ? pickLocaleText(locale, "Pas de période comparable", "No comparable period") : `${volumeDelta > 0 ? "+" : ""}${volumeDelta}% · ${compareLabel}`}</small>
                     </div>
@@ -273,7 +275,7 @@ export default function TrainingDashboard({
                   <div className={trainingStyles.attentionList}>
                     {pendingEvaluationCount ? <Link href={pendingHref}><span><ClipboardList size={16} /></span><div><b>{pendingEvaluationCount} {pickLocaleText(locale, pendingEvaluationCount === 1 ? "activité à évaluer" : "activités à évaluer", pendingEvaluationCount === 1 ? "activity to evaluate" : "activities to evaluate")}</b><small>{pickLocaleText(locale, "Compléter mon ressenti", "Complete my feedback")}</small></div><ArrowRight size={14} /></Link> : null}
                     {latestCoachEvaluation?.player_note ? <button type="button" onClick={onEvaluationsClick}><span><MessageSquareText size={16} /></span><div><b>{pickLocaleText(locale, "Nouveau retour du coach", "New coach feedback")}</b><small>{latestCoachEvaluation.title || shortDate(latestCoachEvaluation.starts_at, dateLocale)}</small></div><ArrowRight size={14} /></button> : null}
-                    {overviewFtemPercent != null && overviewFtemPercent < 100 ? <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><span><Target size={16} /></span><div><b>{volumeAttention}</b><small>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "restantes", "remaining")}</small></div><ArrowRight size={14} /></button> : null}
+                    {overviewFtemPercent != null && overviewFtemPercent < 100 ? <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}><span><Target size={16} /></span><div><b>{volumeAttention}</b><small>{formatDuration(Math.max(0, overviewObjective - totalMinutes))} {pickLocaleText(locale, "restantes", "remaining")}</small></div><ArrowRight size={14} /></button> : null}
                     {!pendingEvaluationCount && !latestCoachEvaluation?.player_note && !(overviewFtemPercent != null && overviewFtemPercent < 100) ? <div className={trainingStyles.empty}><CheckCircle2 size={20} />{pickLocaleText(locale, "Tout est à jour pour le moment.", "Everything is up to date for now.")}</div> : null}
                   </div>
                 </section>

@@ -1,4 +1,5 @@
 import "./globals.css";
+import { TrainingDurationPreferenceProvider } from "@/components/golf/TrainingDurationPreference";
 import type { ReactNode } from "react";
 import { Suspense } from "react";
 import type { Metadata } from "next";
@@ -85,7 +86,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <PageScrollRestoration />
           <RouteLoadingIndicator />
         </Suspense>
-        <Suspense fallback={null}><SessionPageBoundary><GlobalHeaderBoundary>{children}</GlobalHeaderBoundary></SessionPageBoundary></Suspense>
+        <Suspense fallback={null}><TrainingDurationPreferenceProvider><SessionPageBoundary><GlobalHeaderBoundary>{children}</GlobalHeaderBoundary></SessionPageBoundary></TrainingDurationPreferenceProvider></Suspense>
       </body>
     </html>
   );

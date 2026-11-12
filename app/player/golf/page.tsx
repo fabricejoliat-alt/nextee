@@ -1,4 +1,5 @@
 "use client";
+import { useTrainingDurationDisplay } from "@/components/golf/TrainingDurationPreference";
 import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
@@ -575,6 +576,7 @@ function isGirOnHole(par: number | null, score: number | null, putts: number | n
 
 export default function GolfDashboardPage() {
   const { t, locale } = useI18n();
+  const { formatDuration, unit: trainingDurationUnit } = useTrainingDurationDisplay();
   const routeSearchParams = useSearchParams();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
   const [loading, setLoading] = useRetainedLoading(true);
@@ -2325,7 +2327,7 @@ export default function GolfDashboardPage() {
                 {loading ? <div className={overviewStyles.kpiSkeleton} /> : overviewFtemPercent == null ? <div className={overviewStyles.neutralValue}>—<small>{pickLocaleText(locale, "Objectif indisponible", "Goal unavailable")}</small></div> : <>
                   <strong>{overviewFtemPercent}%</strong>
                   <div className={overviewStyles.progress}><span style={{ width: `${Math.min(100, overviewFtemPercent)}%` }} /></div>
-                  <p>{totalMinutes} / {overviewObjective} min</p>
+                  <p>{formatDuration(totalMinutes)} / {formatDuration(overviewObjective)}</p>
                   {trainingVolumeTarget?.level_label ? <small>{trainingVolumeTarget.level_label}</small> : null}
                 </>}
               </article>
@@ -2395,7 +2397,7 @@ export default function GolfDashboardPage() {
                 <div className={overviewStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Points d’attention", "Points of attention")}</h2><p>{pickLocaleText(locale, "Les prochaines actions utiles.", "Useful next actions.")}</p></div></div>
                 <div className={overviewStyles.attentionList}>
                   {pendingEvaluationCount > 0 ? <Link href="/player/golf/trainings/to-complete"><span><ClipboardList size={16} /></span><div><b>{pendingEvaluationCount} {pickLocaleText(locale, pendingEvaluationCount === 1 ? "activité à évaluer" : "activités à évaluer", pendingEvaluationCount === 1 ? "activity to evaluate" : "activities to evaluate")}</b><small>{pickLocaleText(locale, "Partager votre ressenti", "Share your feedback")}</small></div><ArrowRight size={14} /></Link> : null}
-                  {overviewFtemPercent != null && overviewFtemPercent < 100 ? <button type="button" onClick={() => selectSection("trainings")}><span><Target size={16} /></span><div><b>{t("playerVolume.keepGoing")}</b><small>{Math.max(0, overviewObjective - totalMinutes)} min {pickLocaleText(locale, "restantes", "remaining")}</small></div><ArrowRight size={14} /></button> : null}
+                  {overviewFtemPercent != null && overviewFtemPercent < 100 ? <button type="button" onClick={() => selectSection("trainings")}><span><Target size={16} /></span><div><b>{t("playerVolume.keepGoing")}</b><small>{formatDuration(Math.max(0, overviewObjective - totalMinutes))} {pickLocaleText(locale, "restantes", "remaining")}</small></div><ArrowRight size={14} /></button> : null}
                   {newestSharedDocument ? <button type="button" onClick={() => selectSection("documents")}><span><FileText size={16} /></span><div><b>{pickLocaleText(locale, "Document partagé", "Shared document")}</b><small>{newestSharedDocument.file_name}</small></div><ArrowRight size={14} /></button> : null}
                   {incompleteRound ? <Link href={`/player/golf/rounds/${incompleteRound.id}/edit`}><span><Flag size={16} /></span><div><b>{pickLocaleText(locale, "Parcours à compléter", "Round to complete")}</b><small>{incompleteRound.course_name || shortDate(incompleteRound.start_at, dateLocale)}</small></div><ArrowRight size={14} /></Link> : null}
                   {!pendingEvaluationCount && !(overviewFtemPercent != null && overviewFtemPercent < 100) && !newestSharedDocument && !incompleteRound ? <div className={overviewStyles.positiveState}><CalendarCheck2 size={20} /><b>{pickLocaleText(locale, "Tout est à jour", "Everything is up to date")}</b><small>{pickLocaleText(locale, "Aucune action nécessaire pour le moment.", "No action is needed right now.")}</small></div> : null}
@@ -2548,12 +2550,11 @@ export default function GolfDashboardPage() {
                   >
                     <div>
                       <div>
-                        <CountUpNumber value={totalMinutes} durationMs={2000} className="big-number" />
-                        <span className="unit">MIN</span>
+                        {trainingDurationUnit === "hours" ? <strong className="big-number">{formatDuration(totalMinutes)}</strong> : <><CountUpNumber value={totalMinutes} durationMs={2000} className="big-number" /><span className="unit">MIN</span></>}
                       </div>
                       {showMonthlyObjective ? (
                         <div style={{ marginTop: 8, fontWeight: 900, color: "rgba(0,0,0,0.68)" }}>
-                          {t("playerHome.goal")}: {displayedTrainingVolumeObjective} {t("common.min")}
+                          {t("playerHome.goal")}: {formatDuration(displayedTrainingVolumeObjective, t("common.min"))}
                         </div>
                       ) : null}
                       {trainingVolumeMotivation ? (

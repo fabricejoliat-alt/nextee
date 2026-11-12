@@ -1,4 +1,5 @@
 "use client";
+import { useTrainingDurationDisplay } from "@/components/golf/TrainingDurationPreference";
 import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
@@ -707,6 +708,7 @@ function initials(p?: ProfileLite | null) {
 
 export default function GolfDashboardPage() {
   const { t, locale } = useI18n();
+  const { formatDuration } = useTrainingDurationDisplay();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
   const params = useParams<{ playerId: string }>();
   const searchParams = useSearchParams();
@@ -2184,7 +2186,7 @@ function presetToSelectValue(p: Preset): Preset {
     () => plannedEvents.filter((event) => new Date(event.starts_at).getTime() >= Date.now()).sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime())[0] ?? null,
     [plannedEvents]
   );
-  const trainingMinutesLabel = totalMinutes > 0 ? `${Math.floor(totalMinutes / 60)} h ${String(totalMinutes % 60).padStart(2, "0")}` : displayedTrainingCount > 0 ? "Durée indisponible" : "Aucune donnée";
+  const trainingMinutesLabel = totalMinutes > 0 ? formatDuration(totalMinutes) : displayedTrainingCount > 0 ? "Durée indisponible" : "Aucune donnée";
   const handicapChartData = useMemo(
     () => [...handicapHistory].sort((a, b) => compareYmd(a.effective_date, b.effective_date)).map((entry) => ({ date: entry.effective_date, handicap: entry.value })),
     [handicapHistory]
@@ -3238,7 +3240,7 @@ function presetToSelectValue(p: Preset): Preset {
             <section className={playerStyles.overviewGrid} aria-label="Vue d’ensemble sportive">
               <div className={playerStyles.metric}><span>Assiduité</span><strong>{loading || trainingAttendanceOverview.rate == null ? "—" : `${trainingAttendanceOverview.rate} %`}</strong><small>{loading ? t("common.loading") : trainingAttendanceOverview.total ? `${trainingAttendanceOverview.present} / ${trainingAttendanceOverview.total} entraînements suivis` : "Aucune présence renseignée"}</small></div>
               <div className={playerStyles.metric}><span>Volume</span><strong>{loading || dashboardError ? "—" : trainingMinutesLabel}</strong><small>Période sélectionnée</small></div>
-              <div className={playerStyles.metric}><span>Objectif</span><strong>{displayedTrainingVolumeObjective > 0 ? `${trainingVolumePercent} %` : "—"}</strong><small>{displayedTrainingVolumeObjective > 0 ? `${displayedTrainingVolumeObjective} min` : "Non défini"}</small></div>
+              <div className={playerStyles.metric}><span>Objectif</span><strong>{displayedTrainingVolumeObjective > 0 ? `${trainingVolumePercent} %` : "—"}</strong><small>{displayedTrainingVolumeObjective > 0 ? formatDuration(displayedTrainingVolumeObjective) : "Non défini"}</small></div>
               <div className={playerStyles.metric}><span>Activités</span><strong>{loading || dashboardError ? "—" : displayedTrainingCount}</strong><small>Période sélectionnée</small></div>
               <div className={playerStyles.metric}><span>Compétitions</span><strong>{loadingRounds ? "—" : competitionRounds.length}</strong><small>Période sélectionnée</small></div>
               <div className={playerStyles.metric}><span>Évaluations</span><strong>{loadingCoachEvaluations ? "—" : periodCoachEvaluations.length}</strong><small>{periodCoachEvaluations.length ? "Réalisées par ce coach" : "Aucune donnée"}</small></div>

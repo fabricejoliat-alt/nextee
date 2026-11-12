@@ -16,6 +16,7 @@ import { Settings } from "lucide-react";
 import CoachListSkeleton from "@/components/coach/CoachListSkeleton";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import styles from "./CoachProfile.module.css";
+import TrainingDurationSettings from "@/components/golf/TrainingDurationSettings";
 import BiometricLockSettings from "@/components/auth/BiometricLockSettings";
 
 type ProfileRow = {
@@ -773,6 +774,7 @@ export default function CoachProfilePage() {
                       <option value="it">Italiano</option>
                     </select>
                   </Field>
+                  <TrainingDurationSettings />
                   <BiometricLockSettings />
                 </div>
 

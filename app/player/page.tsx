@@ -1,4 +1,5 @@
 "use client";
+import { useTrainingDurationDisplay } from "@/components/golf/TrainingDurationPreference";
 import { useRetainedLoading } from "@/lib/useRetainedLoading";
 import PlayerHomeMerit from "@/components/player/PlayerHomeMerit";
 
@@ -456,6 +457,7 @@ export default function PlayerHomePage() {
   const initialHomeReadOwner = useRef({});
   const router = useRouter();
   const { t, locale } = useI18n();
+  const { formatDuration } = useTrainingDurationDisplay();
   const dateLocale = pickLocaleText(locale, "fr-CH", "en-US");
   const [loading, setLoading] = useState(true);
   const [heroLoading, setHeroLoading] = useState(true);
@@ -1213,8 +1215,8 @@ export default function PlayerHomePage() {
                 <div className={playerUiStyles.panelHeader}><div><h2>{pickLocaleText(locale, "Volume d’entraînement du mois", "Monthly training volume")}</h2><p>{thisMonthTitle}</p></div></div>
                 {loading ? <div className={playerUiStyles.skeleton}><span /><span /><span /></div> : <div className={styles.monthVolume}>
                   {trainingsSummary.objective > 0 ? <AnimatedProgressRing percent={trainingsSummary.percent} label={pickLocaleText(locale, "Volume d’entraînement", "Training volume")} /> : <div className={playerUiStyles.empty}>{t("playerVolume.unavailable")}</div>}
-                  <strong>{trainingsSummary.totalMinutes} {t("common.min")}</strong>
-                  {trainingsSummary.objective > 0 ? <span>{pickLocaleText(locale, "sur", "of")} {trainingsSummary.objective} {t("common.min")} {t("playerVolume.recommendedMinutes")}</span> : null}
+                  <strong>{formatDuration(trainingsSummary.totalMinutes, t("common.min"))}</strong>
+                  {trainingsSummary.objective > 0 ? <span>{pickLocaleText(locale, "sur", "of")} {formatDuration(trainingsSummary.objective, t("common.min"))} {t("playerVolume.recommendedMinutes")}</span> : null}
                   {trainingVolumeMotivation ? <p>{trainingVolumeMotivation}</p> : null}
                 </div>}
               </article>

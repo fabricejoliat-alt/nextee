@@ -31,6 +31,7 @@ import {
 import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import styles from "./PlayerProfile.module.css";
 import { isValidPassword } from "@/lib/passwordPolicy";
+import TrainingDurationSettings from "@/components/golf/TrainingDurationSettings";
 import BiometricLockSettings from "@/components/auth/BiometricLockSettings";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import { nationalityOptions, normalizeNationality } from "@/lib/nationalities";
@@ -1337,6 +1338,7 @@ export default function PlayerProfilePage() {
                       <option value="it">Italiano</option>
                     </select>
                   </div>
+                  <TrainingDurationSettings />
                   <BiometricLockSettings />
                 </SectionCard>
 
