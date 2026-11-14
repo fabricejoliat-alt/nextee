@@ -263,7 +263,7 @@ export default function ScorecardPage() {
     return (
       <div className="player-dashboard-bg">
         <div className={`app-shell marketplace-page ${playerUiStyles.page}`}>
-          <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("rounds.title"), href: "/player/golf/rounds" }, { label: t("rounds.scorecard") }]} />
+          <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("rounds.title"), href: "/player/golf?section=rounds" }, { label: t("rounds.scorecard") }]} />
           <div className={playerUiStyles.topline}>
             <div>
               <h1>{t("rounds.scorecard")}</h1>
@@ -287,7 +287,7 @@ export default function ScorecardPage() {
             {error ?? t("roundsScorecard.error.cannotDisplay")}
           </div>
         </div>
-        <Link className="btn" href="/player/golf/rounds">
+        <Link className="btn" href="/player/golf?section=rounds">
           {t("common.back")}
         </Link>
       </div>
@@ -297,7 +297,7 @@ export default function ScorecardPage() {
   return (
     <div className="player-dashboard-bg">
       <div className={`app-shell marketplace-page ${playerUiStyles.page}`}>
-        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("rounds.title"), href: "/player/golf/rounds" }, { label: t("rounds.scorecard") }]} />
+        <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("rounds.title"), href: "/player/golf?section=rounds" }, { label: t("rounds.scorecard") }]} />
         <div className={playerUiStyles.topline}>
           <div>
             <h1>{t("rounds.scorecard")}</h1>
@@ -318,7 +318,7 @@ export default function ScorecardPage() {
                 <Pencil size={15} aria-hidden="true" />
                 {t("common.edit")}
               </Link>
-              <Link className={playerUiStyles.secondary} href="/player/golf/rounds">
+              <Link className={playerUiStyles.secondary} href="/player/golf?section=rounds">
                 <ArrowLeft size={16} aria-hidden="true" />
                 {t("rounds.title")}
               </Link>
