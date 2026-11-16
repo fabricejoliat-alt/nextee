@@ -3,7 +3,6 @@ import { legalAdmin, legalDb, legalNoStore } from "@/lib/server/legalAccess";
 import { withAdminMutationAudit } from "@/lib/server/adminAudit";
 import { brevoContactConfig, runBrevoContactSync } from "@/lib/server/brevoContacts";
 
-export const runtime = "nodejs";
 export const maxDuration = 120;
 const reply = (body: object, status = 200) => NextResponse.json(body, { status, headers: legalNoStore });
 export async function GET(req: Request) {

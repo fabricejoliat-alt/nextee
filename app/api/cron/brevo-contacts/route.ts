@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { legalDb, legalNoStore } from "@/lib/server/legalAccess";
 import { runBrevoContactSync, secretMatches } from "@/lib/server/brevoContacts";
 
-export const runtime = "nodejs";
 export const maxDuration = 120;
 export async function GET(req: Request) {
   if (!secretMatches(req.headers.get("authorization"), process.env.CRON_SECRET ? `Bearer ${process.env.CRON_SECRET}` : undefined)) {

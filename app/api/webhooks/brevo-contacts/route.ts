@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { legalDb, legalNoStore } from "@/lib/server/legalAccess";
 import { contactEmailHash, secretMatches, suppressionEvent } from "@/lib/server/brevoContacts";
 
-export const runtime = "nodejs";
 const reply = (body: object, status = 200) => NextResponse.json(body, { status, headers: legalNoStore });
 export async function POST(req: Request) {
   if (!secretMatches(req.headers.get("authorization"), process.env.BREVO_CONTACTS_WEBHOOK_SECRET ? `Bearer ${process.env.BREVO_CONTACTS_WEBHOOK_SECRET}` : undefined)) {
