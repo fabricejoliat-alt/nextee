@@ -2,9 +2,11 @@
 
 import { isValidPassword } from "@/lib/passwordPolicy";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
+import { passwordRecoveryUrl, supabase } from "@/lib/supabaseClient";
+import { createPasswordRecoveryClient } from "@/lib/passwordRecovery";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 type Status = "loading" | "ready" | "invalid" | "success";
 
@@ -24,120 +26,59 @@ export default function ResetPasswordPage() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const inviteToken = searchParams.get("invite_token");
+  const recoveryClient = useRef<SupabaseClient | null>(null);
+  const preparation = useRef<Promise<Status> | null>(null);
 
   const canSubmit = useMemo(() => isValidPassword(password) && confirmPassword.length >= 6 && !saving, [password, confirmPassword, saving]);
 
   useEffect(() => {
     let active = true;
-    let timeoutId: number | null = null;
 
-    async function checkSession() {
+    async function prepare(): Promise<Status> {
+      const url = new URL(passwordRecoveryUrl ?? window.location.href);
+      const hash = new URLSearchParams(url.hash.slice(1));
+      const code = url.searchParams.get("code");
+      const tokenHash = url.searchParams.get("token_hash") ?? hash.get("token_hash");
+      const type = url.searchParams.get("type") ?? hash.get("type") ?? "recovery";
+      const accessToken = hash.get("access_token");
+      const refreshToken = hash.get("refresh_token");
+      const hasCredentials = Boolean(inviteToken || code || tokenHash || accessToken || refreshToken);
+      // Copy the PKCE verifier before clearing the application's cookies.
+      const client = hasCredentials && !inviteToken ? await createPasswordRecoveryClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, document.cookie,
+      ) : null;
+
+      if (hasCredentials) {
+        const signedOut = await supabase.auth.signOut({ scope: "local" });
+        if (signedOut.error) throw signedOut.error;
+      }
       if (inviteToken) {
-        await supabase.auth.signOut({ scope: "local" });
-        if (!active) return;
-        const res = await fetch(`/api/auth/invitation-reset?token=${encodeURIComponent(inviteToken)}`, {
-          cache: "no-store",
-        });
-        if (!active) return;
-        setStatus(res.ok ? "ready" : "invalid");
-        return;
+        const res = await fetch(`/api/auth/invitation-reset?token=${encodeURIComponent(inviteToken)}`, { cache: "no-store" });
+        return res.ok ? "ready" : "invalid";
       }
-
-      const hash = typeof window !== "undefined" ? window.location.hash.replace(/^#/, "") : "";
-      const hashParams = new URLSearchParams(hash);
-      const code = searchParams.get("code");
-      const tokenHash = searchParams.get("token_hash");
-      const type = searchParams.get("type");
-      const hashAccessToken = hashParams.get("access_token");
-      const hashRefreshToken = hashParams.get("refresh_token");
-      const hashType = hashParams.get("type");
-
-      if (hashAccessToken && hashRefreshToken) {
-        const setSessionRes = await supabase.auth.setSession({
-          access_token: hashAccessToken,
-          refresh_token: hashRefreshToken,
-        });
-        if (!active) return;
-        if (!setSessionRes.error && setSessionRes.data.session) {
-          setStatus("ready");
-          return;
-        }
+      if (!hasCredentials) {
+        // Existing signed-in users may still choose a password directly.
+        return (await supabase.auth.getSession()).data.session ? "ready" : "invalid";
       }
-
-      if (code) {
-        const exchange = await supabase.auth.exchangeCodeForSession(code);
-        if (!active) return;
-        if (!exchange.error && exchange.data.session) {
-          setStatus("ready");
-          return;
-        }
-      }
-
-      if (tokenHash && type) {
-        const verify = await supabase.auth.verifyOtp({
-          token_hash: tokenHash,
-          type: type as any,
-        });
-        if (!active) return;
-        if (!verify.error && verify.data.session) {
-          setStatus("ready");
-          return;
-        }
-      }
-
-      if (tokenHash && !type) {
-        const verify = await supabase.auth.verifyOtp({
-          token_hash: tokenHash,
-          type: "recovery",
-        });
-        if (!active) return;
-        if (!verify.error && verify.data.session) {
-          setStatus("ready");
-          return;
-        }
-      }
-
-      if (hashType === "recovery" && tokenHash) {
-        const verify = await supabase.auth.verifyOtp({
-          token_hash: tokenHash,
-          type: "recovery",
-        });
-        if (!active) return;
-        if (!verify.error && verify.data.session) {
-          setStatus("ready");
-          return;
-        }
-      }
-
-      const { data } = await supabase.auth.getSession();
-      if (!active) return;
-      if (data.session) {
-        setStatus("ready");
-        return;
-      }
-
-      timeoutId = window.setTimeout(async () => {
-        const retry = await supabase.auth.getSession();
-        if (!active) return;
-        setStatus(retry.data.session ? "ready" : "invalid");
-      }, 1200);
+      recoveryClient.current = client;
+      const result = accessToken && refreshToken
+        ? await client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+        : code ? await client.auth.exchangeCodeForSession(code)
+        : tokenHash && ["recovery", "invite"].includes(type)
+          ? await client.auth.verifyOtp({ token_hash: tokenHash, type: type as "recovery" | "invite" })
+          : null;
+      return result && !result.error && result.data.session ? "ready" : "invalid";
     }
 
-    void checkSession();
-
-    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
-      if (!active) return;
-      if ((event === "PASSWORD_RECOVERY" || event === "SIGNED_IN" || event === "TOKEN_REFRESHED") && session) {
-        setStatus("ready");
-      }
+    // React Strict Mode must not consume a one-time recovery link twice.
+    preparation.current ??= prepare();
+    void preparation.current.then(status => {
+      if (active) setStatus(status);
+    }).catch(() => {
+      if (active) setStatus("invalid");
     });
-
-    return () => {
-      active = false;
-      if (timeoutId != null) window.clearTimeout(timeoutId);
-      sub.subscription.unsubscribe();
-    };
-  }, [searchParams, inviteToken]);
+    return () => { active = false; };
+  }, [inviteToken]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -191,23 +132,32 @@ export default function ResetPasswordPage() {
         return;
       }
 
-      const current = (await supabase.auth.getSession()).data.session;
+      const passwordClient = recoveryClient.current ?? supabase;
+      const current = (await passwordClient.auth.getSession()).data.session;
       if (current?.user.app_metadata?.initial_password_required === true) {
         const changed = await fetch("/api/auth/initial-password", { method: "POST",
           headers: { Authorization: `Bearer ${current.access_token}`, "Content-Type": "application/json" },
           body: JSON.stringify({ password, confirmPassword }), cache: "no-store" });
         if (!changed.ok) { setError("Choisissez un mot de passe d’au moins 6 caractères, avec une majuscule et un caractère spécial."); return; }
-        const refreshed = await supabase.auth.refreshSession();
+        const refreshed = await passwordClient.auth.refreshSession();
         if (refreshed.error) { setError(translateAuthMessage(refreshed.error.message)); return; }
       } else {
-      const { error: updateError } = await supabase.auth.updateUser({ password });
-      if (updateError) {
-        setError(translateAuthMessage(updateError.message));
-        return;
+        const { error: updateError } = await passwordClient.auth.updateUser({ password });
+        if (updateError) {
+          setError(translateAuthMessage(updateError.message));
+          return;
+        }
       }
 
+      // Publish the session to application cookies only after the password is saved.
+      if (recoveryClient.current) {
+        const session = (await passwordClient.auth.getSession()).data.session;
+        if (!session) throw new Error("Recovery session expired");
+        const promoted = await supabase.auth.setSession({
+          access_token: session.access_token, refresh_token: session.refresh_token,
+        });
+        if (promoted.error) throw promoted.error;
       }
-
       const sessionRes = await supabase.auth.getSession();
       const accessToken = sessionRes.data.session?.access_token ?? "";
       if (!accessToken) {
