@@ -2,13 +2,56 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createClient } from "@supabase/supabase-js";
-import { capturePasswordRecoveryUrl, createPasswordRecoveryClient, preparePasswordRecoveryOnce, releasePasswordRecoveryPreparation } from "../lib/passwordRecovery.ts";
+import { parseCookieHeader } from "@supabase/ssr";
+import { capturePasswordRecoveryUrl, clearPasswordRecoverySessionCookies, createPasswordRecoveryClient, hasPasswordRecoveryCredentials, preparePasswordRecoveryOnce, releasePasswordRecoveryPreparation } from "../lib/passwordRecovery.ts";
 import { coachComponentHarness, elements, flush, textContent } from "./helpers/coachComponentHarness.ts";
 
 const endpoint = "https://recovery-test.supabase.co";
 const user = { id: "recovery-user", email: "recovery@example.test", app_metadata: {}, user_metadata: {}, aud: "authenticated", created_at: "2026-01-01" };
 const accessToken = `${Buffer.from(JSON.stringify({ alg: "HS256" })).toString("base64url")}.${Buffer.from(JSON.stringify({ sub: user.id, exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url")}.${Buffer.from("test-signature").toString("base64url")}`;
 const session = { access_token: accessToken, refresh_token: "test-refresh-token", token_type: "bearer", expires_in: 3600, user };
+
+function cookieDocument(initial: Record<string, string>) {
+  const values = new Map(Object.entries(initial));
+  return {
+    get cookie() { return [...values].map(([key, value]) => `${key}=${encodeURIComponent(value)}`).join("; "); },
+    set cookie(header: string) {
+      const cookie = parseCookieHeader(header.split(";")[0])[0];
+      if (/Max-Age=0/i.test(header)) values.delete(cookie.name);
+      else values.set(cookie.name, cookie.value);
+    },
+  };
+}
+
+test("recovery clears only this project's browser session and preserves the PKCE verifier", () => {
+  const key = "sb-recovery-test-auth-token";
+  const document = cookieDocument({ [key]: "old-session", [`${key}.0`]: "old-chunk", [`${key}.1`]: "old-chunk-two",
+    [`${key}-user.0`]: "old-user", [`${key}-code-verifier`]: "old-verifier",
+    "sb-other-auth-token": "other-project", app_locale: "fr" });
+  const previous = clearPasswordRecoverySessionCookies(document, endpoint);
+  assert.ok(previous.includes(`${key}.1=`));
+  const remaining = parseCookieHeader(document.cookie).map(cookie => cookie.name);
+  assert.deepEqual(remaining, [`${key}-code-verifier`, "sb-other-auth-token", "app_locale"]);
+  assert.equal(hasPasswordRecoveryCredentials("https://activitee.app/reset-password"), false);
+  assert.equal(hasPasswordRecoveryCredentials("https://activitee.app/reset-password?token_hash=fresh"), true);
+});
+
+test("an expired Safari session cannot trigger refresh or remote logout before recovery", async () => {
+  const key = "sb-recovery-test-auth-token";
+  const document = cookieDocument({ [key]: JSON.stringify({ ...session, expires_at: 1 }), [`${key}-code-verifier`]: "base64-%%%%" });
+  clearPasswordRecoverySessionCookies(document, endpoint);
+  let requests = 0;
+  const application = createClient(endpoint, "anon-key", {
+    global: { fetch: async () => { requests++; throw Error("The stale session must not make any requests"); } },
+    auth: { storageKey: key, autoRefreshToken: false, detectSessionInUrl: false,
+      storage: { getItem: name => parseCookieHeader(document.cookie).find(cookie => cookie.name === name)?.value ?? null,
+        setItem: (name, value) => { document.cookie = `${name}=${encodeURIComponent(value)}`; },
+        removeItem: name => { document.cookie = `${name}=; Max-Age=0`; } } },
+  });
+  assert.equal((await application.auth.getSession()).data.session, null);
+  assert.equal((await application.auth.signOut({ scope: "local" })).error, null);
+  assert.equal(requests, 0);
+});
 
 test("implicit and PKCE credentials are removed before the shared client initializes", () => {
   for (const suffix of ["?code=private-code", "#access_token=private-access&refresh_token=private-refresh&type=recovery"]) {
@@ -86,6 +129,7 @@ test("reset page publishes only after password success and has no sign-in event 
   assert.match(page, /preparePasswordRecoveryOnce\(/);
   const shared = readFileSync(new URL("../lib/supabaseClient.ts", import.meta.url), "utf8");
   assert.ok(shared.indexOf("= capturePasswordRecoveryUrl") < shared.indexOf("= createBrowserClient"));
+  assert.ok(shared.indexOf("? clearPasswordRecoverySessionCookies") < shared.indexOf("= createBrowserClient"));
 });
 
 test("a remount keeps the preparation but leaving the reset route discards it", async () => {
@@ -107,7 +151,7 @@ test("a remount keeps the preparation but leaving the reset route discards it", 
 test("sign-out remounts the reset form without consuming the link twice or losing its private session", async () => {
   const previousDocument = globalThis.document;
   const previousWindow = globalThis.window;
-  globalThis.document = { cookie: "" } as Document;
+  globalThis.document = { cookie: "sb-recovery-test-auth-token-code-verifier=base64-%%%%" } as Document;
   globalThis.window = { location: { pathname: "/reset-password" } } as Window & typeof globalThis;
   let authenticated = true;
   let rejectPassword = true;
@@ -138,7 +182,11 @@ test("sign-out remounts the reset form without consuming the link twice or losin
     modules: {
       "next/navigation": { useSearchParams: () => new URLSearchParams(search), useRouter: () => ({ replace: path => { destination = path; } }) },
       "@/lib/supabaseClient": { supabase: application, passwordRecoveryUrl: `https://activitee.app/reset-password?${search}` },
-      "@/lib/passwordRecovery": { createPasswordRecoveryClient: async () => recovery, preparePasswordRecoveryOnce, releasePasswordRecoveryPreparation },
+      "@/lib/passwordRecovery": {
+        clearPasswordRecoverySessionCookies: document => clearPasswordRecoverySessionCookies(document, endpoint),
+        createPasswordRecoveryClient: async (_url, _key, cookies) => { assert.equal(cookies, ""); return recovery; },
+        preparePasswordRecoveryOnce, releasePasswordRecoveryPreparation,
+      },
     },
   }); }
   h = makeHarness();

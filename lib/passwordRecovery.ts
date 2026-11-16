@@ -1,15 +1,29 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { combineChunks, memoryLocalStorageAdapter, parseCookieHeader, stringFromBase64URL } from "@supabase/ssr";
+import { combineChunks, isChunkLike, memoryLocalStorageAdapter, parseCookieHeader, serializeCookieHeader, stringFromBase64URL } from "@supabase/ssr";
 
 type PreparedPasswordRecovery = { valid: boolean; client: SupabaseClient | null };
 let preparation: { link: string; result: Promise<PreparedPasswordRecovery> } | null = null;
 
-export function preparePasswordRecoveryOnce(link: string, prepare: () => Promise<PreparedPasswordRecovery>) {
+export function hasPasswordRecoveryCredentials(link: string) {
   const url = new URL(link);
   const hash = new URLSearchParams(url.hash.slice(1));
-  const hasCredentials = ["invite_token", "token_hash", "code"].some(key => url.searchParams.has(key))
+  return ["invite_token", "token_hash", "code"].some(key => url.searchParams.has(key))
     || ["access_token", "refresh_token", "token_hash"].some(key => hash.has(key));
-  if (!hasCredentials) return prepare();
+}
+
+export function clearPasswordRecoverySessionCookies(browserDocument: Pick<Document, "cookie">, supabaseUrl: string) {
+  const previousCookies = browserDocument.cookie;
+  const sessionKey = `sb-${new URL(supabaseUrl).hostname.split(".")[0]}-auth-token`;
+  for (const cookie of parseCookieHeader(previousCookies)) {
+    if (isChunkLike(cookie.name, sessionKey) || isChunkLike(cookie.name, `${sessionKey}-user`)) {
+      browserDocument.cookie = serializeCookieHeader(cookie.name, "", { path: "/", maxAge: 0, sameSite: "lax" });
+    }
+  }
+  return previousCookies;
+}
+
+export function preparePasswordRecoveryOnce(link: string, prepare: () => Promise<PreparedPasswordRecovery>) {
+  if (!hasPasswordRecoveryCredentials(link)) return prepare();
   // Signing out clears retained pages via SessionPageBoundary and remounts the
   // reset form. Keep both the promise and its private client above that lifetime
   // so a one-time link is consumed once, including in production React builds.

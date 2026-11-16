@@ -4,8 +4,8 @@ import { isValidPassword } from "@/lib/passwordPolicy";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { passwordRecoveryUrl, supabase } from "@/lib/supabaseClient";
-import { createPasswordRecoveryClient, preparePasswordRecoveryOnce, releasePasswordRecoveryPreparation } from "@/lib/passwordRecovery";
+import { passwordRecoveryCookies, passwordRecoveryUrl, supabase } from "@/lib/supabaseClient";
+import { clearPasswordRecoverySessionCookies, createPasswordRecoveryClient, preparePasswordRecoveryOnce, releasePasswordRecoveryPreparation } from "@/lib/passwordRecovery";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 type Status = "loading" | "ready" | "invalid" | "unavailable" | "success";
@@ -43,9 +43,12 @@ export default function ResetPasswordPage() {
       const accessToken = hash.get("access_token");
       const refreshToken = hash.get("refresh_token");
       const hasCredentials = Boolean(inviteToken || code || tokenHash || accessToken || refreshToken);
-      // Copy the PKCE verifier before clearing the application's cookies.
+      // Also cover client-side navigation, when the shared SDK already exists.
+      const previousCookies = hasCredentials
+        ? clearPasswordRecoverySessionCookies(document, process.env.NEXT_PUBLIC_SUPABASE_URL!) : "";
+      // A token-hash link must never depend on a stale PKCE verifier cookie.
       const client = hasCredentials && !inviteToken ? await createPasswordRecoveryClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, document.cookie,
+        process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, code ? passwordRecoveryCookies || previousCookies : "",
       ) : null;
 
       if (hasCredentials) {
