@@ -1,162 +1,20 @@
-"use client";
-import { useRetainedLoading } from "@/lib/useRetainedLoading";
-
-import { trainingPlanCompletion } from "@/lib/trainingPlanCompletion";
-
-import { organizationFetch as fetch } from "@/lib/organizationFetch";
-
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import Link from "next/link";
-import Image from "next/image";
-import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ChevronRight, ClipboardCheck, Clock3, Dumbbell, FileText, Flame, MapPin, Mountain, Pencil, Smile, Target, Trash2 } from "lucide-react";
-import AccessibleDialog from "@/components/ui/AccessibleDialog";
-import { canDeleteIndividualTraining, deleteIndividualTraining } from "@/lib/playerTrainingActions";
+import { Suspense } from "react";
 import TrainingPageSkeleton from "@/components/player/TrainingPageSkeleton";
-import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
-import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { trainingDetailRead } from "@/lib/trainingDetailRead";
-import type { EventEvaluationCriterion } from "@/lib/evaluationCriteria";
-import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
-import { supabase } from "@/lib/supabaseClient";
-import playerUiStyles from "@/components/player/PlayerUI.module.css";
-import dashboardStyles from "@/app/player/PlayerDashboard.module.css";
-import { DifficultyIcon, EvaluationIconBadge, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
-import styles from "./PlayerTrainingDetail.module.css";
-import summaryStyles from "./PlayerTrainingSummary.module.css";
+import PlayerTrainingDetailClient from "./PlayerTrainingDetailClient";
 
-type SessionType = "club" | "private" | "individual";
-type SessionRow = { id:string; user_id:string; start_at:string; location_text:string|null; session_type:SessionType; club_id:string|null; coach_name:string|null; motivation:number|null; difficulty:number|null; satisfaction:number|null; notes:string|null; total_minutes:number|null; club_event_id:string|null };
-type StructureItem = { category:string; minutes:number; note:string|null; position?:number|null };
-type CoachFeedback = { coach_id:string; engagement:number|null; attitude:number|null; performance:number|null; player_note:string|null };
-type CoachProfile = { id:string; first_name:string|null; last_name:string|null; avatar_url:string|null };
-type AssignedCoach = { id:string; first_name:string|null; last_name:string|null; avatar_url:string|null; label:string; isHead:boolean; staffFunction:string|null };
-type EventAttendee = { player_id:string; status:"expected"|"present"|"absent"|"excused"|"not_registered"; first_name:string|null; last_name:string|null; avatar_url:string|null };
-type TrainingDocument = { id:string; file_name:string; created_at:string; public_url:string; uploaded_by_name?:string|null };
-type CustomResponse = { event_criterion_id:string; value_json:string|number|boolean|null };
-type LinkedEvent = { title?:string|null; duration_minutes?:number|null; status?:string|null };
+type RouteParams = { sessionId: string };
 
-type TrainingEventPayload={event?:LinkedEvent;plannedStructureItems?:StructureItem[];groupName?:string;clubName?:string;coachFeedback?:CoachFeedback[];assignedCoaches?:AssignedCoach[];coachProfiles?:CoachProfile[];customEvaluationCriteria?:EventEvaluationCriterion[];customCoachEvaluationCriteria?:EventEvaluationCriterion[];customEvaluationResponses?:CustomResponse[];customCoachEvaluationResponses?:CustomResponse[]};
+// Resolve request parameters before mounting the client: Cache Components can
+// otherwise expose prerender placeholders through useParams on navigation.
+async function ResolvedDetail({ params }: { params: Promise<RouteParams> }) {
+  const { sessionId } = await params;
+  return <PlayerTrainingDetailClient sessionId={sessionId} />;
+}
 
-const CATEGORY_KEYS: Record<string,string> = { warmup_mobility:"cat.warmup_mobility",long_game:"cat.long_game",short_game_all:"cat.short_game_all",putting:"cat.putting",wedging:"cat.wedging",pitching:"cat.pitching",chipping:"cat.chipping",bunker:"cat.bunker",course:"cat.course",mental:"cat.mental",fitness:"cat.fitness",other:"cat.other" };
-const totalMinutes = (rows:StructureItem[]) => rows.reduce((sum,row)=>sum+Math.max(0,Number(row.minutes)||0),0);
-const fullName = (profile?:CoachProfile) => `${profile?.first_name??""} ${profile?.last_name??""}`.trim()||"Coach";
-const initialsOf = (first?:string|null,last?:string|null) => `${first?.trim().charAt(0)??""}${last?.trim().charAt(0)??""}`.toUpperCase()||"—";
-const mapResponses = (rows:CustomResponse[]) => Object.fromEntries(rows.map(row=>[row.event_criterion_id,row.value_json]));
-function responseLabel(criterion:EventEvaluationCriterion,value:unknown){if(value===null||value===undefined||value==="")return "—";if(criterion.snapshot_response_format==="short_text")return String(value);const choice=criterion.snapshot_choices.find(item=>String(item.value)===String(value));return choice?`${choice.icon?`${choice.icon} `:""}${choice.label}`:String(value)}
-function Rating({icon,label,value}:{icon:ReactNode;label:string;value:number|null}){const score=typeof value==="number"?value:0;return <div className={styles.rating}><div className={styles.ratingLabel}>{icon}{label}</div><strong>{value??"—"}/6</strong><div className={styles.ratingTrack}><span style={{width:`${Math.max(0,Math.min(100,score/6*100))}%`}}/></div></div>}
-
-export default function PlayerTrainingDetailPage(){
-  const {t,locale}=useI18n();const params=useParams<{sessionId:string}>();const sessionId=String(params?.sessionId??"").trim();
-  const router=useRouter();
-  const [playerId,setPlayerId]=useState("");const [canEdit,setCanEdit]=useState(false);const [isCampDay,setIsCampDay]=useState(false);const [deleteOpen,setDeleteOpen]=useState(false);const [deleting,setDeleting]=useState(false);const [deleteError,setDeleteError]=useState("");
-  const [reload,setReload]=useState(0);const [eventReady,setEventReady]=useState(false);const [documentsReady,setDocumentsReady]=useState(false);const [attendeesReady,setAttendeesReady]=useState(false);const [ownAttendance,setOwnAttendance]=useState<string|null>(null);
-  const [loading,setLoading]=useRetainedLoading();const [error,setError]=useState<string|null>(null);const [performanceEnabled,setPerformanceEnabled]=useState(false);
-  const [session,setSession]=useState<SessionRow|null>(null);const [items,setItems]=useState<StructureItem[]>([]);const [plannedItems,setPlannedItems]=useState<StructureItem[]>([]);
-  const [clubName,setClubName]=useState("");const [groupName,setGroupName]=useState("");const [linkedEvent,setLinkedEvent]=useState<LinkedEvent|null>(null);
-  const [coachFeedback,setCoachFeedback]=useState<CoachFeedback[]>([]);const [coachProfiles,setCoachProfiles]=useState<Record<string,CoachProfile>>({});const [documents,setDocuments]=useState<TrainingDocument[]>([]);
-  const [assignedCoaches,setAssignedCoaches]=useState<AssignedCoach[]>([]);const [eventAttendees,setEventAttendees]=useState<EventAttendee[]>([]);
-  const [playerCriteria,setPlayerCriteria]=useState<EventEvaluationCriterion[]>([]);const [coachCriteria,setCoachCriteria]=useState<EventEvaluationCriterion[]>([]);const [playerResponses,setPlayerResponses]=useState<Record<string,unknown>>({});const [coachResponses,setCoachResponses]=useState<Record<string,unknown>>({});
-
-  const checkCampDay=useCallback(async(subjectId:string)=>{
-    const {data:auth}=await supabase.auth.getSession();
-    const response=await fetch(`/api/player/trainings/${sessionId}/actions?child_id=${encodeURIComponent(subjectId)}`,{headers:{Authorization:`Bearer ${auth.session?.access_token??""}`},cache:"no-store"});
-    if(!response.ok)throw new Error(t("common.errorLoading"));
-    const result=await response.json();return result.isCampDay===true;
-  },[sessionId,t]);
-  useEffect(()=>{
-    const controller=new AbortController();const signal=controller.signal;
-    const message=pickLocaleText(locale,"Impossible de charger toutes les données. Réessayez.","Unable to load all data. Please retry.","Nicht alle Daten konnten geladen werden. Bitte erneut versuchen.","Impossibile caricare tutti i dati. Riprova.");
-    type DetailPayload={session:SessionRow;items:StructureItem[];playerId:string;canEdit:boolean;isCampDay:boolean;performanceEnabled:boolean;clubName:string;attendance:string|null};
-    void (async()=>{
-      try {
-        setLoading(true);setError(null);setSession(null);setItems([]);setPlannedItems([]);setLinkedEvent(null);setGroupName("");
-        setCoachFeedback([]);setCoachProfiles({});setAssignedCoaches([]);setEventAttendees([]);setDocuments([]);
-        setPlayerCriteria([]);setCoachCriteria([]);setPlayerResponses({});setCoachResponses({});setEventReady(false);setDocumentsReady(false);setAttendeesReady(false);setCanEdit(false);
-        const {data:auth}=await supabase.auth.getSession();const token=auth.session?.access_token??"";
-        if(!token)throw new Error("Invalid session");
-        const explicit=new URL(window.location.href).searchParams.get("child_id")?.trim()??"";
-        const stored=window.localStorage.getItem("parent:selected_child_id")?.trim()??"";
-        let child=explicit||stored;
-        const readDetail=()=>trainingDetailRead<DetailPayload>(`/api/player/trainings/${encodeURIComponent(sessionId)}/detail${child?`?child_id=${encodeURIComponent(child)}`:""}`,token,signal);
-        let detail:DetailPayload;
-        try{detail=await readDetail()}catch(error){
-          if(explicit||!stored||(error as {status?:number}).status!==403)throw error;
-          window.localStorage.removeItem("parent:selected_child_id");child="";detail=await readDetail();
-        }
-        if(signal.aborted)return;
-        const loaded=detail.session;
-        setPlayerId(detail.playerId);setCanEdit(detail.canEdit);setIsCampDay(detail.isCampDay);
-        setPerformanceEnabled(detail.performanceEnabled);setSession(loaded);setItems(detail.items);setClubName(detail.clubName);setOwnAttendance(detail.attendance);
-        // Render the activity immediately; ancillary reads cannot erase it.
-        setLoading(false);
-        if(!loaded.club_event_id){setEventReady(true);return;}
-        const eventQuery=new URLSearchParams({event_id:loaded.club_event_id,child_id:detail.playerId});
-        const docsQuery=new URLSearchParams({player_id:detail.playerId,club_event_id:loaded.club_event_id});
-        await Promise.allSettled([
-          trainingDetailRead<TrainingEventPayload>(`/api/player/training-event?${eventQuery}`,token,signal).then(data=>{
-            if(signal.aborted)return;
-            setLinkedEvent(data.event??null);setPlannedItems(data.plannedStructureItems??[]);setGroupName(String(data.groupName??""));
-            if(data.clubName)setClubName(String(data.clubName));setCoachFeedback(data.coachFeedback??[]);setAssignedCoaches(data.assignedCoaches??[]);
-            setCoachProfiles(Object.fromEntries((data.coachProfiles??[]).map((profile:CoachProfile)=>[profile.id,profile])));
-            setPlayerCriteria(data.customEvaluationCriteria??[]);setCoachCriteria(data.customCoachEvaluationCriteria??[]);
-            setPlayerResponses(mapResponses(data.customEvaluationResponses??[]));setCoachResponses(mapResponses(data.customCoachEvaluationResponses??[]));setEventReady(true);
-          }).catch(()=>{if(!signal.aborted)setError(message)}),
-          trainingDetailRead<{documents:TrainingDocument[]}>(`/api/player/documents?${docsQuery}`,token,signal).then(data=>{if(!signal.aborted){setDocuments(data.documents??[]);setDocumentsReady(true)}}).catch(()=>{if(!signal.aborted)setError(message)}),
-          trainingDetailRead<{attendees:EventAttendee[]}>(`/api/player/event-attendees?${eventQuery}`,token,signal).then(data=>{if(!signal.aborted){setEventAttendees(data.attendees??[]);setAttendeesReady(true)}}).catch(()=>{if(!signal.aborted)setError(message)}),
-        ]);
-      }catch{if(!signal.aborted)setError(message)}finally{if(!signal.aborted)setLoading(false)}
-    })();
-    return()=>controller.abort();
-  },[sessionId, reload, locale, setLoading]);
-
-  const actualTotal=totalMinutes(items);const planProgress=trainingPlanCompletion(plannedItems,items);const plannedTotal=planProgress.plannedMinutes;const duration=actualTotal||Number(session?.total_minutes??0)||plannedTotal||Number(linkedEvent?.duration_minutes??0);
-  const categories=useMemo(()=>Array.from(new Set([...plannedItems,...items].map(item=>item.category))),[plannedItems,items]);const categoryLabel=(category:string)=>CATEGORY_KEYS[category]?t(CATEGORY_KEYS[category]):category;
-  const completion=planProgress.percent;const hasPlayerEvaluation=[session?.motivation,session?.difficulty,session?.satisfaction].some(value=>typeof value==="number")||Object.values(playerResponses).some(value=>value!==null&&value!==undefined&&value!=="");
-
-  const canDelete=canDeleteIndividualTraining(session,playerId,canEdit,isCampDay);
-  const sessionEnd=session?new Date(session.start_at).getTime()+duration*60000:Infinity;
-  const attendance=ownAttendance;
-  const canEvaluate=eventReady&&canEdit&&performanceEnabled&&sessionEnd<=Date.now()&&attendance!=="absent"&&attendance!=="excused"&&linkedEvent?.status!=="cancelled";
-  const evaluateLabel=hasPlayerEvaluation?pickLocaleText(locale,"Modifier mon évaluation","Edit my evaluation","Meine Bewertung bearbeiten","Modifica la mia valutazione"):pickLocaleText(locale,"Évaluer","Evaluate","Bewerten","Valuta");
-  async function removeTraining(){
-    if(!canDelete||!session||deleting)return;
-    setDeleting(true);setDeleteError("");
-    try{await deleteIndividualTraining(supabase,session.id,playerId,()=>checkCampDay(playerId));router.replace("/player/golf/trainings?type=training");}
-    catch{setDeleteError(pickLocaleText(locale,"La suppression n’a pas pu être confirmée. Réessayez.","Deletion could not be confirmed. Please try again.","Die Löschung konnte nicht bestätigt werden. Bitte erneut versuchen.","Impossibile confermare l’eliminazione. Riprova."));setDeleting(false);}
-  }
-
-  if(loading)return <div className="player-dashboard-bg"><div className="app-shell marketplace-page"><TrainingPageSkeleton variant="detail" label={t("common.loading")}/></div></div>;
-  const start=session?new Date(session.start_at):null;const end=start?new Date(start.getTime()+duration*60000):null;const trainingTitle=(!session?.club_event_id&&session?.session_type==="individual")?pickLocaleText(locale,"Entraînement individuel","Individual training","Individuelles Training","Allenamento individuale"):linkedEvent?.title||(groupName?`${pickLocaleText(locale,"Entraînement","Training")} • ${groupName}`:t("trainingDetail.title"));const dateLocale=locale==="en"?"en-US":"fr-CH";const timeRange=start&&end?`${new Intl.DateTimeFormat(dateLocale,{hour:"2-digit",minute:"2-digit"}).format(start)} – ${new Intl.DateTimeFormat(dateLocale,{hour:"2-digit",minute:"2-digit"}).format(end)}`:"—";const dateDay=start?new Intl.DateTimeFormat(dateLocale,{weekday:"short"}).format(start).replace(".",""):"";const dateMonth=start?new Intl.DateTimeFormat(dateLocale,{month:"short"}).format(start).replace(".",""):"";const startTime=start?new Intl.DateTimeFormat(dateLocale,{hour:"2-digit",minute:"2-digit"}).format(start):"";
-  return <div className="player-dashboard-bg"><div className="app-shell marketplace-page"><div className={styles.page}>
-    <PlayerBreadcrumb items={[{label:"Player",href:"/player"},{label:pickLocaleText(locale,"Calendrier","Calendar","Kalender","Calendario"),href:"/player/golf/trainings"},{label:pickLocaleText(locale,"Détail","Detail")}]}/>
-    <header className={playerUiStyles.topline}><div><h1>{pickLocaleText(locale,"Détail de l’activité","Activity details")}</h1><p className={playerUiStyles.lead}>{pickLocaleText(locale,"Retrouve le contenu réalisé et les évaluations de cette activité.","Review the completed content and evaluations for this activity.")}</p></div><div className={playerUiStyles.actions}><Link prefetch={false} className={playerUiStyles.secondary} href="/player/golf/trainings"><ArrowLeft size={15}/>{pickLocaleText(locale,"Retour aux activités","Back to activities")}</Link>{canEdit&&<Link prefetch={false} className={playerUiStyles.secondary} href={`/player/golf/trainings/${sessionId}/edit`}><Pencil size={15}/>{pickLocaleText(locale,"Modifier l’activité","Edit activity","Aktivität bearbeiten","Modifica attività")}</Link>}{canDelete&&<button type="button" className={styles.deleteAction} onClick={()=>{setDeleteError("");setDeleteOpen(true)}}><Trash2 size={15}/>{pickLocaleText(locale,"Supprimer","Delete","Löschen","Elimina")}</button>}</div></header>
-    {error&&<div className={styles.error} role="alert">{error} <button type="button" className={playerUiStyles.secondary} onClick={()=>setReload(value=>value+1)}>{pickLocaleText(locale,"Réessayer","Retry","Erneut versuchen","Riprova")}</button></div>}{!session?<div className={styles.panel}><div className={styles.empty}>{t("common.noData")}</div></div>:<>
-      <section className={summaryStyles.card}>
-        <article className={`${dashboardStyles.activityItem} ${summaryStyles.activity}`}>
-          <div className={dashboardStyles.activityDate} aria-label={new Intl.DateTimeFormat(dateLocale,{dateStyle:"full",timeStyle:"short"}).format(start)}>
-            <span>{dateDay}</span><b>{start.getDate()}</b><span>{dateMonth}</span><time dateTime={session.start_at}>{startTime}</time>
-          </div>
-          <div className={dashboardStyles.activityBody}>
-            <span className={dashboardStyles.activityTitle}>{trainingTitle}</span>
-            {clubName?<span className={dashboardStyles.activityMeta}>{clubName}</span>:null}
-            <span className={`planning-event-location ${dashboardStyles.activityLocation}`}><MapPin size={14} aria-hidden="true"/><span>{session.location_text?.trim()||pickLocaleText(locale,"Lieu non renseigné","Location not specified")}</span></span>
-          </div>
-        </article>
-      </section>
-      <section className={`${styles.kpis}${!performanceEnabled?` ${styles.basicKpis}`:""}`}><Kpi icon={<Clock3 size={16}/>} title={pickLocaleText(locale,"Durée réalisée","Completed duration")} value={duration?`${duration} min`:"—"} detail={timeRange}/>{performanceEnabled&&<><Kpi icon={<Dumbbell size={16}/>} title={pickLocaleText(locale,"Secteurs travaillés","Areas trained")} value={String(categories.length)} detail={pickLocaleText(locale,"Domaines de jeu","Game areas")}/><Kpi icon={<Target size={16}/>} title={pickLocaleText(locale,"Plan réalisé","Plan completed")} value={!eventReady||completion===null?"—":`${completion}%`} detail={!eventReady?t("common.loading"):plannedTotal?`${planProgress.creditedMinutes} / ${plannedTotal} ${pickLocaleText(locale,"min du plan couvertes","planned min completed","geplante Min. erfüllt","min previsti completati")}`:pickLocaleText(locale,"Pas de plan coach","No coach plan","Kein Trainerplan","Nessun piano dell’allenatore")}/><Kpi icon={<ClipboardCheck size={16}/>} title={pickLocaleText(locale,"Évaluation","Evaluation")} value={hasPlayerEvaluation?pickLocaleText(locale,"Faite","Done"):pickLocaleText(locale,"À faire","Pending")} detail={playerCriteria.length?`${playerCriteria.length} ${pickLocaleText(locale,"critère(s) club","club criteria")}`:pickLocaleText(locale,"Critères ActiviTee","ActiviTee criteria")}/></>}</section>
-      {session.club_event_id&&<section className={`${styles.panel} ${styles.wide}`}><PanelHeader title={pickLocaleText(locale,"Participants et encadrement","Participants and coaching team")} subtitle={pickLocaleText(locale,"Les joueurs attendus et les coachs affectés à cette activité.","Players expected and coaches assigned to this activity.")}/><div className={styles.peopleGrid}><PeopleGroup title={pickLocaleText(locale,"Coachs","Coaches")} empty={eventReady?pickLocaleText(locale,"Aucun coach renseigné.","No coach entered."):t("common.loading")}>{assignedCoaches.length?assignedCoaches.map(coach=><PersonRow key={coach.id} firstName={coach.first_name} lastName={coach.last_name} avatarUrl={coach.avatar_url} name={coach.label} detail={coach.isHead?pickLocaleText(locale,"Coach principal","Head coach"):(coach.staffFunction||t("common.coach"))}/>):session.coach_name?<PersonRow name={session.coach_name} detail={t("common.coach")}/>:null}</PeopleGroup><PeopleGroup title={pickLocaleText(locale,"Participants","Participants")} empty={attendeesReady?pickLocaleText(locale,"Aucun participant renseigné.","No participant entered."):t("common.loading")}>{eventAttendees.map(attendee=><PersonRow key={attendee.player_id} firstName={attendee.first_name} lastName={attendee.last_name} avatarUrl={attendee.avatar_url} name={`${attendee.first_name??""} ${attendee.last_name??""}`.trim()||pickLocaleText(locale,"Joueur","Player")} detail={pickLocaleText(locale,"Joueur","Player")} status={attendee.status} statusLabel={attendanceLabel(attendee.status,locale)}/>)}</PeopleGroup></div></section>}
-      {performanceEnabled&&<section className={`${styles.panel} ${styles.wide}`}><PanelHeader title={pickLocaleText(locale,"Structure de l’entraînement","Training structure")} subtitle={pickLocaleText(locale,"Le programme prévu et ce qui a réellement été effectué.","The planned programme and what was actually completed.")}/><div className={`${styles.structureGrid}${!session.club_event_id?` ${styles.personalStructure}`:""}`}>{session.club_event_id&&<StructureColumn title={pickLocaleText(locale,"Planifié par le coach","Planned by coach")} items={plannedItems} label={categoryLabel} empty={eventReady?pickLocaleText(locale,"Aucun contenu planifié.","No planned content."):t("common.loading")}/>}<StructureColumn title={pickLocaleText(locale,"Réalisé par le joueur","Completed by player")} items={items} label={categoryLabel} empty={pickLocaleText(locale,"Aucun contenu renseigné.","No completed content entered.")}/></div></section>}
-      {performanceEnabled&&(<section className={`${styles.grid}${!session.club_event_id?` ${styles.personalEvaluation}`:""}`}><article className={styles.panel}><PanelHeader title={pickLocaleText(locale,"Mon auto-évaluation","My self-assessment")} subtitle={session.club_event_id?pickLocaleText(locale,"Les 3 critères ActiviTee junior et les priorités du club.","The 3 junior ActiviTee criteria and club priorities."):pickLocaleText(locale,"Mon ressenti sur cet entraînement.","How I felt about this training session.","Mein Eindruck von diesem Training.","Le mie sensazioni su questo allenamento.")}/><div className={styles.evaluationBody}><div className={styles.ratings}><Rating icon={<EvaluationIconBadge><MotivationIcon size={15}/></EvaluationIconBadge>} label={t("trainingNew.motivationBefore")} value={session.motivation}/><Rating icon={<EvaluationIconBadge><DifficultyIcon size={15}/></EvaluationIconBadge>} label={t("trainingNew.difficultyDuring")} value={session.difficulty}/><Rating icon={<EvaluationIconBadge><SatisfactionIcon size={15}/></EvaluationIconBadge>} label={t("trainingNew.satisfactionAfter")} value={session.satisfaction}/></div><CriteriaList criteria={playerCriteria} responses={playerResponses}/>{session.notes&&<NoteBlock label={pickLocaleText(locale,"Ma note","My note")}>{session.notes}</NoteBlock>}</div>{canEvaluate&&<Link prefetch={false} className={`${playerUiStyles.primary} ${styles.evaluateAction}`} href={`/player/golf/trainings/${sessionId}/edit`}><ClipboardCheck size={16}/>{evaluateLabel}</Link>}</article>{session.club_event_id&&<article className={styles.panel}><PanelHeader title={t("trainingDetail.coachEvaluation")} subtitle={pickLocaleText(locale,"Les 3 critères ActiviTee coach et les priorités du club.","The 3 coach ActiviTee criteria and club priorities.")}/>{coachFeedback.length||coachCriteria.length?<div className={styles.evaluationBody}><div className={styles.coachReviews}>{coachFeedback.map((feedback,index)=>{const profile=coachProfiles[feedback.coach_id];return <div className={styles.coachReview} key={`${feedback.coach_id}-${index}`}><div className={styles.coachIdentity}><div className={styles.avatar}>{profile?.avatar_url?<Image src={profile.avatar_url} alt="" width={34} height={34} unoptimized/>:initialsOf(profile?.first_name,profile?.last_name)}</div><div><b>{fullName(profile)}</b><small>{t("common.coach")}</small></div></div><div className={styles.ratings}><Rating icon={<EvaluationIconBadge><Flame size={14}/></EvaluationIconBadge>} label={t("trainingDetail.engagement")} value={feedback.engagement}/><Rating icon={<EvaluationIconBadge><Mountain size={14}/></EvaluationIconBadge>} label={t("trainingDetail.attitude")} value={feedback.attitude}/><Rating icon={<EvaluationIconBadge><Smile size={14}/></EvaluationIconBadge>} label={t("trainingDetail.performance")} value={feedback.performance}/></div></div>})}</div><CriteriaList criteria={coachCriteria} responses={coachResponses}/>{coachFeedback.map((feedback,index)=>feedback.player_note?<NoteBlock key={`${feedback.coach_id}-note-${index}`} label={pickLocaleText(locale,"Note du coach","Coach note")}>{feedback.player_note}</NoteBlock>:null)}</div>:<div className={styles.empty}>{eventReady?t("trainingDetail.noCoachEvaluation"):t("common.loading")}</div>}</article>}</section>)}
-      {session.club_event_id&&<section className={`${styles.panel} ${styles.wide}`}><PanelHeader title={pickLocaleText(locale,"Documents liés","Related documents")} subtitle={pickLocaleText(locale,"Supports partagés par l’équipe d’encadrement.","Resources shared by the coaching team.")}/>{documents.length?<div className={styles.documents}>{documents.map(document=><a className={styles.document} href={document.public_url} target="_blank" rel="noreferrer" key={document.id}><span className={styles.documentIcon}><FileText size={16}/></span><span><b>{document.file_name}</b><small>{document.uploaded_by_name?`${document.uploaded_by_name} • `:""}{new Intl.DateTimeFormat(dateLocale).format(new Date(document.created_at))}</small></span><ChevronRight size={15}/></a>)}</div>:<div className={styles.empty}>{documentsReady?pickLocaleText(locale,"Aucun document lié à cette activité.","No document linked to this activity."):t("common.loading")}</div>}</section>}
-      {!performanceEnabled&&session.notes&&<section className={styles.panel}><PanelHeader title={pickLocaleText(locale,"Mes notes","My notes","Meine Notizen","Le mie note")} subtitle=""/><p className={styles.note}>{session.notes}</p></section>}
-    </>}{deleteOpen&&<AccessibleDialog labelledBy="delete-training-title" className={styles.deleteDialog} onClose={()=>{if(!deleting)setDeleteOpen(false)}}><h2 id="delete-training-title">{pickLocaleText(locale,"Supprimer cet entraînement individuel ?","Delete this individual training session?","Dieses individuelle Training löschen?","Eliminare questo allenamento individuale?")}</h2><p>{pickLocaleText(locale,"Cette action supprime l’entraînement et sa structure. Elle est définitive.","This permanently deletes the training session and its structure.","Das Training und seine Struktur werden endgültig gelöscht.","L’allenamento e la sua struttura verranno eliminati definitivamente.")}</p>{deleteError&&<div className={styles.error} role="alert">{deleteError}</div>}<div className={styles.dialogActions}><button type="button" className={playerUiStyles.secondary} disabled={deleting} onClick={()=>setDeleteOpen(false)}>{t("common.cancel")}</button><button type="button" className={styles.deleteAction} disabled={deleting} onClick={()=>void removeTraining()}><Trash2 size={15}/>{deleting?pickLocaleText(locale,"Suppression…","Deleting…","Wird gelöscht…","Eliminazione…"):pickLocaleText(locale,"Supprimer","Delete","Löschen","Elimina")}</button></div></AccessibleDialog>}</div></div></div>}
-
-function Kpi({icon,title,value,detail}:{icon:ReactNode;title:string;value:string;detail:string}){return <div className={styles.kpi}><div className={styles.kpiIcon}>{icon}</div><span>{title}</span><strong>{value}</strong><small>{detail}</small></div>}
-function PanelHeader({title,subtitle}:{title:string;subtitle:string}){return <div className={styles.panelHeader}><div><h2>{title}</h2><p>{subtitle}</p></div></div>}
-function StructureColumn({title,items,label,empty}:{title:string;items:StructureItem[];label:(category:string)=>string;empty:string}){return <div className={styles.structureColumn}><h3>{title}</h3>{items.length?items.map((item,index)=><div className={styles.structureItem} key={`${item.category}-${index}`}><b>{label(item.category)}</b><strong>{item.minutes} min</strong>{item.note&&<small>{item.note}</small>}</div>):<div className={styles.empty}>{empty}</div>}</div>}
-function CriteriaList({criteria,responses}:{criteria:EventEvaluationCriterion[];responses:Record<string,unknown>}){if(!criteria.length)return null;return <div className={styles.criteria}>{criteria.map(criterion=><div className={styles.criterion} key={criterion.id}><b>{criterion.snapshot_name}</b><strong>{responseLabel(criterion,responses[criterion.id])}</strong>{criterion.snapshot_description&&<small>{criterion.snapshot_description}</small>}</div>)}</div>}
-function PeopleGroup({title,empty,children}:{title:string;empty:string;children:ReactNode}){const hasChildren=Array.isArray(children)?children.length>0:Boolean(children);return <div className={styles.peopleGroup}><h3>{title}</h3>{hasChildren?<div className={styles.personList}>{children}</div>:<div className={styles.peopleEmpty}>{empty}</div>}</div>}
-function PersonRow({firstName,lastName,avatarUrl,name,detail,status,statusLabel}:{firstName?:string|null;lastName?:string|null;avatarUrl?:string|null;name:string;detail:string;status?:EventAttendee["status"];statusLabel?:string}){return <div className={styles.personRow}><div className={styles.avatar}>{avatarUrl?<Image src={avatarUrl} alt="" width={38} height={38} unoptimized/>:initialsOf(firstName,lastName)}</div><div className={styles.personText}><b>{name}</b><small>{detail}</small></div>{status?<span className={`${styles.statusBadge} ${styles[`status_${status}`]}`}>{statusLabel}</span>:null}</div>}
-function NoteBlock({label,children}:{label:string;children:ReactNode}){return <div className={styles.noteBlock}><span>{label}</span><p className={styles.note}>{children}</p></div>}
-function attendanceLabel(status:EventAttendee["status"],locale:string){const labels:Record<EventAttendee["status"],[string,string]>={expected:["Attendu","Expected"],present:["Présent","Present"],absent:["Absent","Absent"],excused:["Excusé","Excused"],not_registered:["Non inscrit","Not registered"]};return pickLocaleText(locale,...labels[status])}
+export default function PlayerTrainingDetailPage({ params }: { params: Promise<RouteParams> }) {
+  return (
+    <Suspense fallback={<TrainingPageSkeleton variant="detail" label="…" />}>
+      <ResolvedDetail params={params} />
+    </Suspense>
+  );
+}
