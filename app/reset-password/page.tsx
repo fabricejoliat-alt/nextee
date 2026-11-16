@@ -5,10 +5,10 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { passwordRecoveryUrl, supabase } from "@/lib/supabaseClient";
-import { createPasswordRecoveryClient } from "@/lib/passwordRecovery";
+import { createPasswordRecoveryClient, preparePasswordRecoveryOnce, releasePasswordRecoveryPreparation } from "@/lib/passwordRecovery";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-type Status = "loading" | "ready" | "invalid" | "success";
+type Status = "loading" | "ready" | "invalid" | "unavailable" | "success";
 
 function translateAuthMessage(message: string) {
   if (message === "New password should be different from the old password.") {
@@ -27,14 +27,14 @@ export default function ResetPasswordPage() {
   const [saving, setSaving] = useState(false);
   const inviteToken = searchParams.get("invite_token");
   const recoveryClient = useRef<SupabaseClient | null>(null);
-  const preparation = useRef<Promise<Status> | null>(null);
 
   const canSubmit = useMemo(() => isValidPassword(password) && confirmPassword.length >= 6 && !saving, [password, confirmPassword, saving]);
 
   useEffect(() => {
     let active = true;
+    const link = passwordRecoveryUrl ?? window.location.href;
 
-    async function prepare(): Promise<Status> {
+    async function prepare() {
       const url = new URL(passwordRecoveryUrl ?? window.location.href);
       const hash = new URLSearchParams(url.hash.slice(1));
       const code = url.searchParams.get("code");
@@ -54,30 +54,35 @@ export default function ResetPasswordPage() {
       }
       if (inviteToken) {
         const res = await fetch(`/api/auth/invitation-reset?token=${encodeURIComponent(inviteToken)}`, { cache: "no-store" });
-        return res.ok ? "ready" : "invalid";
+        return { valid: res.ok, client: null };
       }
       if (!hasCredentials) {
         // Existing signed-in users may still choose a password directly.
-        return (await supabase.auth.getSession()).data.session ? "ready" : "invalid";
+        return { valid: Boolean((await supabase.auth.getSession()).data.session), client: null };
       }
-      recoveryClient.current = client;
       const result = accessToken && refreshToken
         ? await client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
         : code ? await client.auth.exchangeCodeForSession(code)
         : tokenHash && ["recovery", "invite"].includes(type)
           ? await client.auth.verifyOtp({ token_hash: tokenHash, type: type as "recovery" | "invite" })
           : null;
-      return result && !result.error && result.data.session ? "ready" : "invalid";
+      if (result?.error && !["otp_expired", "flow_state_expired", "flow_state_not_found", "bad_code_verifier"].includes(result.error.code)) {
+        throw result.error;
+      }
+      return { valid: Boolean(result && !result.error && result.data.session), client };
     }
 
-    // React Strict Mode must not consume a one-time recovery link twice.
-    preparation.current ??= prepare();
-    void preparation.current.then(status => {
-      if (active) setStatus(status);
-    }).catch(() => {
-      if (active) setStatus("invalid");
+    void preparePasswordRecoveryOnce(link, prepare).then(result => {
+      if (active) {
+        recoveryClient.current = result.client;
+        setStatus(result.valid ? "ready" : "invalid");
+      }
+    }).catch(cause => {
+      // Log identifiers only; recovery URLs and credentials must stay private.
+      console.warn("Password recovery preparation failed", cause?.name, cause?.code);
+      if (active) setStatus("unavailable");
     });
-    return () => { active = false; };
+    return () => { active = false; releasePasswordRecoveryPreparation(link, window.location.pathname); };
   }, [inviteToken]);
 
   async function handleSubmit(e: React.FormEvent) {
@@ -197,11 +202,11 @@ export default function ResetPasswordPage() {
             <div className="auth-footnote" style={{ fontSize: 13 }}>Validation du lien sécurisé…</div>
           ) : null}
 
-          {status === "invalid" ? (
+          {status === "invalid" || status === "unavailable" ? (
             <div style={{ display: "grid", gap: 12 }}>
-              <div className="auth-error">Ce lien est invalide ou expiré.</div>
+              <div className="auth-error">{status === "invalid" ? "Ce lien est invalide ou expiré." : "Impossible de vérifier le lien pour le moment."}</div>
               <div className="auth-footnote" style={{ marginTop: 0 }}>
-                Demande un nouvel e-mail d’accès depuis le manager ou reconnecte-toi avec un lien plus récent.
+                {status === "invalid" ? "Demande un nouvel e-mail de récupération depuis la page de connexion, puis utilise uniquement le lien le plus récent." : "Vérifie ta connexion et réessaie dans quelques instants. Si le problème persiste, demande un nouvel e-mail de récupération."}
               </div>
               <Link href="/" className="cta-green auth-submit" style={{ textDecoration: "none", textAlign: "center", padding: "12px 14px" }}>
                 Retour à la connexion

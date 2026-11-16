@@ -398,7 +398,7 @@ a { color: inherit; text-decoration: none; }
     padding: 0 10px;
   }
 
-  .app-header-grid{
+  .app-header-grid:not(.app-header-grid--centered){
     grid-template-columns: 48px minmax(0,1fr) 120px;
   }
 

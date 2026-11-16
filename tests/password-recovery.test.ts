@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createClient } from "@supabase/supabase-js";
-import { capturePasswordRecoveryUrl, createPasswordRecoveryClient } from "../lib/passwordRecovery.ts";
+import { capturePasswordRecoveryUrl, createPasswordRecoveryClient, preparePasswordRecoveryOnce, releasePasswordRecoveryPreparation } from "../lib/passwordRecovery.ts";
 import { coachComponentHarness, elements, flush, textContent } from "./helpers/coachComponentHarness.ts";
 
 const endpoint = "https://recovery-test.supabase.co";
@@ -83,20 +83,46 @@ test("reset page publishes only after password success and has no sign-in event 
   assert.ok(page.indexOf("await passwordClient.auth.updateUser") < page.indexOf("await supabase.auth.setSession"));
   assert.match(page, /if \(updateError\)\s*\{[^}]*return;/);
   assert.doesNotMatch(page, /onAuthStateChange/);
-  assert.match(page, /preparation.current \?\?= prepare\(\)/);
+  assert.match(page, /preparePasswordRecoveryOnce\(/);
   const shared = readFileSync(new URL("../lib/supabaseClient.ts", import.meta.url), "utf8");
   assert.ok(shared.indexOf("= capturePasswordRecoveryUrl") < shared.indexOf("= createBrowserClient"));
 });
 
-test("reset form leaves navigation unauthenticated until a successful password submission", async () => {
+test("a remount keeps the preparation but leaving the reset route discards it", async () => {
+  const link = `https://activitee.app/reset-password?token_hash=lifetime-${crypto.randomUUID()}`;
+  let count = 0;
+  const prepare = async () => { count++; return { valid: true, client: null }; };
+  const first = preparePasswordRecoveryOnce(link, prepare);
+  await first;
+  releasePasswordRecoveryPreparation(link, "/reset-password");
+  assert.equal(preparePasswordRecoveryOnce(link, prepare), first);
+  assert.equal(count, 1);
+  releasePasswordRecoveryPreparation(link, "/player");
+  assert.notEqual(preparePasswordRecoveryOnce(link, prepare), first);
+  await preparePasswordRecoveryOnce(link, prepare);
+  assert.equal(count, 2);
+  releasePasswordRecoveryPreparation(link, "/login");
+});
+
+test("sign-out remounts the reset form without consuming the link twice or losing its private session", async () => {
   const previousDocument = globalThis.document;
+  const previousWindow = globalThis.window;
   globalThis.document = { cookie: "" } as Document;
+  globalThis.window = { location: { pathname: "/reset-password" } } as Window & typeof globalThis;
   let authenticated = true;
   let rejectPassword = true;
   let destination = "";
   const calls: string[] = [];
+  let h: ReturnType<typeof coachComponentHarness>;
   const application = { auth: {
-    signOut: async () => { authenticated = false; calls.push("signOut"); return { error: null }; },
+    signOut: async () => {
+      authenticated = false; calls.push("signOut");
+      assert.equal(calls.filter(call => call === "signOut").length, 1);
+      // AuthSessionBoundary clears retained pages on SIGNED_OUT. Recreate all
+      // component hook state just as SessionPageBoundary does in production.
+      h.cleanup(); h = makeHarness(); h.render();
+      return { error: null };
+    },
     setSession: async () => { authenticated = true; calls.push("publish"); return { error: null }; },
     getSession: async () => ({ data: { session: authenticated ? session : null } }),
   } };
@@ -105,16 +131,17 @@ test("reset form leaves navigation unauthenticated until a successful password s
     getSession: async () => ({ data: { session } }),
     updateUser: async () => { calls.push("password"); return { error: rejectPassword ? { message: "Password rejected" } : null }; },
   } };
-  const search = "token_hash=private-hash&type=recovery";
-  const h = coachComponentHarness("app/reset-password/page.tsx", {
+  const search = `token_hash=ui-${crypto.randomUUID()}&type=recovery`;
+  function makeHarness() { return coachComponentHarness("app/reset-password/page.tsx", {
     searchParams: search,
     fetch: async () => Response.json({ redirectTo: "/player" }),
     modules: {
       "next/navigation": { useSearchParams: () => new URLSearchParams(search), useRouter: () => ({ replace: path => { destination = path; } }) },
       "@/lib/supabaseClient": { supabase: application, passwordRecoveryUrl: `https://activitee.app/reset-password?${search}` },
-      "@/lib/passwordRecovery": { createPasswordRecoveryClient: async () => recovery },
+      "@/lib/passwordRecovery": { createPasswordRecoveryClient: async () => recovery, preparePasswordRecoveryOnce, releasePasswordRecoveryPreparation },
     },
-  });
+  }); }
+  h = makeHarness();
   try {
     h.render(); await flush();
     let tree = h.render();
@@ -135,5 +162,6 @@ test("reset form leaves navigation unauthenticated until a successful password s
   } finally {
     h.cleanup();
     globalThis.document = previousDocument;
+    globalThis.window = previousWindow;
   }
 });
