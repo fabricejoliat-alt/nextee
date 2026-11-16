@@ -7,7 +7,7 @@ import { adminFetch } from "@/lib/adminFetch";
 import styles from "./BrevoContactsAdmin.module.css";
 
 type Snapshot = {
-  config: { enabled: boolean; apiKeyConfigured: boolean; listId: number | null; webhookConfigured: boolean };
+  config: { enabled: boolean; automatic: boolean; apiKeyConfigured: boolean; listId: number | null; webhookConfigured: boolean };
   stats: { contacts: number; pending: number; removals: number; failed: number; suppressed: number };
   control: { last_started_at: string | null; last_finished_at: string | null; last_error: string | null; lease_until: string | null; cooldown_until: string | null; target_list_id: number | null };
   contacts: { email: string; attributes: Record<string, string | boolean> }[];
@@ -42,8 +42,8 @@ export default function BrevoContactsAdmin() {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Synchronisation impossible.");
       setNotice(body.status === "busy" ? "Une synchronisation est en cours ou Brevo demande de patienter."
-        : body.status === "disabled" ? "La synchronisation automatique est désactivée."
-        : `${body.processed} contact(s) traité(s), ${body.failed} échec(s). Les contacts restants seront repris automatiquement.`);
+        : body.status === "disabled" ? "La synchronisation est désactivée."
+        : `${body.processed} contact(s) traité(s), ${body.failed} échec(s). ${data?.config.automatic ? "Les contacts restants seront repris automatiquement." : "Relancez un lot pour traiter les contacts restants."}`);
       await load();
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Synchronisation impossible."); }
     finally { setBusy(false); }
@@ -57,8 +57,8 @@ export default function BrevoContactsAdmin() {
     {notice && <p className={styles.notice} role="status">{notice}</p>}
     {loading && <p role="status">Chargement…</p>}
     {data && <>
-      <section className={styles.card} aria-labelledby="brevo-status"><h2 id="brevo-status">Synchronisation {data.config.enabled ? "activée" : "désactivée"}</h2>
-        <p>Les coordonnées et rattachements sont vérifiés toutes les cinq minutes, puis envoyés par lots de 25 contacts.</p>
+      <section className={styles.card} aria-labelledby="brevo-status"><h2 id="brevo-status">{!data.config.enabled ? "Synchronisation désactivée" : data.config.automatic ? "Synchronisation automatique activée" : "Synchronisation manuelle"}</h2>
+        <p>{data.config.automatic ? "Les coordonnées et rattachements sont vérifiés toutes les cinq minutes, puis envoyés par lots de 25 contacts." : "Lancez la synchronisation avec le bouton ci-dessous, par lots de 25 contacts. Aucun envoi automatique de contacts n’est activé."}</p>
         <dl className={styles.stats}>
           <div><dt>Contacts avec email</dt><dd>{data.stats.contacts}</dd></div>
           <div><dt>À mettre à jour</dt><dd>{data.stats.pending}</dd></div>
@@ -69,7 +69,7 @@ export default function BrevoContactsAdmin() {
         <p>Dernière exécution terminée : {date(data.control.last_finished_at)}</p>
         <p>Liste Brevo : {data.config.listId ?? "à configurer"} · Connexion : {data.config.apiKeyConfigured ? "clé configurée" : "à configurer"} · Retour des désabonnements : {data.config.webhookConfigured ? "secret configuré" : "à configurer"}</p>
         {!ready && <p className={styles.notice}>L’activation nécessite la connexion Brevo, une liste dédiée et le retour des désabonnements. L’aperçu ci-dessous reste disponible.</p>}
-        {data.control.last_error && <p className={styles.error}>La dernière exécution a rencontré une erreur ({data.control.last_error}). Les contacts concernés seront réessayés.</p>}
+        {data.control.last_error && <p className={styles.error}>La dernière exécution a rencontré une erreur ({data.control.last_error}). {data.config.automatic ? "Les contacts concernés seront réessayés." : "Relancez un lot pour réessayer les contacts concernés."}</p>}
         <div className={styles.actions}><button type="button" disabled={!ready || busy || loading} onClick={() => void synchronize()}>{busy ? "Synchronisation…" : "Synchroniser maintenant"}</button>
           <button type="button" disabled={busy || loading} onClick={() => { setLoading(true); setError(""); void load().catch(cause => setError(cause.message)).finally(() => setLoading(false)); }}>Actualiser</button></div>
       </section>

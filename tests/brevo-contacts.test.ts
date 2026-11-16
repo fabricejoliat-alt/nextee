@@ -68,6 +68,8 @@ test("webhook normalization, suppression hashes and secrets", () => {
   assert.equal(secretMatches("Bearer a", "Bearer a"), true);
   assert.equal(brevoContactConfig({ BREVO_CONTACTS_LIST_ID: "bad" }).listId, null);
   assert.equal(brevoContactConfig({ BREVO_CONTACTS_LIST_ID: "42" }).enabled, false);
+  assert.equal(brevoContactConfig({ BREVO_CONTACTS_SYNC_ENABLED: "true" }).automatic, false);
+  assert.equal(brevoContactConfig({ BREVO_CONTACTS_SYNC_ENABLED: "true", CRON_SECRET: "test" }).automatic, true);
 });
 test("cron rejects unauthorized requests before opening the database", async () => {
   const route = loadManagerModule<{ GET: (req: Request) => Promise<Response> }>("app/api/cron/brevo-contacts/route.ts", {

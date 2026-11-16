@@ -12,7 +12,9 @@ type SyncRow = { email: string; user_ids: string[]; attributes: ContactAttribute
 
 export function brevoContactConfig(env: Record<string, string | undefined> = process.env) {
   const listId = Number(env.BREVO_CONTACTS_LIST_ID);
-  return { enabled: env.BREVO_CONTACTS_SYNC_ENABLED === "true", apiKeyConfigured: Boolean(env.BREVO_API_KEY),
+  return { enabled: env.BREVO_CONTACTS_SYNC_ENABLED === "true",
+    automatic: env.BREVO_CONTACTS_SYNC_ENABLED === "true" && Boolean(env.CRON_SECRET),
+    apiKeyConfigured: Boolean(env.BREVO_API_KEY),
     listId: Number.isSafeInteger(listId) && listId > 0 ? listId : null,
     webhookConfigured: Boolean(env.BREVO_CONTACTS_WEBHOOK_SECRET) };
 }
