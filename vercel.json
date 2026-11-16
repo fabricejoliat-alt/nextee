@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/cron/brevo-contacts",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/marketplace-messages",
       "schedule": "*/5 * * * *"
     },
