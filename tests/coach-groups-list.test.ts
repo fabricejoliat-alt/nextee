@@ -21,7 +21,7 @@ const find = (tree: Element, predicate: (node: Element) => boolean) => {
 };
 
 
-test("Coach groups show only active authorized groups with five columns and an accessible eye link", async (context) => {
+test("Coach groups have separate cards with junior and coach sections and an accessible eye link", async (context) => {
   const db = database();
   const harness = coachComponentHarness(page, { fetch: db.fetch });
   context.after(() => harness.cleanup());
@@ -30,15 +30,18 @@ test("Coach groups show only active authorized groups with five columns and an a
   for (const locale of ["fr", "en", "de", "it"] as const) {
     harness.setLocale(locale);
     const tree = harness.render();
-    assert.deepEqual(elements(tree).filter((node) => node.type === "th").map(textContent), [
-      "coach.groups.group", "organization.context", "coach.nav.players", "coach.groups.coaches", "coach.directory.actions",
-    ].map((key) => messages[locale][key]));
-    const body = find(tree, (node) => node.type === "tbody");
-    const rows = elements(body).filter((node) => node.type === "tr");
+    assert.ok(!elements(tree).some(node => node.type === "table"));
+    const rows = elements(tree).filter(node => node.type === "article");
     assert.equal(rows.length, 1);
     assert.ok(textContent(rows[0]).includes("Junior 1"));
     assert.ok(textContent(rows[0]).includes("U14"));
-    assert.deepEqual(elements(rows[0]).filter((node) => node.type === "td").slice(1, 4).map(node => textContent(node).trim()), ["Club témoin", "Léo Moix", "JS Jean-Yves Saubaber"]);
+    assert.ok(textContent(rows[0]).includes("Club témoin"));
+    const sections = elements(rows[0]).filter(node => node.type === "section");
+    assert.equal(sections.length, 2);
+    assert.ok(textContent(find(sections[0], node => node.type === "h3")).includes(messages[locale]["coach.nav.players"]));
+    assert.ok(textContent(find(sections[1], node => node.type === "h3")).includes(messages[locale]["coach.groups.coaches"]));
+    assert.ok(textContent(sections[0]).includes("Léo Moix"));
+    assert.ok(textContent(sections[1]).includes("Jean-Yves Saubaber"));
     const link = find(rows[0], (node) => node.type === "a");
     assert.equal(link.props.href, "/coach/groups/active");
     assert.equal(link.props["aria-label"], messages[locale]["coach.directory.viewNamed"].replace("{name}", "Junior 1"));
@@ -55,7 +58,7 @@ test("group search and transfer-club visibility keep inactive and special groups
   context.after(() => harness.cleanup());
   harness.render(); await flush();
   let tree = harness.render();
-  assert.equal(elements(find(tree, (node) => node.type === "tbody")).filter((node) => node.type === "tr").length, 2);
+  assert.equal(elements(tree).filter((node) => node.type === "article").length, 2);
   assert.ok(textContent(tree).includes("Autre groupe"));
   const readCount = db.reads.length;
   find(tree, (node) => node.type === "input").props.onChange({ target: { value: "U14" } });
@@ -64,7 +67,7 @@ test("group search and transfer-club visibility keep inactive and special groups
   assert.ok(!textContent(tree).includes("Autre groupe"));
   find(tree, (node) => node.type === "input").props.onChange({ target: { value: "inactif" } });
   tree = harness.render();
-  assert.ok(!elements(tree).some((node) => node.type === "table"));
+  assert.ok(!elements(tree).some((node) => node.type === "article"));
   assert.ok(textContent(tree).includes(messages.fr["coach.groups.empty"]));
   assert.equal(db.reads.length, readCount);
 });
@@ -79,7 +82,7 @@ test("empty memberships and failed group reads never show stale table data", asy
   const failedTree = harness.render();
   assert.ok(textContent(failedTree).includes(messages.fr["coach.error.load"]));
   assert.ok(!textContent(failedTree).includes("private database detail"));
-  assert.ok(!elements(failedTree).some((node) => node.type === "table"));
+  assert.ok(!elements(failedTree).some((node) => node.type === "article"));
   fail = false;
   find(failedTree, (node) => node.type === "button" && textContent(node) === messages.fr["coach.retry"]).props.onClick();
   harness.render(); await flush();

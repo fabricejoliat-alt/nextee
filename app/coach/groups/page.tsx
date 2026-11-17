@@ -10,7 +10,7 @@ import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { coachText } from "@/lib/i18n/coachMessages";
 import { coachUiErrorKey, coachCaughtErrorKey } from "@/lib/coachUiErrors";
 import CoachListSkeleton from "@/components/coach/CoachListSkeleton";
-// Reuse the Camps module so Coach tables remain visually identical to Manager tables.
+// Reuse the shared Coach page controls and typography.
 import styles from "@/app/manager/camps/Camps.module.css";
 import groupStyles from "./CoachGroups.module.css";
 
@@ -43,5 +43,30 @@ export default function CoachGroupsPage() {
         ? <img src={person.avatar_url} alt="" /> : `${person.first_name?.[0] ?? ""}${person.last_name?.[0] ?? ""}`.toUpperCase()}</span><span>{name}</span></li>;
     })}</ul>;
   }
-  return <main className={`${styles.page} ${groupStyles.page}`}><nav data-ui="breadcrumb" className={styles.breadcrumb} aria-label={t("common.breadcrumb")}><Link href="/coach">{t("common.coach")}</Link><span>/</span><strong>{t("coach.nav.groups")}</strong></nav><header className={styles.topline}><div><h1>{t("coach.nav.groups")}</h1><p className={styles.lead}>{t("coach.groups.intro")}</p></div></header>{error ? <div className={styles.alertError} role="alert">{t(error)} <button type="button" className={styles.secondary} onClick={() => setReload((value) => value + 1)}>{t("coach.retry")}</button></div> : null}<section className={styles.panel}><div className={styles.panelHeader}><div><h2>{t("coach.home.groups")}</h2><p>{loading ? t("common.loading") : error ? "—" : coachText(t, filtered.length === 1 ? "coach.groups.one" : "coach.groups.count", { count: filtered.length })}</p></div></div><div className={styles.toolbar}><label className={styles.field}><span>{t("coach.directory.search")}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("organization.groupSearch")} /></label></div>{loading ? <CoachListSkeleton label={t("coach.groups.loading")} /> : error ? null : !filtered.length ? <div className={styles.empty}><Users size={21} aria-hidden="true" />{t("coach.groups.empty")}</div> : <div className={styles.tableWrap}><table className={`${styles.table} ${groupStyles.table}`}><thead><tr><th>{t("coach.groups.group")}</th><th>{t("organization.context")}</th><th>{t("coach.nav.players")}</th><th>{t("coach.groups.coaches")}</th><th>{t("coach.directory.actions")}</th></tr></thead><tbody>{filtered.map((group) => <tr key={group.id}><td data-label={t("coach.groups.group")}><div className={styles.titleCell}><b>{group.name}</b><span className={styles.muted}>{group.categories.slice(0, 3).join(" · ") || t("coach.groups.noCategory")}{group.isHead ? ` · ${t("coach.groups.head")}` : !group.isAssigned ? ` · ${t("coach.groups.mobility")}` : ""}</span></div></td><td data-label={t("organization.context")}>{group.clubName || t("organization.context")}</td><td data-label={t("coach.nav.players")}>{people(group.players)}</td><td data-label={t("coach.groups.coaches")}>{people(group.coaches)}</td><td data-label={t("coach.directory.actions")}><Link className={styles.iconButton} href={`/coach/groups/${group.id}`} aria-label={coachText(t, "coach.directory.viewNamed", { name: group.name })} title={t("coach.directory.view")}><Eye size={16} aria-hidden="true" /></Link></td></tr>)}</tbody></table></div>}</section></main>;
+  return <main className={`${styles.page} ${groupStyles.page}`}>
+    <nav data-ui="breadcrumb" className={styles.breadcrumb} aria-label={t("common.breadcrumb")}><Link href="/coach">{t("common.coach")}</Link><span>/</span><strong>{t("coach.nav.groups")}</strong></nav>
+    <header className={styles.topline}><div><h1>{t("coach.nav.groups")}</h1><p className={styles.lead}>{t("coach.groups.intro")}</p></div></header>
+    {error ? <div className={styles.alertError} role="alert">{t(error)} <button type="button" className={styles.secondary} onClick={() => setReload((value) => value + 1)}>{t("coach.retry")}</button></div> : null}
+    <section className={styles.panel}>
+      <div className={styles.panelHeader}><div><h2>{t("coach.home.groups")}</h2><p>{loading ? t("common.loading") : error ? "—" : coachText(t, filtered.length === 1 ? "coach.groups.one" : "coach.groups.count", { count: filtered.length })}</p></div></div>
+      <div className={styles.toolbar}><label className={styles.field}><span>{t("coach.directory.search")}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t("organization.groupSearch")} /></label></div>
+      {loading ? <CoachListSkeleton label={t("coach.groups.loading")} /> : error ? null : !filtered.length ? <div className={styles.empty}><Users size={21} aria-hidden="true" />{t("coach.groups.empty")}</div> : null}
+    </section>
+    {!loading && !error && filtered.length > 0 ? <div className={groupStyles.groups}>
+      {filtered.map((group) => <article key={group.id} className={groupStyles.group} aria-labelledby={`group-${group.id}`}>
+        <header className={groupStyles.groupHeader}>
+          <div className={groupStyles.groupIdentity}>
+            <p className={groupStyles.organization}>{group.clubName || t("organization.context")}</p>
+            <h2 id={`group-${group.id}`}>{group.name}</h2>
+            <p className={groupStyles.meta}>{group.categories.slice(0, 3).join(" · ") || t("coach.groups.noCategory")}{group.isHead ? ` · ${t("coach.groups.head")}` : !group.isAssigned ? ` · ${t("coach.groups.mobility")}` : ""}</p>
+          </div>
+          <Link className={styles.iconButton} href={`/coach/groups/${group.id}`} aria-label={coachText(t, "coach.directory.viewNamed", { name: group.name })} title={t("coach.directory.view")}><Eye size={18} aria-hidden="true" /></Link>
+        </header>
+        <div className={groupStyles.rosters}>
+          <section className={groupStyles.roster} aria-labelledby={`juniors-${group.id}`}><h3 id={`juniors-${group.id}`}>{t("coach.nav.players")}<span className={groupStyles.count}>{group.players?.length ?? 0}</span></h3>{people(group.players)}</section>
+          <section className={groupStyles.roster} aria-labelledby={`coaches-${group.id}`}><h3 id={`coaches-${group.id}`}>{t("coach.groups.coaches")}<span className={groupStyles.count}>{group.coaches?.length ?? 0}</span></h3>{people(group.coaches)}</section>
+        </div>
+      </article>)}
+    </div> : null}
+  </main>;
 }
