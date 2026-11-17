@@ -21,7 +21,7 @@ function database(options: { empty?: boolean; fail?: () => boolean } = {}) {
     reads.push(url);
     if (options.fail?.()) return Response.json({ error: "private database detail" }, { status: 500 });
     return Response.json({ clubs: options.empty ? [] : [{ id: "club-a", name: "Club A" }, { id: "club-b", name: "Club B" }],
-      players: options.empty ? [] : profiles.slice(0, 3).map((profile, index) => ({ ...profile,
+      players: options.empty ? [] : profiles.slice(0, 3).map((profile, index) => ({ ...profile, can_access_details: true,
         club_ids: index === 0 ? ["club-a", "club-b"] : index === 1 ? ["club-b"] : ["club-a"],
         club_names: index === 0 ? ["Club A", "Club B"] : index === 1 ? ["Club B"] : ["Club A"],
       })) });
@@ -111,4 +111,16 @@ test("empty memberships and failed directory reads show no junior rows and suppo
   find(failedTree, (node) => node.type === "button" && textContent(node) === messages.fr["coach.retry"]).props.onClick();
   harness.render(); await flush();
   assert.equal(rows(harness.render()).length, 3);
+});
+
+test("pending juniors remain visible without a private dossier link", async (context) => {
+  const harness = coachComponentHarness(page, { fetch: async () => Response.json({ clubs: [], players: [
+    { ...profiles[0], handicap: null, can_access_details: false, club_ids: ["club-a"], club_names: ["Club A"] },
+  ] }) });
+  context.after(() => harness.cleanup());
+  harness.render(); await flush();
+  const tree = harness.render();
+  assert.equal(rows(tree).length, 1);
+  assert.ok(textContent(rows(tree)[0]).includes("Alex Martin"));
+  assert.ok(!elements(rows(tree)[0]).some(node => node.type === "a"));
 });

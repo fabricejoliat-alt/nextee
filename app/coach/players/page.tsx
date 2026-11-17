@@ -16,7 +16,7 @@ import playerListStyles from "./CoachPlayersPage.module.css";
 
 type Club = { id: string; name: string | null };
 type Profile = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null; handicap: number | null; sex: string | null };
-type Player = Profile & { club_ids: string[]; club_names: string[] };
+type Player = Profile & { can_access_details: boolean; club_ids: string[]; club_names: string[] };
 
 function name(profile: Pick<Profile, "first_name" | "last_name">) { return `${profile.first_name ?? ""} ${profile.last_name ?? ""}`.trim() || "—"; }
 function initials(profile: Profile) { return `${profile.first_name?.[0] ?? ""}${profile.last_name?.[0] ?? ""}`.toUpperCase() || "J"; }
@@ -66,9 +66,9 @@ export default function CoachPlayersPage() {
                   <b>{playerName}</b>{" "}
                   <span className={playerListStyles.handicap} aria-label={`${t("coach.directory.handicap")} : ${handicap}`}>({handicap})</span>
                 </div>
-                <Link className={`${styles.iconButton} ${playerListStyles.viewButton}`} href={`/coach/players/${player.id}?returnTo=${encodeURIComponent("/coach/players")}`} aria-label={coachText(t, "coach.directory.viewNamed", { name: playerName })} title={t("coach.directory.view")}>
+                {player.can_access_details ? <Link className={`${styles.iconButton} ${playerListStyles.viewButton}`} href={`/coach/players/${player.id}?returnTo=${encodeURIComponent("/coach/players")}`} aria-label={coachText(t, "coach.directory.viewNamed", { name: playerName })} title={t("coach.directory.view")}>
                   <Eye size={18} aria-hidden="true" />
-                </Link>
+                </Link> : null}
               </li>
             );
           })}

@@ -50,13 +50,25 @@ test("directory returns active assigned groups, with authorized counts and no ot
   assert.equal(f.writes.length, 0);
 });
 
-test("junior projection deduplicates assigned juniors and only returns allowed memberships", async () => {
+test("junior projection includes pending assigned juniors while protecting dossier details", async () => {
   const f = fixture(); const result = await f.load("players");
-  assert.deepEqual(result.players.map((p: Row) => p.id), ["allowed"]);
+  assert.deepEqual(result.players.map((p: Row) => p.id), ["allowed", "denied"]);
+  assert.equal(result.players[0].can_access_details, true);
+  assert.equal(result.players[0].handicap, 10);
+  assert.equal(result.players[1].can_access_details, false);
+  assert.equal(result.players[1].handicap, null);
   assert.deepEqual(result.players[0].club_ids, [org]);
   assert.deepEqual(result.players[0].club_names, ["Sion"]);
   assert.equal(f.reads.includes("coach_group_categories"), false);
   assert.ok(f.rpcs.some(call => call.name === "organization_actor_access" && call.args.p_player === "denied"));
+});
+
+test("junior directory excludes suspended and inactive affiliations", async () => {
+  const f = fixture();
+  f.tables.academy_roster_entries = [{ academy_id: org, player_id: "denied", status: "suspended" }];
+  assert.deepEqual((await f.load("players")).players.map((p: Row) => p.id), ["allowed"]);
+  f.tables.club_members.find(row => row.user_id === "allowed")!.is_active = false;
+  assert.deepEqual((await f.load("players")).players, []);
 });
 
 test("transfer permission includes other operational groups but still checks each junior", async () => {
@@ -65,7 +77,7 @@ test("transfer permission includes other operational groups but still checks eac
   assert.deepEqual(groups.groups.map((g: Row) => g.id), ["head", "linked", "unassigned"]);
   assert.equal(groups.groups[2].isAssigned, false);
   assert.equal(groups.groups[2].playerCount, 1);
-  assert.deepEqual((await f.load("players")).players.map((p: Row) => p.id), ["allowed", "mobile"]);
+  assert.deepEqual((await f.load("players")).players.map((p: Row) => p.id), ["allowed", "denied", "mobile"]);
 });
 
 for (const options of [{ membership: false }, { legal: false }, { access: false }]) {

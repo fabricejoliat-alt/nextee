@@ -60,14 +60,13 @@ export async function loadCoachDirectory(db: SupabaseClient, actorId: string, vi
     : allGroups.filter((row) => assignedIds.has(row.id) || transferClubs.has(row.club_id)).map((row) => row.id);
   const roster = rosterGroupIds.length ? await coachRows<RosterRow>((from, to) => db.from("coach_group_players")
     .select("group_id,player_user_id").in("group_id", rosterGroupIds).order("group_id").order("player_user_id").range(from, to)) : [];
-  const assignedPlayers = new Set(roster.filter((row) => assignedIds.has(row.group_id)).map((row) => row.player_user_id));
+  const groupClubs = new Map(allGroups.map((row) => [row.id, row.club_id]));
+  const assignedPlayers = new Set(roster.filter((row) => assignedIds.has(row.group_id)).map((row) => `${groupClubs.get(row.group_id)}:${row.player_user_id}`));
   const members = await coachRows<Membership>((from, to) => db.from("club_members").select("club_id,user_id,role")
     .in("club_id", clubIds).eq("role", "player").eq("is_active", true).order("club_id").order("user_id").range(from, to));
   const visibleMembers = (await Promise.all(clubIds.map(async (clubId) => {
-    const candidates = members.filter((row) => row.club_id === clubId && (assignedPlayers.has(row.user_id) || transferClubs.has(clubId)));
-    const allowed = view === "groups"
-      ? await coachRosterPlayerIds(db, actorId, clubId, candidates.map((row) => row.user_id))
-      : await authorizedCoachPlayers(db, actorId, clubId, candidates.map((row) => row.user_id));
+    const candidates = members.filter((row) => row.club_id === clubId && (assignedPlayers.has(`${clubId}:${row.user_id}`) || transferClubs.has(clubId)));
+    const allowed = await coachRosterPlayerIds(db, actorId, clubId, candidates.map((row) => row.user_id));
     return candidates.filter((row) => allowed.has(row.user_id));
   }))).flat();
   const allowedInClub = new Set(visibleMembers.map((row) => `${row.club_id}:${row.user_id}`));
@@ -83,13 +82,18 @@ export async function loadCoachDirectory(db: SupabaseClient, actorId: string, vi
       categories: categories.filter((row) => row.group_id === group.id).map((row) => row.category),
     })) };
   }
+  const detailAccess = new Set((await Promise.all(clubIds.map(async (clubId) => {
+    const ids = visibleMembers.filter((row) => row.club_id === clubId).map((row) => row.user_id);
+    return [...await authorizedCoachPlayers(db, actorId, clubId, ids)];
+  }))).flat());
   const playerIds = [...new Set(visibleMembers.map((row) => row.user_id))];
   const profiles = playerIds.length ? await coachRows<Profile>((from, to) => db.from("profiles")
     .select("id,first_name,last_name,avatar_url,handicap,sex").in("id", playerIds).order("id").range(from, to)) : [];
   return { clubs, groups: [], players: profiles.map((profile) => {
     const ids = [...new Set(visibleMembers.filter((row) => row.user_id === profile.id).map((row) => row.club_id))];
     return { id: profile.id, first_name: profile.first_name, last_name: profile.last_name,
-      avatar_url: profile.avatar_url, handicap: profile.handicap, sex: profile.sex,
+      avatar_url: profile.avatar_url, handicap: detailAccess.has(profile.id) ? profile.handicap : null, sex: profile.sex,
+      can_access_details: detailAccess.has(profile.id),
       club_ids: ids, club_names: ids.map((id) => clubNames.get(id) ?? "") };
   }) };
 }
