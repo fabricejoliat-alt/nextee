@@ -1,3 +1,4 @@
+import { coachRosterPlayerIds } from "@/lib/server/coachRoster";
 import { authorizedCoachPlayers } from "@/lib/coachAccess";
 import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
@@ -39,7 +40,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     if (eventRes.error) return NextResponse.json({ error: eventRes.error.message }, { status: 400 });
     if (!eventRes.data?.id) return NextResponse.json({ error: "Event not found" }, { status: 404 });
 
-    const event = eventRes.data as any;
+    const event = eventRes.data;
     const groupId = String(event.group_id ?? "").trim();
     const clubId = String(event.club_id ?? "").trim();
     if(requestedOrganizationId(req.url)&&requestedOrganizationId(req.url)!==clubId)return NextResponse.json({error:"Forbidden"},{status:403});
@@ -109,7 +110,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
       }
     }
     const permitted=await authorizedCoachPlayers(supabaseAdmin,callerId,clubId,attendeeRows.map(row=>row.player_id));
-    attendeeRows=attendeeRows.filter(row=>permitted.has(row.player_id));
+    const rosterPermitted = await coachRosterPlayerIds(supabaseAdmin, callerId, clubId, attendeeRows.map(row => row.player_id));
+    attendeeRows = attendeeRows.filter(row => rosterPermitted.has(row.player_id));
     const playerIds = uniq(attendeeRows.map((row) => row.player_id));
     const feedbackRows = ((feedbackRes.data ?? []) as Array<{ player_id: string | null; coach_id: string | null }>)
       .map((row) => ({
@@ -117,7 +119,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
         coach_id: String(row.coach_id ?? "").trim() || null,
       }))
       .filter((row) => row.player_id && permitted.has(row.player_id));
-    const selectedCoachIds = uniq((eventCoachesRes.data ?? []).map((row: any) => String(row.coach_id ?? "").trim()));
+    const selectedCoachIds = uniq((eventCoachesRes.data ?? []).map((row) => String(row.coach_id ?? "").trim()));
 
     const [profilesRes, clubCoachesRes] = await Promise.all([
       playerIds.length > 0
@@ -135,15 +137,21 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     if (profilesRes.error) return NextResponse.json({ error: profilesRes.error.message }, { status: 400 });
     if (clubCoachesRes.error) return NextResponse.json({ error: clubCoachesRes.error.message }, { status: 400 });
 
-    const profilesById: Record<string, any> = {};
-    (profilesRes.data ?? []).forEach((profile: any) => {
+    const profilesById: Record<string, { id: string; first_name: string | null; last_name: string | null;
+      avatar_url: string | null; handicap: number | null }> = {};
+    (profilesRes.data ?? []).forEach((profile) => {
       profilesById[String(profile.id)] = profile;
     });
 
     const attendees = attendeeRows
       .map((row) => ({
         ...row,
-        profile: profilesById[String(row.player_id)] ?? null,
+        can_access_details: permitted.has(row.player_id),
+        profile: profilesById[String(row.player_id)] ? {
+          id: row.player_id, first_name: profilesById[row.player_id].first_name,
+          last_name: profilesById[row.player_id].last_name, avatar_url: profilesById[row.player_id].avatar_url,
+          handicap: permitted.has(row.player_id) ? profilesById[row.player_id].handicap : null,
+        } : null,
       }))
       .sort((a, b) => {
         const aName = `${a.profile?.first_name ?? ""} ${a.profile?.last_name ?? ""}`.trim();
@@ -152,7 +160,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
       });
 
     const coachIds = uniq([
-      ...((clubCoachesRes.data ?? []).map((row: any) => String(row.user_id ?? "").trim())),
+      ...((clubCoachesRes.data ?? []).map((row) => String(row.user_id ?? "").trim())),
       ...selectedCoachIds,
       ...feedbackRows.map((row) => String(row.coach_id ?? "").trim()),
     ]);
@@ -163,7 +171,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
         .select("id,first_name,last_name")
         .in("id", coachIds);
       if (coachProfilesRes.error) return NextResponse.json({ error: coachProfilesRes.error.message }, { status: 400 });
-      (coachProfilesRes.data ?? []).forEach((profile: any) => {
+      (coachProfilesRes.data ?? []).forEach((profile) => {
         const id = String(profile.id ?? "").trim();
         if (!id) return;
         coachesById[id] = {
@@ -202,8 +210,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
     return NextResponse.json({
       event,
       campDay: campDayRes.data ?? null,
-      clubName: String((clubRes.data as any)?.name ?? "Club"),
-      groupName: String((groupRes.data as any)?.name ?? "Groupe"),
+      clubName: String(clubRes.data?.name ?? "Club"),
+      groupName: String(groupRes.data?.name ?? "Groupe"),
       attendees,
       coaches,
       selectedCoachIds,

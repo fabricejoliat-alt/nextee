@@ -49,3 +49,5 @@
   .pointSummary > div { padding: 10px 8px; }
   .pointSummary strong { font-size: 16px; }
 }
+
+.filterLabel { display: flex; align-items: center; gap: 7px; }

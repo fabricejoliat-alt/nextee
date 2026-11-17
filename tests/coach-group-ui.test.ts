@@ -16,6 +16,7 @@ const plannedEvent: CoachPlanningEvent = {
 };
 const planningResponse = (groupId: string, events = [plannedEvent], coachClubCount = 1) => Response.json({
   group: { ...originalGroup, id: groupId }, club_name: "Club témoin", can_plan: false, coachClubCount,
+  group_players: [{ id: "player-link", group_id: groupId, player_user_id: "junior", can_access_details: true, profiles: profile }],
   events: events.map((event) => ({ ...event, group_id: groupId })),
 });
 function coachComponentHarness(path: string, options: Parameters<typeof baseHarness>[1] & { planningFetch?: typeof fetch }) {
@@ -269,7 +270,7 @@ test("successful group rename refreshes the saved title and does not clear the c
 });
 
 test("every failed group section hides incomplete data and offers a localized retry", async () => {
-  for (const table of ["coach_groups", "club_members", "coach_group_categories", "coach_group_players", "coach_group_coaches"]) {
+  for (const table of ["coach_groups", "club_members", "coach_group_categories", "coach_group_coaches"]) {
     let fail = true;
     const db = database({ intercept: (query) => fail && query.table === table ? { data: null, error: { message: "secret SQL detail" } } : undefined });
     const harness = coachComponentHarness(page, { params: { id: "group" }, database: db, fetch: noFetch });

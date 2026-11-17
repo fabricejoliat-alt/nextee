@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { coachRosterPlayerIds } from "@/lib/server/coachRoster";
 import { authorizedCoachPlayers } from "@/lib/coachAccess";
 import { coachRows } from "@/lib/server/coachRows";
 
@@ -64,7 +65,9 @@ export async function loadCoachDirectory(db: SupabaseClient, actorId: string, vi
     .in("club_id", clubIds).eq("role", "player").eq("is_active", true).order("club_id").order("user_id").range(from, to));
   const visibleMembers = (await Promise.all(clubIds.map(async (clubId) => {
     const candidates = members.filter((row) => row.club_id === clubId && (assignedPlayers.has(row.user_id) || transferClubs.has(clubId)));
-    const allowed = await authorizedCoachPlayers(db, actorId, clubId, candidates.map((row) => row.user_id));
+    const allowed = view === "groups"
+      ? await coachRosterPlayerIds(db, actorId, clubId, candidates.map((row) => row.user_id))
+      : await authorizedCoachPlayers(db, actorId, clubId, candidates.map((row) => row.user_id));
     return candidates.filter((row) => allowed.has(row.user_id));
   }))).flat();
   const allowedInClub = new Set(visibleMembers.map((row) => `${row.club_id}:${row.user_id}`));

@@ -4,7 +4,7 @@ import { useRetainedLoading } from "@/lib/useRetainedLoading";
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, SlidersHorizontal } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { ListLoadingBlock } from "@/components/ui/LoadingBlocks";
@@ -164,8 +164,8 @@ export default function CoachOrderOfMeritPage() {
 
   const [orgs, setOrgs] = useState<ManagedOrg[]>([]);
   const [organizationId, setOrganizationId] = useState("");
-  const [rankingFrom, setRankingFrom] = useState(yearStartInZurich);
-  const [rankingTo, setRankingTo] = useState(todayInZurich);
+  const rankingFrom = yearStartInZurich;
+  const rankingTo = todayInZurich;
   const [rankingMode, setRankingMode] = useState<"net" | "brut">("net");
   const [rankingRows, setRankingRows] = useState<OMRankingRow[]>([]);
   const [eligiblePlayers, setEligiblePlayers] = useState<EligiblePlayer[]>([]);
@@ -177,8 +177,7 @@ export default function CoachOrderOfMeritPage() {
     () => ({
       title: labelByLocale(locale, "Ordre du mérite", "Order of Merit", "Order of Merit", "Ordine di merito"),
       organization: labelByLocale(locale, "Organisation", "Organization", "Organisation", "Organizzazione"),
-      rankingDateFrom: labelByLocale(locale, "Du", "From", "Von", "Dal"),
-      rankingDateTo: labelByLocale(locale, "Au", "To", "Bis", "Al"),
+      thisSeason: labelByLocale(locale, "Cette saison", "This season", "Diese Saison", "Questa stagione"),
       rankingNet: labelByLocale(locale, "Net", "Net", "Netto", "Netto"),
       rankingBrut: labelByLocale(locale, "Brut", "Gross", "Brutto", "Lordo"),
       rankingTournament: labelByLocale(locale, "Tournois", "Tournaments", "Turniere", "Tornei"),
@@ -623,8 +622,7 @@ export default function CoachOrderOfMeritPage() {
       <div className={styles.panelHeader}><div><h2>Filtres du classement</h2><p>Les données sont limitées aux clubs auxquels vous êtes rattaché.</p></div></div>
       <div className={`${styles.toolbar} ${omStyles.filters}`}>
         {orgs.length > 1 ? <label className={styles.field}><span>{txt.organization}</span><select value={organizationId} onChange={(event) => setOrganizationId(event.target.value)}>{orgs.map((org) => <option key={org.id} value={org.id}>{org.name}</option>)}</select></label> : null}
-        <label className={`${styles.field} ${omStyles.dateField}`}><span>{txt.rankingDateFrom}</span><input type="date" value={rankingFrom} onChange={(event) => setRankingFrom(event.target.value)} /></label>
-        <label className={`${styles.field} ${omStyles.dateField}`}><span>{txt.rankingDateTo}</span><input type="date" value={rankingTo} onChange={(event) => setRankingTo(event.target.value)} /></label>
+        <label className={styles.field}><span className={omStyles.filterLabel}><SlidersHorizontal size={16} aria-hidden="true" />{txt.summaryAsOf}</span><select defaultValue="current"><option value="current">{txt.thisSeason}</option></select></label>
         <div className={styles.actions}><button type="button" className={rankingMode === "net" ? styles.primary : styles.secondary} onClick={() => setRankingMode("net")} aria-pressed={rankingMode === "net"}>{txt.rankingNet}</button><button type="button" className={rankingMode === "brut" ? styles.primary : styles.secondary} onClick={() => setRankingMode("brut")} aria-pressed={rankingMode === "brut"}>{txt.rankingBrut}</button></div>
       </div>
       {periodLabel ? <span className={styles.muted}>{periodLabel}</span> : null}

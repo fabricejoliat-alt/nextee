@@ -56,6 +56,7 @@ type GroupPlayerRow = {
   id: string;
   group_id: string;
   player_user_id: string;
+  can_access_details?: boolean;
   profiles?: ProfileLite | null;
 };
 
@@ -156,9 +157,8 @@ export default function CoachGroupEditPage() {
       if (!membership || (!linkRes.data && !(membership.role === "coach" && membership.can_transfer_players_between_club_groups))) {
         throw new Error("coach.error.groupAccess");
       }
-      const [catRes, pRes, cRes, planningData] = await Promise.all([
+      const [catRes, cRes, planningData] = await Promise.all([
         supabase.from("coach_group_categories").select("id,group_id,category").eq("group_id", groupId).order("category", { ascending: true }),
-        supabase.from("coach_group_players").select("id,group_id,player_user_id,profiles:profiles ( id, first_name, last_name, handicap, avatar_url )").eq("group_id", groupId),
         supabase.from("coach_group_coaches").select("id,group_id,coach_user_id,is_head,profiles:profiles ( id, first_name, last_name, handicap, avatar_url )").eq("group_id", groupId).order("is_head", { ascending: false }),
         (async () => {
           const session = await supabase.auth.getSession();
@@ -174,7 +174,7 @@ export default function CoachGroupEditPage() {
         })(),
       ]);
       // Never turn an incomplete read into a misleading empty group or zero activity count.
-      if (catRes.error || pRes.error || cRes.error) throw new Error("coach.error.load");
+      if (catRes.error || cRes.error) throw new Error("coach.error.load");
       let candidateCoaches: ProfileLite[] = [];
       if (membership.role === "manager") {
         const members = await supabase.from("club_members").select("club_id,user_id,is_active,role").eq("club_id", g.club_id).eq("is_active", true);
@@ -196,7 +196,7 @@ export default function CoachGroupEditPage() {
         transferPlayers: Boolean(membership.can_transfer_players_between_club_groups),
       });
       setCats((catRes.data ?? []) as CategoryRow[]);
-      setPlayers((pRes.data ?? []) as unknown as GroupPlayerRow[]);
+      setPlayers(planningData.group_players ?? []);
       setCoaches((cRes.data ?? []) as unknown as GroupCoachRow[]);
       setPlanning(planningData);
       setNow(Date.now());
@@ -342,7 +342,7 @@ export default function CoachGroupEditPage() {
 
         <section className={styles.quickPanel}>
           <div className={styles.sectionHeading}><div><h2>{t("coach.nav.players")}</h2><p>{coachText(t, players.length === 1 ? "coach.group.playerOne" : "coach.group.playerCount", { count: players.length })}</p></div></div>
-          {players.length === 0 ? <p className="user-mgmt-empty-state">{t("coach.group.noPlayers")}</p> : <div className="user-mgmt-table-wrap"><table className={`user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list ${detailStyles.memberList} ${detailStyles.playerList}`}><thead><tr><th aria-label={t("coach.group.avatar")} /><th>{t("coach.group.fullName")}</th><th className={detailStyles.memberHandicap}>{t("coach.directory.handicap")}</th><th aria-label={t("coach.directory.actions")} /></tr></thead><tbody>{players.slice().sort((a, b) => fullName(a.profiles).localeCompare(fullName(b.profiles), locale)).map((row) => { const profile = row.profiles ?? null; return <tr key={row.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(profile)}</span></td><td><b>{fullName(profile)}</b></td><td className={detailStyles.memberHandicap} data-label={t("coach.directory.handicap")}>{typeof profile?.handicap === "number" ? new Intl.NumberFormat(coachDateLocale(locale), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(profile.handicap) : "—"}</td><td className={detailStyles.memberActions}><div className="user-mgmt-card-actions"><Link className={`${cardStyles.action} ${cardStyles.view}`} href={`/coach/players/${row.player_user_id}?returnTo=${encodeURIComponent(`/coach/groups/${groupId}`)}`} aria-label={coachText(t, "coach.directory.viewNamed", { name: fullName(profile) })} title={t("coach.directory.view")}><Eye size={18} aria-hidden="true" /></Link>{coachPermissions.transferPlayers && !busy && !loading ? <CoachPlayerTransferDialog playerId={row.player_user_id} playerName={fullName(profile)} sourceGroupId={groupId} onTransferred={() => void load()} /> : null}{canManagePlayers ? <button type="button" className={actionStyles.dangerButton} onClick={() => void removePlayerFromGroup(row.id)} disabled={busy || loading} aria-label={coachText(t, "coach.group.removeNamed", { name: fullName(profile) })} title={t("coach.group.remove")}><Trash2 size={16} aria-hidden="true" /></button> : null}</div></td></tr>; })}</tbody></table></div>}
+          {players.length === 0 ? <p className="user-mgmt-empty-state">{t("coach.group.noPlayers")}</p> : <div className="user-mgmt-table-wrap"><table className={`user-mgmt-table user-mgmt-table--compact user-mgmt-table--member-list ${detailStyles.memberList} ${detailStyles.playerList}`}><thead><tr><th aria-label={t("coach.group.avatar")} /><th>{t("coach.group.fullName")}</th><th className={detailStyles.memberHandicap}>{t("coach.directory.handicap")}</th><th aria-label={t("coach.directory.actions")} /></tr></thead><tbody>{players.slice().sort((a, b) => fullName(a.profiles).localeCompare(fullName(b.profiles), locale)).map((row) => { const profile = row.profiles ?? null; return <tr key={row.id}><td><span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(profile)}</span></td><td><b>{fullName(profile)}</b></td><td className={detailStyles.memberHandicap} data-label={t("coach.directory.handicap")}>{typeof profile?.handicap === "number" ? new Intl.NumberFormat(coachDateLocale(locale), { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(profile.handicap) : "—"}</td><td className={detailStyles.memberActions}><div className="user-mgmt-card-actions">{row.can_access_details !== false ? <Link className={`${cardStyles.action} ${cardStyles.view}`} href={`/coach/players/${row.player_user_id}?returnTo=${encodeURIComponent(`/coach/groups/${groupId}`)}`} aria-label={coachText(t, "coach.directory.viewNamed", { name: fullName(profile) })} title={t("coach.directory.view")}><Eye size={18} aria-hidden="true" /></Link> : null}{coachPermissions.transferPlayers && !busy && !loading ? <CoachPlayerTransferDialog playerId={row.player_user_id} playerName={fullName(profile)} sourceGroupId={groupId} onTransferred={() => void load()} /> : null}{canManagePlayers ? <button type="button" className={actionStyles.dangerButton} onClick={() => void removePlayerFromGroup(row.id)} disabled={busy || loading} aria-label={coachText(t, "coach.group.removeNamed", { name: fullName(profile) })} title={t("coach.group.remove")}><Trash2 size={16} aria-hidden="true" /></button> : null}</div></td></tr>; })}</tbody></table></div>}
         </section>
 
         <section className={styles.quickPanel}>

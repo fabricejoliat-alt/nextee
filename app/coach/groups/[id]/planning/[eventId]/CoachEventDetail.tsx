@@ -79,6 +79,7 @@ type ProfileLite = {
 };
 
 type AttendeeUiRow = AttendeeDbRow & {
+  can_access_details?: boolean;
   profile?: ProfileLite | null;
 };
 type PlayerEvaluationSummary = {
@@ -806,8 +807,9 @@ export default function CoachEventDetail({ routeParams }: { routeParams: { id: s
           {attendees.map((attendee) => {
             const player = attendee.profile ?? null;
             const evaluation = evaluatedPlayersById.get(attendee.player_id) ?? null;
-            const canEvaluate = event.event_type === "interclub" && attendee.status !== "absent" && isEventPast;
-            const canStructure = (event.event_type === "training" || event.event_type === "camp") && !isEventPast;
+            const canAccessDetails = attendee.can_access_details !== false;
+            const canEvaluate = canAccessDetails && event.event_type === "interclub" && attendee.status !== "absent" && isEventPast;
+            const canStructure = canAccessDetails && (event.event_type === "training" || event.event_type === "camp") && !isEventPast;
             const preparationInsight = preparationInsightsByPlayerId.get(attendee.player_id) ?? null;
             const attendanceStatus = attendee.coach_recorded_status
               ?? (attendee.status === "present" || attendee.status === "absent" ? attendee.status : null);
@@ -829,14 +831,14 @@ export default function CoachEventDetail({ routeParams }: { routeParams: { id: s
                           : t("coachDebrief.noPreset")}
                     </span>
                   ) : (
-                    <AttendanceToggle variant="pill" checked={attendanceStatus === "present"} onToggle={() => handleAttendanceToggle(attendee.player_id, attendanceStatus ?? attendee.status)} disabled={Boolean(attendanceBusyIds[attendee.player_id])} ariaLabel={tr("Basculer présence", "Toggle attendance")} leftLabel={tr("Absent", "Absent")} rightLabel={tr("Présent", "Present")} />
+                    <AttendanceToggle variant="pill" checked={attendanceStatus === "present"} onToggle={() => handleAttendanceToggle(attendee.player_id, attendanceStatus ?? attendee.status)} disabled={!canAccessDetails || Boolean(attendanceBusyIds[attendee.player_id])} ariaLabel={tr("Basculer présence", "Toggle attendance")} leftLabel={tr("Absent", "Absent")} rightLabel={tr("Présent", "Present")} />
                   )}
-                  {isTrainingPast ? <Link className={eventStyles.actionIconButton} aria-label={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} title={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} href={`/coach/groups/${groupId}/planning/${eventId}/debrief`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
+                  {canAccessDetails && isTrainingPast ? <Link className={eventStyles.actionIconButton} aria-label={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} title={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} href={`/coach/groups/${groupId}/planning/${eventId}/debrief`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
                   {canEvaluate ? <Link className={eventStyles.actionIconButton} aria-label={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} title={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/edit`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
                   {canStructure ? <Link className={eventStyles.actionIconButton} aria-label={tr("Structurer", "Structure")} title={tr("Structurer", "Structure")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/structure`}><Pencil size={17} aria-hidden="true" /></Link> : null}
                 </div>
                   </div>
-                  {showPreparationInsights ? (
+                  {canAccessDetails && showPreparationInsights ? (
                     <div className={eventStyles.preparationInsight}>
                       <div className={eventStyles.preparationInsightHeader}>
                         <span><Sparkles size={14} aria-hidden="true" />{tr("Points d’attention", "Focus points")}</span>

@@ -1,3 +1,4 @@
+import { coachRosterPlayerIds } from "@/lib/server/coachRoster";
 import { authorizedCoachPlayers } from "@/lib/coachAccess";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { CoachPlanningData, CoachPlanningEvent, CoachPlanningPerson } from "../coachPlanning.ts";
@@ -64,15 +65,19 @@ export async function loadCoachGroupPlanning(db: SupabaseClient, callerId: strin
     ]);
     attendees.push(...batchAttendees); coaches.push(...batchCoaches);
   }
-  // Fetch only people actually attached to authorized events, not the whole club directory.
-  const allowedPlayers=await authorizedCoachPlayers(db,callerId,group.club_id,attendees.map(row=>row.player_id));
-  const visibleAttendees=attendees.filter(row=>allowedPlayers.has(row.player_id));
-  const personIds = [...new Set([...visibleAttendees.map((row) => row.player_id), ...coaches.map((row) => row.coach_id)])];
-  const profiles = new Map<string, CoachPlanningPerson>();
+  const groupRoster = await allRows<{ id: string; group_id: string; player_user_id: string }>((from, to) => db.from("coach_group_players")
+    .select("id,group_id,player_user_id").eq("group_id", group.id).order("id").range(from, to));
+  const allowedPlayers = await coachRosterPlayerIds(db, callerId, group.club_id,
+    [...attendees.map(row => row.player_id), ...groupRoster.map(row => row.player_user_id)]);
+  const visibleAttendees = attendees.filter(row => allowedPlayers.has(row.player_id));
+  const visibleRoster = groupRoster.filter(row => allowedPlayers.has(row.player_user_id));
+  const fullAccess = await authorizedCoachPlayers(db, callerId, group.club_id, visibleRoster.map(row => row.player_user_id));
+  const personIds = [...new Set([...visibleAttendees.map(row => row.player_id), ...visibleRoster.map(row => row.player_user_id), ...coaches.map(row => row.coach_id)])];
+  const profiles = new Map<string, CoachPlanningPerson & { handicap?: number | null }>();
   const playerIds = new Set<string>();
   for (const batch of chunks(personIds)) {
     const [people, memberships] = await Promise.all([
-      allRows<CoachPlanningPerson>((from, to) => db.from("profiles").select("id,first_name,last_name,avatar_url")
+      allRows<CoachPlanningPerson & { handicap?: number | null }>((from, to) => db.from("profiles").select("id,first_name,last_name,avatar_url,handicap")
         .in("id", batch).order("id").range(from, to)),
       allRows<{ user_id: string }>((from, to) => db.from("club_members").select("user_id")
         .eq("club_id", group.club_id).eq("role", "player").in("user_id", batch).order("user_id").range(from, to)),
@@ -86,6 +91,8 @@ export async function loadCoachGroupPlanning(db: SupabaseClient, callerId: strin
   };
   const preparation = await loadCoachPreparationStatus(db, callerId, events);
   return {
+    group_players: visibleRoster.map(row => ({ ...row, can_access_details: fullAccess.has(row.player_user_id),
+      profiles: { ...person(row.player_user_id), handicap: fullAccess.has(row.player_user_id) ? profiles.get(row.player_user_id)?.handicap ?? null : null } })),
     coachClubCount: await coachClubCount(db, callerId),
     group: { id: group.id, name: group.name, club_id: group.club_id }, club_name: clubResult.data?.name ?? null, can_plan: canPlan,
     events: events.map((event) => ({

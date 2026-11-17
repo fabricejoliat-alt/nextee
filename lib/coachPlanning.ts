@@ -13,6 +13,8 @@ export type CoachPlanningEvent = {
   evaluation_complete: boolean; coaches: CoachPlanningPerson[]; attendees: CoachPlanningAttendee[];
 };
 export type CoachPlanningData = {
+  group_players?: Array<{ id: string; group_id: string; player_user_id: string; can_access_details: boolean;
+    profiles: CoachPlanningPerson & { handicap: number | null } }>;
   coachClubCount?: number;
   group: { id: string; name: string | null; club_id: string }; club_name: string | null;
   can_plan: boolean; events: CoachPlanningEvent[];

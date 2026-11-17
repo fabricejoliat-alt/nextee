@@ -40,7 +40,7 @@ function fixture(options: { transfer?: boolean; membership?: boolean; legal?: bo
 test("directory returns active assigned groups, with authorized counts and no other organization", async () => {
   const f = fixture(); const result = await f.load("groups");
   assert.deepEqual(result.groups.map((g: Row) => g.id), ["head", "linked"]);
-  assert.deepEqual(result.groups.map((g: Row) => g.playerCount), [1, 1]);
+  assert.deepEqual(result.groups.map((g: Row) => g.playerCount), [2, 1]);
   assert.deepEqual(result.groups[0].categories, ["U14"]);
   assert.equal(result.groups[0].isHead, true);
   assert.equal(result.groups[1].isAssigned, true);
