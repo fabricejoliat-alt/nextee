@@ -1,4 +1,4 @@
-import { organizationSubjectAccess } from "@/lib/server/organizationAccess";
+import { coachRosterPlayerIds } from "@/lib/server/coachRoster";
 import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -16,13 +16,15 @@ async function context(req: NextRequest, playerId: string, sourceGroupId: string
   const source = await db.from("coach_groups").select("id,club_id,name").eq("id", sourceGroupId).maybeSingle();
   if (source.error || !source.data) return { error: "Groupe source introuvable.", status: 404 } as const;
   const selected=requestedOrganizationId(req.url);
-  if((selected&&selected!==source.data.club_id)||!(await organizationSubjectAccess(db,caller.data.user.id,playerId,source.data.club_id,true)))return {error:"Forbidden",status:403} as const;
+  if (selected && selected !== source.data.club_id) return { error: "Forbidden", status: 403 } as const;
   const membership = await db.from("club_members")
     .select("id,can_transfer_players_between_club_groups")
     .eq("club_id", source.data.club_id).eq("user_id", caller.data.user.id).eq("role", "coach").eq("is_active", true).maybeSingle();
   if (membership.error || !membership.data?.can_transfer_players_between_club_groups) return { error: "Forbidden", status: 403 } as const;
-  const player = await db.from("club_members").select("id").eq("club_id", source.data.club_id).eq("user_id", playerId).eq("role", "player").eq("is_active", true).maybeSingle();
-  if (player.error || !player.data) return { error: "Junior introuvable dans ce club.", status: 404 } as const;
+  const roster = await db.from("coach_group_players").select("player_user_id").eq("group_id", sourceGroupId).eq("player_user_id", playerId).limit(1).maybeSingle();
+  if (roster.error || !roster.data) return { error: "Junior introuvable dans ce groupe.", status: 404 } as const;
+  const visible = await coachRosterPlayerIds(db, caller.data.user.id, source.data.club_id, [playerId]);
+  if (!visible.has(playerId)) return { error: "Forbidden", status: 403 } as const;
   return { db, callerId: caller.data.user.id, clubId: String(source.data.club_id), source: source.data } as const;
 }
 

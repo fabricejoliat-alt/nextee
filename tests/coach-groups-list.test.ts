@@ -6,7 +6,7 @@ import { messages } from "../lib/i18n/messages.ts";
 const page = "app/coach/groups/page.tsx";
 function database(options: { transfer?: boolean; empty?: boolean; fail?: () => boolean } = {}) {
   const reads: string[] = [];
-  const active = { id: "active", name: "Junior 1", clubName: "Club témoin", playerCount: 2, coachCount: 1, categories: ["U14"], isHead: true, isAssigned: true };
+  const active = { id: "active", name: "Junior 1", clubName: "Club témoin", playerCount: 2, coachCount: 1, categories: ["U14"], players: [{ id: "junior", first_name: "Léo", last_name: "Moix", avatar_url: "/leo.jpg" }], coaches: [{ id: "coach", first_name: "Jean-Yves", last_name: "Saubaber", avatar_url: null }], isHead: true, isAssigned: true };
   return { reads, fetch: async (url: string, init: RequestInit) => {
     assert.equal(url, "/api/coach/directory?view=groups");
     assert.equal(init.cache, "no-store");
@@ -38,7 +38,7 @@ test("Coach groups show only active authorized groups with five columns and an a
     assert.equal(rows.length, 1);
     assert.ok(textContent(rows[0]).includes("Junior 1"));
     assert.ok(textContent(rows[0]).includes("U14"));
-    assert.deepEqual(elements(rows[0]).filter((node) => node.type === "td").slice(1, 4).map(textContent), ["Club témoin", "2", "1"]);
+    assert.deepEqual(elements(rows[0]).filter((node) => node.type === "td").slice(1, 4).map(node => textContent(node).trim()), ["Club témoin", "Léo Moix", "JS Jean-Yves Saubaber"]);
     const link = find(rows[0], (node) => node.type === "a");
     assert.equal(link.props.href, "/coach/groups/active");
     assert.equal(link.props["aria-label"], messages[locale]["coach.directory.viewNamed"].replace("{name}", "Junior 1"));

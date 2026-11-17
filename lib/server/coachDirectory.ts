@@ -75,10 +75,24 @@ export async function loadCoachDirectory(db: SupabaseClient, actorId: string, vi
     const ids = groups.map((row) => row.id);
     const categories = ids.length ? await coachRows<{ group_id: string; category: string }>((from, to) => db.from("coach_group_categories")
       .select("group_id,category").in("group_id", ids).order("group_id").order("category").range(from, to)) : [];
+    const staff = await coachRows<Membership>((from, to) => db.from("club_members").select("club_id,user_id,role")
+      .in("club_id", clubIds).in("role", ["coach", "manager"]).eq("is_active", true).order("club_id").order("user_id").range(from, to));
+    const activeStaff = new Set(staff.map((row) => `${row.club_id}:${row.user_id}`));
+    const coachIds = (group: DirectoryGroup) => [...new Set([
+      ...links.filter((row) => row.group_id === group.id).map((row) => row.coach_user_id),
+      ...(group.head_coach_user_id ? [group.head_coach_user_id] : []),
+    ])].filter((id) => activeStaff.has(`${group.club_id}:${id}`));
+    const visibleIds = [...new Set([...visibleMembers.map((row) => row.user_id), ...groups.flatMap(coachIds)])];
+    const people = visibleIds.length ? await coachRows<Profile>((from, to) => db.from("profiles")
+      .select("id,first_name,last_name,avatar_url").in("id", visibleIds).order("id").range(from, to)) : [];
+    const identities = new Map(people.map((row) => [row.id, { id: row.id, first_name: row.first_name, last_name: row.last_name, avatar_url: row.avatar_url }]));
+    const person = (id: string) => identities.get(id) ?? { id, first_name: null, last_name: null, avatar_url: null };
     return { clubs, players: [], groups: groups.map((group) => ({ ...group, clubName: clubNames.get(group.club_id) ?? "",
       isAssigned: assignedIds.has(group.id), isHead: group.head_coach_user_id === actorId || links.some((row) => row.group_id === group.id && row.coach_user_id === actorId && row.is_head),
       playerCount: roster.filter((row) => row.group_id === group.id && allowedInClub.has(`${group.club_id}:${row.player_user_id}`)).length,
-      coachCount: links.filter((row) => row.group_id === group.id).length,
+      coachCount: coachIds(group).length,
+      players: [...new Set(roster.filter((row) => row.group_id === group.id && allowedInClub.has(`${group.club_id}:${row.player_user_id}`)).map((row) => row.player_user_id))].map(person),
+      coaches: coachIds(group).map(person),
       categories: categories.filter((row) => row.group_id === group.id).map((row) => row.category),
     })) };
   }

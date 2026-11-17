@@ -21,7 +21,7 @@ function fixture(options: { transfer?: boolean; membership?: boolean; legal?: bo
     coach_group_players: [{ group_id: "head", player_user_id: "allowed" }, { group_id: "head", player_user_id: "denied" },
       { group_id: "linked", player_user_id: "allowed" }, { group_id: "unassigned", player_user_id: "mobile" }, { group_id: "outside", player_user_id: "outside" }],
     coach_group_categories: [{ group_id: "head", category: "U14" }, { group_id: "outside", category: "Private" }],
-    profiles: ["allowed", "denied", "mobile", "outside"].map(id => ({ id, first_name: id, last_name: "Junior", avatar_url: null, handicap: 10, sex: null })),
+    profiles: ["coach", "allowed", "denied", "mobile", "outside"].map(id => ({ id, first_name: id, last_name: "Junior", avatar_url: null, handicap: 10, sex: null })),
   };
   const state = managerDatabase(tables, { failureTable: options.failureTable });
   state.db.rpc = async (name: string, args: Row) => {
@@ -46,7 +46,9 @@ test("directory returns active assigned groups, with authorized counts and no ot
   assert.equal(result.groups[1].isAssigned, true);
   assert.equal(result.groups[1].isHead, false);
   assert.deepEqual(result.players, []);
-  assert.equal(f.reads.includes("profiles"), false);
+  assert.deepEqual(result.groups[0].players.map((p: Row) => p.id), ["allowed", "denied"]);
+  assert.deepEqual(result.groups[0].coaches.map((p: Row) => p.id), ["coach"]);
+  assert.deepEqual(Object.keys(result.groups[0].players[0]).sort(), ["avatar_url", "first_name", "id", "last_name"]);
   assert.equal(f.writes.length, 0);
 });
 
