@@ -153,7 +153,7 @@ test("Coach-wide controls preserve distinct actions, visible focus and disabled 
 });
 
 test("Coach activity details keep named activities and compact coach actions visible", () => {
-  const detail = readFileSync(new URL("../app/coach/groups/[id]/planning/[eventId]/page.tsx", import.meta.url), "utf8");
+  const detail = readFileSync(new URL("../app/coach/groups/[id]/planning/[eventId]/CoachEventDetail.tsx", import.meta.url), "utf8");
   const detailCss = readFileSync(new URL("../app/coach/groups/[id]/planning/[eventId]/CoachEventDetail.module.css", import.meta.url), "utf8");
   const calendar = readFileSync(new URL("../app/coach/calendar/page.tsx", import.meta.url), "utf8");
   assert.match(detail, /return coachPlanningTitle\(event.title,/);

@@ -227,7 +227,7 @@ test("the guided UI and API save exactly one player without exposing collective 
     "utf8"
   );
   const eventDetailPage = readFileSync(
-    new URL("../app/coach/groups/[id]/planning/[eventId]/page.tsx", import.meta.url),
+    new URL("../app/coach/groups/[id]/planning/[eventId]/CoachEventDetail.tsx", import.meta.url),
     "utf8"
   );
   const migration = readFileSync(

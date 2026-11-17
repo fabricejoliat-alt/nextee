@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { Eye, UserRound } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
+import { readCoachGroupRosters } from "@/lib/coachGroupRosterReads";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
 import { coachCaughtErrorKey } from "@/lib/coachUiErrors";
@@ -41,7 +42,7 @@ export default function CoachPlayersPage() {
       if (clubsResult.error || linksResult.error || headGroupsResult.error) throw new Error(clubsResult.error?.message ?? linksResult.error?.message ?? headGroupsResult.error?.message);
       const clubList = (clubsResult.data ?? []) as Club[]; if (active) setClubs(clubList);
       const groupIds = [...new Set([...(linksResult.data ?? []).map((row) => row.group_id), ...(headGroupsResult.data ?? []).map((row) => row.id)])];
-      const assignedResult = groupIds.length ? await supabase.from("coach_group_players").select("player_user_id").in("group_id", groupIds) : { data: [], error: null };
+      const assignedResult = await readCoachGroupRosters(groupIds, (id) => supabase.from("coach_group_players").select("player_user_id").eq("group_id", id));
       if (assignedResult.error) throw new Error(assignedResult.error.message);
       const assignedIds = new Set((assignedResult.data ?? []).map((row) => row.player_user_id));
       const transferableClubs = new Set(memberships.filter((row) => row.can_transfer_players_between_club_groups).map((row) => row.club_id));

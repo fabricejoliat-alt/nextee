@@ -24,7 +24,7 @@ function database(options: { transfer?: boolean; empty?: boolean; fail?: () => b
         let data: unknown = [];
         if (table === "club_members") data = options.empty ? [] : [{ club_id: "club", can_transfer_players_between_club_groups: options.transfer ?? false }];
         if (table === "coach_groups") data = state.columns === "id" ? [] : groups;
-        if (table === "clubs") data = [{ id: "club", name: "Club témoin" }];
+        if (table === "organizations") data = [{ id: "club", name: "Club témoin" }];
         if (table === "coach_group_coaches") data = state.columns === "group_id,is_head" ?
           groups.filter((row) => row.id !== "other").map((row) => ({ group_id: row.id, is_head: row.id === "active" })) : [{ group_id: "active" }];
         if (table === "coach_group_players") data = [{ group_id: "active" }, { group_id: "active" }];
@@ -51,7 +51,7 @@ test("Coach groups show only active authorized groups with five columns and an a
     harness.setLocale(locale);
     const tree = harness.render();
     assert.deepEqual(elements(tree).filter((node) => node.type === "th").map(textContent), [
-      "coach.groups.group", "coach.directory.club", "coach.nav.players", "coach.groups.coaches", "coach.directory.actions",
+      "coach.groups.group", "organization.context", "coach.nav.players", "coach.groups.coaches", "coach.directory.actions",
     ].map((key) => messages[locale][key]));
     const body = find(tree, (node) => node.type === "tbody");
     const rows = elements(body).filter((node) => node.type === "tr");
@@ -69,7 +69,7 @@ test("Coach groups show only active authorized groups with five columns and an a
   const groupRead = db.reads.find((query) => query.table === "coach_groups" && query.columns !== "id");
   assert.equal(groupRead?.filters.is_active, true);
   assert.deepEqual(groupRead.filters.club_id, ["club"]);
-  assert.deepEqual(db.reads.find((query) => query.table === "coach_group_players")?.filters.group_id, ["active"]);
+  assert.deepEqual(db.reads.filter((query) => query.table === "coach_group_players").map((query) => query.filters.group_id), ["active"]);
   assert.ok(!db.reads.some((query) => query.table === "club_events"));
 });
 

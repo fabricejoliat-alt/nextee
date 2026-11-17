@@ -1,0 +1,891 @@
+"use client";
+import { useRetainedLoading } from "@/lib/useRetainedLoading";
+
+import { organizationFetch as fetch } from "@/lib/organizationFetch";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { supabase } from "@/lib/supabaseClient";
+import { useI18n } from "@/components/i18n/AppI18nProvider";
+import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
+import CoachActivityCard from "@/components/coach/CoachActivityCard";
+import type { CoachPreparationInsight } from "@/lib/coachPreparationInsights";
+import { coachPlanningTitle } from "@/lib/coachPlanning";
+import { AttendanceToggle } from "@/components/ui/AttendanceToggle";
+import { CompactLoadingBlock } from "@/components/ui/LoadingBlocks";
+import styles from "@/components/admin/AdminHomeStats.module.css";
+import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
+import eventStyles from "./CoachEventDetail.module.css";
+import { ClipboardCheck, Pencil, PlusCircle, Trash2, ArrowLeft, Eye, Check, Sparkles } from "lucide-react";
+
+type EventRow = {
+  id: string;
+  group_id: string;
+  club_id: string;
+  event_type: "training" | "interclub" | "camp" | "session" | "event";
+  title: string | null;
+  starts_at: string;
+  ends_at: string | null;
+  duration_minutes: number;
+  location_text: string | null;
+  coach_note: string | null;
+  series_id: string | null;
+  status: "scheduled" | "cancelled";
+};
+type CampDayRow = {
+  camp_id: string;
+  day_index: number;
+  starts_at: string | null;
+  ends_at: string | null;
+  location_text: string | null;
+};
+function eventTypeLabel(v: string | null | undefined) {
+  if (v === "training") return "Entraînement";
+  if (v === "interclub") return "Interclub";
+  if (v === "camp") return "Stage/Camp";
+  if (v === "session") return "Séance";
+  return "Événement";
+}
+function eventTypeLabelLocalized(v: string | null | undefined, locale: string) {
+  if (v === "training") return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Entraînement", "Training");
+  if (v === "interclub") return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Interclub", "Interclub");
+  if (v === "camp") return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Stage/Camp", "Camp");
+  if (v === "session") return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Séance", "Session");
+  return pickLocaleText(locale as "fr" | "en" | "de" | "it", "Événement", "Event");
+}
+
+type ClubRow = { id: string; name: string | null };
+type GroupRow = { id: string; name: string | null };
+type CoachLite = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+};
+
+type AttendeeDbRow = {
+  player_id: string;
+  status: "expected" | "present" | "absent" | "excused";
+  coach_recorded_status: "present" | "absent" | null;
+  coach_recorded_by: string | null;
+  coach_recorded_at: string | null;
+};
+
+type ProfileLite = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  handicap: number | null;
+  avatar_url: string | null;
+};
+
+type AttendeeUiRow = AttendeeDbRow & {
+  profile?: ProfileLite | null;
+};
+type PlayerEvaluationSummary = {
+  player_id: string;
+  coach_id: string | null;
+  coach_name: string | null;
+};
+type PlayerPreparationInsight = CoachPreparationInsight;
+type EventStructureItemRow = {
+  category: string;
+  minutes: number;
+  note: string | null;
+  position: number | null;
+};
+
+type ThreadMessageRow = {
+  id: string;
+  sender_user_id: string;
+  sender_name: string | null;
+  body: string | null;
+  created_at: string;
+};
+
+function fmtDateTime(iso: string) {
+  const d = new Date(iso);
+  const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(d);
+  const datePart = new Intl.DateTimeFormat("fr-CH", {
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+  }).format(d);
+  const timePart = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" }).format(d);
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${datePart} à ${timePart}`;
+}
+
+function fmtDateTimeRange(startIso: string, endIso: string | null) {
+  if (!endIso) return fmtDateTime(startIso);
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  const sameDay = start.toDateString() === end.toDateString();
+  if (sameDay) {
+    const weekday = new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(start);
+    const datePart = new Intl.DateTimeFormat("fr-CH", {
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    }).format(start);
+    const timeFmt = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" });
+    return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${datePart} de ${timeFmt.format(start)} à ${timeFmt.format(end)}`;
+  }
+  return `${fmtDateTime(startIso)} au ${fmtDateTime(endIso)}`;
+}
+
+function eventDateSummary(startIso: string, endIso: string | null) {
+  const start = new Date(startIso);
+  const end = endIso ? new Date(endIso) : null;
+  const capitalize = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+  const time = new Intl.DateTimeFormat("fr-CH", { hour: "2-digit", minute: "2-digit" });
+  return {
+    day: capitalize(new Intl.DateTimeFormat("fr-CH", { weekday: "long" }).format(start)),
+    date: start.getDate(),
+    month: capitalize(new Intl.DateTimeFormat("fr-CH", { month: "long" }).format(start)),
+    startTime: time.format(start),
+    endTime: end ? time.format(end) : null,
+  };
+}
+
+function fmtMessageTime(iso: string) {
+  const d = new Date(iso);
+  return new Intl.DateTimeFormat("fr-CH", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(d);
+}
+
+async function markThreadRead(threadId: string) {
+  const { data: sessRes } = await supabase.auth.getSession();
+  const token = sessRes.session?.access_token ?? "";
+  if (!token || !threadId) return;
+  await fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/read`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  }).catch(() => {});
+}
+
+function nameOf(first: string | null, last: string | null) {
+  return `${first ?? ""} ${last ?? ""}`.trim() || "—";
+}
+
+function shortNameForList(first: string | null, last: string | null, maxChars = 16) {
+  const full = nameOf(first, last);
+  if (full.length <= maxChars) return full;
+  const f = String(first ?? "").trim();
+  const l = String(last ?? "").trim();
+  if (f) {
+    if (l) return `${f} ${l[0].toUpperCase()}.`;
+    return f;
+  }
+  return full;
+}
+
+function categoryLabel(cat: string) {
+  const map: Record<string, string> = {
+    warmup_mobility: "Échauffement / mobilité",
+    long_game: "Long jeu",
+    short_game_all: "Petit jeu (tout secteur)",
+    putting: "Putting",
+    wedging: "Wedging",
+    pitching: "Pitching",
+    chipping: "Chipping",
+    bunker: "Bunker",
+    course: "Parcours",
+    mental: "Mental",
+    fitness: "Fitness",
+    other: "Autre",
+  };
+  return map[cat] ?? cat;
+}
+
+function initials(p?: { first_name: string | null; last_name: string | null } | null) {
+  const f = (p?.first_name ?? "").trim();
+  const l = (p?.last_name ?? "").trim();
+  const fi = f ? f[0].toUpperCase() : "";
+  const li = l ? l[0].toUpperCase() : "";
+  return (fi + li) || "👤";
+}
+
+function avatarNode(p?: ProfileLite | null) {
+  if (p?.avatar_url) {
+    return (
+      <img
+        src={p.avatar_url}
+        alt=""
+        style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
+      />
+    );
+  }
+  return initials(p);
+}
+
+const avatarBoxStyle: React.CSSProperties = {
+  width: 42,
+  height: 42,
+  borderRadius: 14,
+  overflow: "hidden",
+  background: "rgba(255,255,255,0.65)",
+  border: "1px solid rgba(0,0,0,0.08)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  fontWeight: 950,
+  color: "var(--green-dark)",
+  flexShrink: 0,
+};
+
+export default function CoachEventDetail({ routeParams }: { routeParams: { id: string; eventId: string } }) {
+  const { locale, t } = useI18n();
+  const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
+  const groupId = String(routeParams.id).trim();
+  const eventId = String(routeParams.eventId).trim();
+
+  const [loading, setLoading] = useRetainedLoading();
+  const [error, setError] = useState<string | null>(null);
+
+  const [event, setEvent] = useState<EventRow | null>(null);
+  const [campDay, setCampDay] = useState<CampDayRow | null>(null);
+  const [clubName, setClubName] = useState("");
+  const [groupName, setGroupName] = useState("");
+
+  const [attendees, setAttendees] = useState<AttendeeUiRow[]>([]);
+  const [coaches, setCoaches] = useState<CoachLite[]>([]);
+  const [selectedCoachIds, setSelectedCoachIds] = useState<string[]>([]);
+  const [structureItems, setStructureItems] = useState<EventStructureItemRow[]>([]);
+  const [meId, setMeId] = useState("");
+  const [eventThreadId, setEventThreadId] = useState<string>("");
+  const [eventThreadMessages, setEventThreadMessages] = useState<ThreadMessageRow[]>([]);
+  const [eventThreadParticipants, setEventThreadParticipants] = useState<string[]>([]);
+  const [canManageActivity, setCanManageActivity] = useState(false);
+  const [loadingEventThread, setLoadingEventThread] = useState(false);
+  const [threadComposer, setThreadComposer] = useState("");
+  const [sendingThreadMessage, setSendingThreadMessage] = useState(false);
+  const [coachBusyIds, setCoachBusyIds] = useState<Record<string, boolean>>({});
+  const [attendanceBusyIds, setAttendanceBusyIds] = useState<Record<string, boolean>>({});
+  const [attendanceLockedIds, setAttendanceLockedIds] = useState<Set<string>>(new Set());
+  const [evaluatedPlayersById, setEvaluatedPlayersById] = useState<Map<string, PlayerEvaluationSummary>>(new Map());
+  const [copyingStructure, setCopyingStructure] = useState(false);
+  const [copyStructureMessage, setCopyStructureMessage] = useState<string | null>(null);
+  const [coachTrainingAssistanceEnabled, setCoachTrainingAssistanceEnabled] = useState(false);
+  const [preparationInsightsByPlayerId, setPreparationInsightsByPlayerId] = useState<Map<string, PlayerPreparationInsight>>(new Map());
+  const [preparationInsightsLoading, setPreparationInsightsLoading] = useState(false);
+  const [preparationInsightsError, setPreparationInsightsError] = useState(false);
+  const [preparationUnavailablePlayers, setPreparationUnavailablePlayers] = useState<Set<string>>(new Set());
+  const preparationRequestRef = useRef(0);
+  const [coachClubCount, setCoachClubCount] = useState(1);
+  const [readTrackingAvailable, setReadTrackingAvailable] = useState(false);
+  const [seenBusy, setSeenBusy] = useState<Record<string, boolean>>({});
+  const [seenError, setSeenError] = useState<Record<string, string>>({});
+  const seenInFlight = useRef(new Set<string>());
+
+  async function markPreparationSeen(insight: PlayerPreparationInsight) {
+    if (!event || insight.seen_at || !readTrackingAvailable) return;
+    const request = preparationRequestRef.current;
+    const flightKey = `${event.id}:${insight.player_id}:${request}`;
+    if (seenInFlight.current.has(flightKey)) return;
+    seenInFlight.current.add(flightKey);
+    setSeenBusy((state) => ({ ...state, [insight.player_id]: true }));
+    setSeenError((state) => ({ ...state, [insight.player_id]: "" }));
+    try {
+      const session = await supabase.auth.getSession();
+      const token = session.data.session?.access_token;
+      if (!token) throw new Error("coach.preparation.saveError");
+      const response = await fetch(`/api/coach/events/${encodeURIComponent(event.id)}/preparation-seen`, {
+        method: "PUT",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ player_id: insight.player_id, source_fingerprint: insight.source_fingerprint }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.ok !== true || !result.seen_at) throw new Error(response.status === 409 ? "coach.preparation.changed" : "coach.preparation.saveError");
+      if (request !== preparationRequestRef.current) return;
+      setPreparationInsightsByPlayerId((current) => {
+        const next = new Map(current);
+        if (next.get(insight.player_id)?.source_fingerprint === insight.source_fingerprint) {
+          next.set(insight.player_id, { ...insight, seen_at: result.seen_at });
+        }
+        return next;
+      });
+    } catch (cause) {
+      if (request === preparationRequestRef.current) setSeenError((state) => ({
+        ...state, [insight.player_id]: cause instanceof Error ? cause.message : "coach.preparation.saveError",
+      }));
+    } finally {
+      seenInFlight.current.delete(flightKey);
+      if (request === preparationRequestRef.current) setSeenBusy((state) => ({ ...state, [insight.player_id]: false }));
+    }
+  }
+
+  async function loadPreparationInsights(token: string, targetEvent: EventRow, assistanceEnabled: boolean) {
+    const requestId = ++preparationRequestRef.current;
+    setPreparationInsightsByPlayerId(new Map());
+    setPreparationInsightsError(false);
+    setPreparationUnavailablePlayers(new Set());
+    setReadTrackingAvailable(false);
+    const startsAt = new Date(targetEvent.starts_at).getTime();
+    if (!assistanceEnabled || targetEvent.event_type !== "training" || !Number.isFinite(startsAt) || startsAt <= Date.now()) {
+      setPreparationInsightsLoading(false);
+      return;
+    }
+
+    setPreparationInsightsLoading(true);
+    try {
+      const response = await fetch(`/api/coach/events/${encodeURIComponent(targetEvent.id)}/preparation-insights`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const json = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(json?.error ?? "Preparation insights unavailable"));
+      if (requestId !== preparationRequestRef.current) return;
+      setReadTrackingAvailable(json.read_tracking_available === true);
+      setPreparationUnavailablePlayers(new Set(Array.isArray(json.unavailable_player_ids)
+        ? json.unavailable_player_ids.filter((id: unknown) => typeof id === "string") : []));
+      const insights = Array.isArray(json?.insights) ? (json.insights as PlayerPreparationInsight[]) : [];
+      setPreparationInsightsByPlayerId(
+        new Map(
+          insights
+            .filter((insight) => insight?.player_id && Array.isArray(insight.points) && insight.points.length > 0)
+            .map((insight) => [insight.player_id, insight] as const)
+        )
+      );
+    } catch {
+      if (requestId === preparationRequestRef.current) setPreparationInsightsError(true);
+    } finally {
+      if (requestId === preparationRequestRef.current) setPreparationInsightsLoading(false);
+    }
+  }
+
+  async function copyStructureToFutureEvents() {
+    if (!event?.series_id) return;
+    if (structureItems.length === 0) {
+      setCopyStructureMessage(tr("Aucune structure à copier.", "No structure to copy."));
+      return;
+    }
+    const confirmed = window.confirm(
+      tr(
+        "Copier cette structure planifiée sur toutes les activités futures de cette récurrence ? Les structures déjà présentes sur ces activités seront remplacées.",
+        "Copy this planned structure to all future events in this recurrence? Existing planned structures on those events will be replaced."
+      )
+    );
+    if (!confirmed) return;
+
+    setCopyingStructure(true);
+    setCopyStructureMessage(null);
+    try {
+      const futureEventsRes = await supabase
+        .from("club_events")
+        .select("id")
+        .eq("series_id", event.series_id)
+        .gt("starts_at", event.starts_at)
+        .order("starts_at", { ascending: true });
+      if (futureEventsRes.error) throw new Error(futureEventsRes.error.message);
+
+      const futureEventIds = ((futureEventsRes.data ?? []) as Array<{ id: string | null }>)
+        .map((row) => String(row.id ?? "").trim())
+        .filter(Boolean);
+
+      if (futureEventIds.length === 0) {
+        setCopyStructureMessage(tr("Aucune activité future à mettre à jour.", "No future event to update."));
+        return;
+      }
+
+      const deleteRes = await supabase.from("club_event_structure_items").delete().in("event_id", futureEventIds);
+      if (deleteRes.error) throw new Error(deleteRes.error.message);
+
+      const payload = futureEventIds.flatMap((futureEventId) =>
+        structureItems.map((item, index) => ({
+          event_id: futureEventId,
+          category: item.category,
+          minutes: item.minutes,
+          note: item.note ?? null,
+          position: item.position ?? index,
+        }))
+      );
+
+      if (payload.length > 0) {
+        const insertRes = await supabase.from("club_event_structure_items").insert(payload);
+        if (insertRes.error) throw new Error(insertRes.error.message);
+      }
+
+      setCopyStructureMessage(
+        futureEventIds.length === 1
+          ? tr("Structure copiée sur 1 activité future.", "Structure copied to 1 future event.")
+          : tr(
+              `Structure copiée sur ${futureEventIds.length} activités futures.`,
+              `Structure copied to ${futureEventIds.length} future events.`
+            )
+      );
+    } catch (error: unknown) {
+      setCopyStructureMessage(error instanceof Error ? error.message : tr("Copie impossible.", "Copy failed."));
+    } finally {
+      setCopyingStructure(false);
+    }
+  }
+
+  async function load() {
+    preparationRequestRef.current += 1;
+    setLoading(true);
+    setError(null);
+    setPreparationInsightsByPlayerId(new Map());
+    setPreparationInsightsLoading(false);
+    setPreparationInsightsError(false);
+
+    try {
+      if (!eventId) throw new Error("Événement manquant.");
+      const { data: sessRes } = await supabase.auth.getSession();
+      const token = sessRes.session?.access_token ?? "";
+      if (!token) throw new Error("Session invalide.");
+
+      const detailRes = await fetch(`/api/coach/events/${encodeURIComponent(eventId)}`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
+      });
+      const detailJson = await detailRes.json().catch(() => ({}));
+      if (!detailRes.ok) throw new Error(String(detailJson?.error ?? "Événement introuvable."));
+
+      const ev = detailJson?.event as EventRow | undefined;
+      if (!ev?.id) throw new Error("Événement introuvable.");
+
+      setEvent(ev);
+      setCampDay((detailJson?.campDay ?? null) as CampDayRow | null);
+      setClubName(String(detailJson?.clubName ?? "Club"));
+      setCoachClubCount(Number(detailJson?.coachClubCount ?? 1));
+      setGroupName(String(detailJson?.groupName ?? "Groupe"));
+      setMeId(String(detailJson?.meId ?? ""));
+      setCanManageActivity(detailJson?.canManageActivity === true);
+      const assistanceEnabled = detailJson?.coachTrainingAssistanceEnabled === true;
+      setCoachTrainingAssistanceEnabled(assistanceEnabled);
+      setAttendees(Array.isArray(detailJson?.attendees) ? (detailJson.attendees as AttendeeUiRow[]) : []);
+      if (ev.event_type === "training") {
+        const attendanceRes = await fetch(`/api/coach/events/${encodeURIComponent(ev.id)}/attendance`, {
+          headers: { Authorization: `Bearer ${token}` }, cache: "no-store",
+        });
+        const attendanceJson = await attendanceRes.json().catch(() => ({}));
+        if (!attendanceRes.ok) throw new Error(String(attendanceJson.error ?? "Présences indisponibles."));
+        setAttendanceLockedIds(new Set(Array.isArray(attendanceJson.lockedPlayerIds) ? attendanceJson.lockedPlayerIds : []));
+      } else setAttendanceLockedIds(new Set());
+      setCoaches(Array.isArray(detailJson?.coaches) ? (detailJson.coaches as CoachLite[]) : []);
+      setSelectedCoachIds(
+        Array.isArray(detailJson?.selectedCoachIds)
+          ? (detailJson.selectedCoachIds as string[]).map((id) => String(id ?? "")).filter(Boolean)
+          : []
+      );
+      setStructureItems(Array.isArray(detailJson?.structureItems) ? (detailJson.structureItems as EventStructureItemRow[]) : []);
+      setEvaluatedPlayersById(
+        new Map(
+          (
+            Array.isArray(detailJson?.evaluatedPlayers)
+              ? (detailJson.evaluatedPlayers as PlayerEvaluationSummary[])
+              : []
+          )
+            .map((row) => ({
+              player_id: String(row?.player_id ?? "").trim(),
+              coach_id: String(row?.coach_id ?? "").trim() || null,
+              coach_name: String(row?.coach_name ?? "").trim() || null,
+            }))
+            .filter((row) => row.player_id)
+            .map((row) => [row.player_id, row] as const)
+        )
+      );
+      void loadPreparationInsights(token, ev, assistanceEnabled);
+
+      // Thread preview
+      setLoadingEventThread(true);
+      try {
+        if (!token) {
+          setEventThreadId("");
+          setEventThreadMessages([]);
+          setEventThreadParticipants([]);
+        } else {
+          const threadRes = await fetch(`/api/messages/event-thread?event_id=${encodeURIComponent(ev.id)}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          });
+          const threadJson = await threadRes.json().catch(() => ({}));
+          if (!threadRes.ok) throw new Error(String(threadJson?.error ?? "Thread load failed"));
+          const threadId = String(threadJson?.thread_id ?? "");
+          setEventThreadId(threadId);
+          if (threadId) {
+            const [msgRes, partRes] = await Promise.all([
+              fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/messages?limit=20`, {
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+              }),
+              fetch(`/api/messages/threads/${encodeURIComponent(threadId)}/participants`, {
+                headers: { Authorization: `Bearer ${token}` },
+                cache: "no-store",
+              }),
+            ]);
+            const msgJson = await msgRes.json().catch(() => ({}));
+            const partJson = await partRes.json().catch(() => ({}));
+            if (!msgRes.ok) throw new Error(String(msgJson?.error ?? "Messages load failed"));
+            if (!partRes.ok) throw new Error(String(partJson?.error ?? "Participants load failed"));
+            const msgs = ((msgJson?.messages ?? []) as ThreadMessageRow[]).slice().reverse();
+            setEventThreadMessages(msgs);
+            setEventThreadParticipants((partJson?.participant_full_names ?? []) as string[]);
+            await markThreadRead(threadId);
+          } else {
+            setEventThreadMessages([]);
+            setEventThreadParticipants([]);
+          }
+        }
+      } catch {
+        setEventThreadId("");
+        setEventThreadMessages([]);
+        setEventThreadParticipants([]);
+      } finally {
+        setLoadingEventThread(false);
+      }
+
+      setLoading(false);
+    } catch (error: unknown) {
+      setError(error instanceof Error ? error.message : t("common.errorLoading"));
+      setEvent(null);
+      setCampDay(null);
+      setClubName("");
+      setGroupName("");
+      setAttendees([]);
+      setCoaches([]);
+      setSelectedCoachIds([]);
+      setStructureItems([]);
+      setEvaluatedPlayersById(new Map());
+      preparationRequestRef.current += 1;
+      setPreparationInsightsByPlayerId(new Map());
+      setPreparationInsightsLoading(false);
+      setPreparationInsightsError(false);
+      setMeId("");
+      setEventThreadId("");
+      setEventThreadMessages([]);
+      setEventThreadParticipants([]);
+      setLoadingEventThread(false);
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    setSeenBusy({}); setSeenError({}); seenInFlight.current.clear();
+    void load();
+    return () => { preparationRequestRef.current += 1; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventId]);
+
+  useEffect(() => {
+    if (!eventThreadId) return;
+    void markThreadRead(eventThreadId);
+  }, [eventThreadId, eventThreadMessages.length]);
+
+  const selectedCoaches = useMemo(
+    () => coaches.filter((c) => selectedCoachIds.includes(c.id)),
+    [coaches, selectedCoachIds]
+  );
+  const candidateCoaches = useMemo(
+    () => coaches.filter((c) => !selectedCoachIds.includes(c.id)),
+    [coaches, selectedCoachIds]
+  );
+  const eventCardTitle = useMemo(() => {
+    if (!event) return pickLocaleText(locale, "Événement", "Event");
+    if (event.event_type === "camp") {
+      const campTitle = coachPlanningTitle(event.title, eventTypeLabelLocalized(event.event_type, locale));
+      const dayLabel =
+        campDay && Number.isFinite(campDay.day_index)
+          ? `${pickLocaleText(locale, "Jour", "Day")} ${campDay.day_index + 1}`
+          : null;
+      return dayLabel ? `${campTitle} • ${dayLabel}` : campTitle;
+    }
+    return coachPlanningTitle(event.title, eventTypeLabelLocalized(event.event_type, locale));
+  }, [campDay, event, groupName, locale]);
+
+  async function addCoach(coachId: string) {
+    if (!event) return;
+    if (coachBusyIds[coachId]) return;
+    setCoachBusyIds((prev) => ({ ...prev, [coachId]: true }));
+    const ins = await supabase.from("club_event_coaches").insert({ event_id: event.id, coach_id: coachId });
+    if (ins.error) {
+      setError(ins.error.message);
+      setCoachBusyIds((prev) => ({ ...prev, [coachId]: false }));
+      return;
+    }
+    setSelectedCoachIds((prev) => Array.from(new Set([...prev, coachId])));
+    setCoachBusyIds((prev) => ({ ...prev, [coachId]: false }));
+  }
+
+  async function removeCoach(coachId: string) {
+    if (!event) return;
+    if (coachBusyIds[coachId]) return;
+    setCoachBusyIds((prev) => ({ ...prev, [coachId]: true }));
+    const del = await supabase
+      .from("club_event_coaches")
+      .delete()
+      .eq("event_id", event.id)
+      .eq("coach_id", coachId);
+    if (del.error) {
+      setError(del.error.message);
+      setCoachBusyIds((prev) => ({ ...prev, [coachId]: false }));
+      return;
+    }
+    setSelectedCoachIds((prev) => prev.filter((id) => id !== coachId));
+    setCoachBusyIds((prev) => ({ ...prev, [coachId]: false }));
+  }
+
+  async function setAttendanceStatus(playerId: string, nextStatus: "present" | "absent") {
+    if (!event || attendanceBusyIds[playerId] || attendanceLockedIds.has(playerId)) return;
+    const previousAttendee = attendees.find((a) => a.player_id === playerId);
+    const prev = previousAttendee?.status ?? "expected";
+    const effectiveStatus = previousAttendee?.coach_recorded_status ?? prev;
+    if (effectiveStatus === nextStatus) return;
+
+    setAttendanceBusyIds((m) => ({ ...m, [playerId]: true }));
+    setAttendees((list) => list.map((a) => (a.player_id === playerId ? { ...a, status: nextStatus } : a)));
+
+    const isPastTraining = event.event_type === "training" && new Date(event.ends_at ?? event.starts_at).getTime() <= Date.now();
+    let up: { error: { message: string } | null };
+    try { up = isPastTraining ? await (async () => {
+      const { data } = await supabase.auth.getSession();
+      const response = await fetch(`/api/coach/events/${encodeURIComponent(event.id)}/attendance`, {
+        method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
+        body: JSON.stringify({ playerId, status: nextStatus }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (result.code === "attendance_locked_by_player_evaluation") setAttendanceLockedIds((ids) => new Set([...ids, playerId]));
+      return { error: response.ok ? null : { message: String(result.error ?? "Présence non enregistrée.") } };
+    })() : await supabase.from("club_event_attendees").update({ status: nextStatus }).eq("event_id", event.id).eq("player_id", playerId);
+    } catch {
+      up = { error: { message: tr("Présence non enregistrée. Réessayez.", "Attendance was not saved. Try again.") } };
+    }
+
+    if (up.error) {
+      setError(up.error.message);
+      setAttendees((list) => list.map((a) => (a.player_id === playerId ? { ...a, status: prev } : a)));
+    }
+    else if (isPastTraining) setAttendees((list) => list.map((a) => a.player_id === playerId ? { ...a, coach_recorded_status: nextStatus } : a));
+
+    setAttendanceBusyIds((m) => ({ ...m, [playerId]: false }));
+  }
+
+  function handleAttendanceToggle(playerId: string, status: "expected" | "present" | "absent" | "excused") {
+    const current: "present" | "absent" = status === "present" ? "present" : "absent";
+    const next: "present" | "absent" = current === "present" ? "absent" : "present";
+    const ok = window.confirm(
+      tr(
+        next === "absent" ? "Confirmer le passage à absent ?" : "Confirmer le passage à présent ?",
+        next === "absent" ? "Confirm switch to absent?" : "Confirm switch to present?"
+      )
+    );
+    if (!ok) return;
+    void setAttendanceStatus(playerId, next);
+  }
+
+  async function sendThreadMessage() {
+    const trimmed = threadComposer.trim();
+    if (!eventThreadId || !trimmed || sendingThreadMessage) return;
+    setSendingThreadMessage(true);
+    try {
+      const { data: sessRes } = await supabase.auth.getSession();
+      const token = sessRes.session?.access_token ?? "";
+      if (!token) throw new Error(tr("Session invalide.", "Invalid session."));
+
+      const res = await fetch(`/api/messages/threads/${encodeURIComponent(eventThreadId)}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ message_type: "text", body: trimmed }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(String(json?.error ?? tr("Envoi impossible.", "Failed to send message.")));
+
+      const created = json?.message as ThreadMessageRow | undefined;
+      if (created?.id) {
+        setEventThreadMessages((prev) => [...prev, created].slice(-20));
+      }
+      setThreadComposer("");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : tr("Envoi impossible.", "Failed to send message.");
+      setError(message);
+    } finally {
+      setSendingThreadMessage(false);
+    }
+  }
+
+  if (loading) {
+    return <main className={styles.page}><section className={styles.quickPanel}><CompactLoadingBlock label={t("common.loading")} /></section></main>;
+  }
+
+  if (!event) {
+    return <main className={styles.page}><section className={styles.quickPanel}>{error ?? t("common.noData")}</section></main>;
+  }
+
+  const isEventPast = new Date(event.starts_at).getTime() < Date.now();
+  const isTrainingPast = event.event_type === "training" && new Date(event.ends_at ?? event.starts_at).getTime() <= Date.now();
+  const showPreparationInsights = coachTrainingAssistanceEnabled && event.event_type === "training" && !isEventPast;
+
+  return (
+    <main className={styles.page}>
+      <nav data-ui="breadcrumb" className={actionStyles.breadcrumb} aria-label={t("common.breadcrumb")}>
+        <Link href="/coach/groups">{tr("Mes groupes", "My groups")}</Link>
+        <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
+        <Link href={`/coach/groups/${groupId}`}>{groupName}</Link>
+        <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
+        <Link href={`/coach/groups/${groupId}/planning`}>{tr("Planification", "Planning")}</Link>
+        <span aria-hidden="true" style={{ margin: "0 8px" }}>/</span>
+        <span>{eventTypeLabelLocalized(event.event_type, locale)}</span>
+      </nav>
+
+      <div className={styles.topline}>
+        <div>
+          <h1>{eventTypeLabelLocalized(event.event_type, locale)}</h1>
+          <p className={styles.lead}>{groupName} · {clubName}</p>
+        </div>
+        <div className={eventStyles.pageActions}>
+          {canManageActivity ? (
+            <Link className={actionStyles.primaryButton} href={`/coach/groups/${groupId}/planning/${eventId}/edit`}>
+              <Pencil size={16} aria-hidden="true" />
+              {t("common.edit")}
+            </Link>
+          ) : null}
+          {isTrainingPast ? (
+            <Link className={actionStyles.primaryButton} href={`/coach/groups/${groupId}/planning/${eventId}/debrief`}>
+              <ClipboardCheck size={16} aria-hidden="true" />
+              {coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")}
+            </Link>
+          ) : null}
+          <Link className={actionStyles.backButton} href={`/coach/groups/${groupId}/planning`}>
+            <ArrowLeft size={16} aria-hidden="true" />
+            {tr("Retour à la planification", "Back to planning")}
+          </Link>
+        </div>
+      </div>
+
+      {error ? <div className={actionStyles.errorAlert} role="alert">{error}</div> : null}
+
+      <CoachActivityCard startsAt={event.starts_at} endsAt={event.ends_at}
+        typeLabel={eventTypeLabelLocalized(event.event_type, locale)} title={eventCardTitle}
+        groupName={groupName} clubName={clubName} showClub={coachClubCount > 1} location={event.location_text}>
+        {event.status === "cancelled" || event.coach_note?.trim() ? <div>
+          {event.status === "cancelled" ? <span className="pill-soft">{t("coach.planning.cancelled")}</span> : null}
+          {event.coach_note?.trim() ? <p className="manager-calendar-detail-note">{event.coach_note}</p> : null}
+        </div> : null}
+      </CoachActivityCard>
+
+      <section className={styles.quickPanel}>
+        <div className={styles.sectionHeading}>
+          <div><h2>{tr("Coachs attendus", "Expected coaches")}</h2><p>{tr("Coachs affectés à cette activité.", "Coaches assigned to this activity.")}</p></div>
+        </div>
+        <div className={eventStyles.coachList}>
+          {selectedCoaches.map((coach) => (
+            <div key={coach.id} className={eventStyles.coachRow}>
+              <b>{nameOf(coach.first_name, coach.last_name)}</b>
+              {canManageActivity ? <button type="button" className={eventStyles.iconButton} onClick={() => removeCoach(coach.id)} disabled={Boolean(coachBusyIds[coach.id])} aria-label={tr("Retirer le coach", "Remove coach")} title={tr("Retirer le coach", "Remove coach")}><Trash2 size={16} aria-hidden="true" /></button> : null}
+            </div>
+          ))}
+          {selectedCoaches.length === 0 ? <p className={eventStyles.emptyState}>{tr("Aucun coach assigné.", "No coach assigned.")}</p> : null}
+        </div>
+        {canManageActivity && candidateCoaches.length ? (
+          <div className={eventStyles.coachList} role="group" aria-label={tr("Ajouter un coach", "Add coach")}>
+            {candidateCoaches.map((coach) => (
+              <div key={coach.id} className={eventStyles.coachRow}>
+                <b>{nameOf(coach.first_name, coach.last_name)}</b>
+                <button type="button" className={eventStyles.iconButton} onClick={() => addCoach(coach.id)} disabled={Boolean(coachBusyIds[coach.id])} aria-label={`${tr("Ajouter le coach", "Add coach")} ${nameOf(coach.first_name, coach.last_name)}`} title={tr("Ajouter le coach", "Add coach")}><PlusCircle size={16} aria-hidden="true" /></button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </section>
+
+      <section id="expected-players" className={styles.quickPanel}>
+        <div className={styles.sectionHeading}>
+          <div><h2>{tr("Joueurs attendus", "Expected players")}</h2><p>{showPreparationInsights ? tr("Présence et points d’attention générés uniquement à partir des notes privées des cinq derniers entraînements.", "Attendance and focus points generated only from private notes from the last five training sessions.") : tr("Présence et évaluation des juniors de l’activité.", "Attendance and evaluation for the activity's juniors.")}</p></div>
+        </div>
+        <div className={eventStyles.playerList}>
+          {showPreparationInsights && !preparationInsightsLoading && preparationInsightsByPlayerId.size > 0 && !readTrackingAvailable
+            ? <p className={eventStyles.preparationEmpty} role="status">{t("coach.preparation.unavailable")}</p> : null}
+          {attendees.map((attendee) => {
+            const player = attendee.profile ?? null;
+            const evaluation = evaluatedPlayersById.get(attendee.player_id) ?? null;
+            const canEvaluate = event.event_type === "interclub" && attendee.status !== "absent" && isEventPast;
+            const canStructure = (event.event_type === "training" || event.event_type === "camp") && !isEventPast;
+            const preparationInsight = preparationInsightsByPlayerId.get(attendee.player_id) ?? null;
+            const attendanceStatus = attendee.coach_recorded_status
+              ?? (attendee.status === "present" || attendee.status === "absent" ? attendee.status : null);
+            return (
+              <article key={attendee.player_id} className={eventStyles.playerRow}>
+                <div className={eventStyles.playerMain}>
+                  <div className={eventStyles.playerHeader}>
+                  <div className={eventStyles.playerIdentity}>
+                    <span className="user-mgmt-member-avatar" aria-hidden="true">{avatarNode(player)}</span>
+                    <b>{nameOf(player?.first_name ?? null, player?.last_name ?? null)}</b>
+                  </div>
+                <div className={eventStyles.attendance}>
+                  {attendanceLockedIds.has(attendee.player_id) ? (
+                    <span className="pill-soft" title={t("coach.error.attendanceLocked")}>
+                      {attendanceStatus === "present"
+                        ? t("coachDebrief.present")
+                        : attendanceStatus === "absent"
+                          ? t("coachDebrief.absent")
+                          : t("coachDebrief.noPreset")}
+                    </span>
+                  ) : (
+                    <AttendanceToggle variant="pill" checked={attendanceStatus === "present"} onToggle={() => handleAttendanceToggle(attendee.player_id, attendanceStatus ?? attendee.status)} disabled={Boolean(attendanceBusyIds[attendee.player_id])} ariaLabel={tr("Basculer présence", "Toggle attendance")} leftLabel={tr("Absent", "Absent")} rightLabel={tr("Présent", "Present")} />
+                  )}
+                  {isTrainingPast ? <Link className={eventStyles.actionIconButton} aria-label={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} title={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} href={`/coach/groups/${groupId}/planning/${eventId}/debrief`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
+                  {canEvaluate ? <Link className={eventStyles.actionIconButton} aria-label={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} title={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/edit`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
+                  {canStructure ? <Link className={eventStyles.actionIconButton} aria-label={tr("Structurer", "Structure")} title={tr("Structurer", "Structure")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/structure`}><Pencil size={17} aria-hidden="true" /></Link> : null}
+                </div>
+                  </div>
+                  {showPreparationInsights ? (
+                    <div className={eventStyles.preparationInsight}>
+                      <div className={eventStyles.preparationInsightHeader}>
+                        <span><Sparkles size={14} aria-hidden="true" />{tr("Points d’attention", "Focus points")}</span>
+                        {preparationInsight ? <small>{preparationInsight.source_event_count} {tr(preparationInsight.source_event_count > 1 ? "séances avec note privée" : "séance avec note privée", preparationInsight.source_event_count > 1 ? "sessions with a private note" : "session with a private note")}</small> : null}
+                      </div>
+                      {preparationInsightsLoading ? (
+                        <div className={eventStyles.preparationLoading} aria-label={tr("Préparation des points d’attention", "Preparing focus points")}><i /><i /><i /></div>
+                      ) : preparationInsight ? (
+                        <ul className={eventStyles.preparationChecklist}>
+                          {preparationInsight.points.map((point, index) => <li key={`${attendee.player_id}-${index}`}>{point.text}</li>)}
+                        </ul>
+                      ) : (
+                        <p className={eventStyles.preparationEmpty}>{preparationUnavailablePlayers.has(attendee.player_id)
+                          ? t("coach.error.aiAuthorization")
+                          : preparationInsightsError ? tr("Points d’attention momentanément indisponibles.", "Focus points are temporarily unavailable.") : tr("Aucune note privée exploitable sur les cinq dernières séances.", "No usable private note from the last five sessions.")}</p>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+                {seenError[attendee.player_id] ? <p className={eventStyles.readError} role="alert">{t(seenError[attendee.player_id])}</p> : null}
+                <div className={eventStyles.playerActions}>
+                  {showPreparationInsights && preparationInsight ? <button type="button"
+                    className={`${eventStyles.seenButton} ${preparationInsight.seen_at ? eventStyles.isSeen : ""}`}
+                    aria-pressed={Boolean(preparationInsight.seen_at)}
+                    title={!readTrackingAvailable ? t("coach.preparation.unavailable") : undefined}
+                    disabled={!readTrackingAvailable || Boolean(preparationInsight.seen_at) || seenBusy[attendee.player_id]}
+                    onClick={() => void markPreparationSeen(preparationInsight)}>
+                    {preparationInsight.seen_at ? <Check size={16} aria-hidden="true"/> : <Eye size={16} aria-hidden="true"/>}
+                    {t(preparationInsight.seen_at ? "coach.preparation.seen" : "coach.preparation.markSeen")}
+                  </button> : null}
+                </div>
+              </article>
+            );
+          })}
+          {attendees.length === 0 ? <p className={eventStyles.emptyState}>{tr("Aucun joueur.", "No player.")}</p> : null}
+        </div>
+      </section>
+
+      {event.event_type === "training" || event.event_type === "camp" ? (
+        <section id="activity-structure" className={styles.quickPanel}>
+          <div className={styles.sectionHeading}><div><h2>{tr("Structure de l’activité", "Activity structure")}</h2><p>{tr("Déroulement prévu pour cette activité.", "Planned structure for this activity.")}</p></div></div>
+          {structureItems.length ? <ul style={{ margin: 0, paddingLeft: 20, display: "grid", gap: 8 }}>{structureItems.map((item, index) => <li key={`${item.category}-${index}`}><b>{categoryLabel(item.category)}</b> — {item.minutes} min{item.note ? ` · ${item.note}` : ""}</li>)}</ul> : <p style={{ margin: 0 }}>{tr("Aucune structure planifiée.", "No planned structure.")}</p>}
+          {canManageActivity ? <div className="user-mgmt-card-actions">
+            {event.series_id ? <button type="button" className={eventStyles.copyButton} onClick={copyStructureToFutureEvents} disabled={copyingStructure || !structureItems.length}>{copyingStructure ? tr("Copie…", "Copying…") : tr("Copier sur les activités futures", "Copy to future activities")}</button> : null}
+            <Link className={eventStyles.actionIconButton} aria-label={t("common.edit")} title={t("common.edit")} href={`/coach/groups/${groupId}/planning/${eventId}/edit`}><Pencil size={16} aria-hidden="true" /></Link>
+          </div> : null}
+          {copyStructureMessage ? <div className={actionStyles.successAlert}>{copyStructureMessage}</div> : null}
+        </section>
+      ) : null}
+    </main>
+  );
+}

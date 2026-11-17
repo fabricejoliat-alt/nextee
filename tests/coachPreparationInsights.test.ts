@@ -63,7 +63,7 @@ test("a newer cleared feedback note overrides an older validated private note", 
 
 test("the coach event page and endpoint keep insights gated and player-isolated", () => {
   const page = readFileSync(
-    new URL("../app/coach/groups/[id]/planning/[eventId]/page.tsx", import.meta.url),
+    new URL("../app/coach/groups/[id]/planning/[eventId]/CoachEventDetail.tsx", import.meta.url),
     "utf8"
   );
   const route = readFileSync(

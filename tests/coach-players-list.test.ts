@@ -35,7 +35,7 @@ function database(options: { empty?: boolean; fail?: () => boolean } = {}) {
           { club_id: "club-a", user_id: "missing" },
           { club_id: "club-a", user_id: "outside" },
         ];
-        if (table === "clubs") data = [{ id: "club-a", name: "Club A" }, { id: "club-b", name: "Club B" }];
+        if (table === "organizations") data = [{ id: "club-a", name: "Club A" }, { id: "club-b", name: "Club B" }];
         if (table === "coach_group_coaches") data = [{ group_id: "group" }];
         if (table === "coach_group_players") data = [{ player_user_id: "assigned" }, { player_user_id: "missing" }];
         if (table === "profiles") data = profiles.filter((profile) => (state.filters.id as string[]).includes(profile.id));
