@@ -271,10 +271,10 @@ test("directory loading, empty and error states translate without displaying raw
   for (const page of ["players", "groups"]) {
     for (const locale of ["fr", "en", "de", "it"] as const) {
       for (const failed of [true, false]) {
-        const query = new Proxy({}, { get: (_, property) => property === "then" ?
-          (resolve: (value: unknown) => unknown) => Promise.resolve({ data: [], error: failed ? { message: "database detail" } : null }).then(resolve) : () => query });
         const harness = coachComponentHarness("app/coach/" + page + "/page.tsx", {
-          locale, database: { from: () => query }, fetch: async () => { throw new Error("Unexpected fetch"); },
+          locale, fetch: async () => failed
+            ? Response.json({ error: "database detail" }, { status: 500 })
+            : Response.json({ groups: [], players: [], clubs: [] }),
         });
         assert.ok(elements(harness.render()).some((node) => node.type === "skeleton"));
         await flush();

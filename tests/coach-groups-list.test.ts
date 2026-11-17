@@ -4,46 +4,26 @@ import { coachComponentHarness, elements, textContent, flush, type Element } fro
 import { messages } from "../lib/i18n/messages.ts";
 
 const page = "app/coach/groups/page.tsx";
-type Query = { table: string; columns: string; filters: Record<string, unknown> };
-const group = (id: string, name: string, is_active = true) => ({ id, name, is_active, club_id: "club", head_coach_user_id: null });
-const groups = [group("active", "Junior 1"), group("inactive", "Groupe inactif", false),
-  group("specific", "Groupe spécifique"), group("event", "__EVENT_SPECIFIQUE__123"),
-  group("archived", "__ARCHIVE_DELETED__123"), group("other", "Autre groupe")];
-
 function database(options: { transfer?: boolean; empty?: boolean; fail?: () => boolean } = {}) {
-  const reads: Query[] = [];
-  return { reads, from(table: string) {
-    const state: Query = { table, columns: "", filters: {} };
-    const query = {
-      select(columns: string) { state.columns = columns; return query; },
-      eq(key: string, value: unknown) { state.filters[key] = value; return query; },
-      in(key: string, value: unknown) { state.filters[key] = value; return query; },
-      then(resolve: (result: { data: unknown; error: unknown }) => unknown) {
-        reads.push(state);
-        if (options.fail?.()) return Promise.resolve({ data: null, error: { message: "private database detail" } }).then(resolve);
-        let data: unknown = [];
-        if (table === "club_members") data = options.empty ? [] : [{ club_id: "club", can_transfer_players_between_club_groups: options.transfer ?? false }];
-        if (table === "coach_groups") data = state.columns === "id" ? [] : groups;
-        if (table === "organizations") data = [{ id: "club", name: "Club témoin" }];
-        if (table === "coach_group_coaches") data = state.columns === "group_id,is_head" ?
-          groups.filter((row) => row.id !== "other").map((row) => ({ group_id: row.id, is_head: row.id === "active" })) : [{ group_id: "active" }];
-        if (table === "coach_group_players") data = [{ group_id: "active" }, { group_id: "active" }];
-        if (table === "coach_group_categories") data = [{ group_id: "active", category: "U14" }];
-        assert.notEqual(table, "club_events", "The simplified directory must not fetch activity data");
-        return Promise.resolve({ data, error: null }).then(resolve);
-      },
-    };
-    return query;
+  const reads: string[] = [];
+  const active = { id: "active", name: "Junior 1", clubName: "Club témoin", playerCount: 2, coachCount: 1, categories: ["U14"], isHead: true, isAssigned: true };
+  return { reads, fetch: async (url: string, init: RequestInit) => {
+    assert.equal(url, "/api/coach/directory?view=groups");
+    assert.equal(init.cache, "no-store");
+    assert.equal(new Headers(init.headers).get("authorization"), "Bearer test-only");
+    reads.push(url);
+    if (options.fail?.()) return Response.json({ error: "private database detail" }, { status: 500 });
+    return Response.json({ groups: options.empty ? [] : [active, ...(options.transfer ? [{ ...active, id: "other", name: "Autre groupe", categories: [], isAssigned: false, isHead: false }] : [])] });
   } };
 }
 const find = (tree: Element, predicate: (node: Element) => boolean) => {
   const node = elements(tree).find(predicate); assert.ok(node, "Expected UI element"); return node;
 };
-const noFetch = async () => { throw new Error("Unexpected network request"); };
+
 
 test("Coach groups show only active authorized groups with five columns and an accessible eye link", async (context) => {
   const db = database();
-  const harness = coachComponentHarness(page, { database: db, fetch: noFetch });
+  const harness = coachComponentHarness(page, { fetch: db.fetch });
   context.after(() => harness.cleanup());
   assert.ok(elements(harness.render()).some((node) => node.type === "skeleton"));
   await flush();
@@ -66,20 +46,12 @@ test("Coach groups show only active authorized groups with five columns and an a
     assert.ok(elements(link).some((node) => node.type === "Eye" && node.props["aria-hidden"] === "true"));
     assert.ok(!elements(tree).some((node) => node.type === "ArrowRight"));
   }
-  const groupRead = db.reads.find((query) => query.table === "coach_groups" && query.columns !== "id");
-  assert.equal(groupRead?.filters.is_active, true);
-  assert.deepEqual(groupRead.filters.club_id, ["club"]);
-  assert.deepEqual(db.reads.filter((query) => query.table === "coach_group_players").map((query) => query.filters.group_id), ["active"]);
-  for (const table of ["coach_group_players", "coach_group_coaches", "coach_group_categories"]) {
-    const childReads = db.reads.filter((query) => query.table === table && query.filters.group_id);
-    assert.deepEqual(childReads.map((query) => query.filters.group_id), ["active"], `${table} must be read one group at a time`);
-  }
-  assert.ok(!db.reads.some((query) => query.table === "club_events"));
+  assert.equal(db.reads.length, 1, "One authenticated request replaces the roster fan-out");
 });
 
 test("group search and transfer-club visibility keep inactive and special groups hidden", async (context) => {
   const db = database({ transfer: true });
-  const harness = coachComponentHarness(page, { database: db, fetch: noFetch });
+  const harness = coachComponentHarness(page, { fetch: db.fetch });
   context.after(() => harness.cleanup());
   harness.render(); await flush();
   let tree = harness.render();
@@ -99,8 +71,8 @@ test("group search and transfer-club visibility keep inactive and special groups
 
 test("empty memberships and failed group reads never show stale table data", async (context) => {
   let fail = true;
-  const harness = coachComponentHarness(page, { database: database({ fail: () => fail }), fetch: noFetch });
-  const empty = coachComponentHarness(page, { database: database({ empty: true }), fetch: noFetch });
+  const harness = coachComponentHarness(page, { fetch: database({ fail: () => fail }).fetch });
+  const empty = coachComponentHarness(page, { fetch: database({ empty: true }).fetch });
   context.after(() => { harness.cleanup(); empty.cleanup(); });
   harness.render(); empty.render(); await flush();
   assert.ok(textContent(empty.render()).includes(messages.fr["coach.groups.empty"]));

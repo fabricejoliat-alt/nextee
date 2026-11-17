@@ -5,7 +5,6 @@ import { messages } from "../lib/i18n/messages.ts";
 import { coachDateLocale } from "../lib/i18n/coachMessages.ts";
 
 const page = "app/coach/players/page.tsx";
-type Query = { table: string; filters: Record<string, unknown> };
 const profiles = [
   { id: "assigned", first_name: "Alex", last_name: "Martin", avatar_url: "/avatar.jpg", handicap: 14.2, sex: "male" },
   { id: "transfer", first_name: "Camille", last_name: "Durand", avatar_url: null, handicap: 0, sex: "female" },
@@ -14,35 +13,18 @@ const profiles = [
 ];
 
 function database(options: { empty?: boolean; fail?: () => boolean } = {}) {
-  const reads: Query[] = [];
-  return { reads, from(table: string) {
-    const state: Query = { table, filters: {} };
-    const query = {
-      select() { return query; },
-      eq(key: string, value: unknown) { state.filters[key] = value; return query; },
-      in(key: string, value: unknown) { state.filters[key] = value; return query; },
-      then(resolve: (result: { data: unknown; error: unknown }) => unknown) {
-        reads.push(state);
-        if (options.fail?.()) return Promise.resolve({ data: null, error: { message: "private database detail" } }).then(resolve);
-        let data: unknown = [];
-        if (table === "club_members") data = state.filters.role === "coach" ? (options.empty ? [] : [
-          { club_id: "club-a", can_transfer_players_between_club_groups: false },
-          { club_id: "club-b", can_transfer_players_between_club_groups: true },
-        ]) : [
-          { club_id: "club-a", user_id: "assigned" },
-          { club_id: "club-b", user_id: "assigned" },
-          { club_id: "club-b", user_id: "transfer" },
-          { club_id: "club-a", user_id: "missing" },
-          { club_id: "club-a", user_id: "outside" },
-        ];
-        if (table === "organizations") data = [{ id: "club-a", name: "Club A" }, { id: "club-b", name: "Club B" }];
-        if (table === "coach_group_coaches") data = [{ group_id: "group" }];
-        if (table === "coach_group_players") data = [{ player_user_id: "assigned" }, { player_user_id: "missing" }];
-        if (table === "profiles") data = profiles.filter((profile) => (state.filters.id as string[]).includes(profile.id));
-        return Promise.resolve({ data, error: null }).then(resolve);
-      },
-    };
-    return query;
+  const reads: string[] = [];
+  return { reads, fetch: async (url: string, init: RequestInit) => {
+    assert.equal(url, "/api/coach/directory?view=players");
+    assert.equal(init.cache, "no-store");
+    assert.equal(new Headers(init.headers).get("authorization"), "Bearer test-only");
+    reads.push(url);
+    if (options.fail?.()) return Response.json({ error: "private database detail" }, { status: 500 });
+    return Response.json({ clubs: options.empty ? [] : [{ id: "club-a", name: "Club A" }, { id: "club-b", name: "Club B" }],
+      players: options.empty ? [] : profiles.slice(0, 3).map((profile, index) => ({ ...profile,
+        club_ids: index === 0 ? ["club-a", "club-b"] : index === 1 ? ["club-b"] : ["club-a"],
+        club_names: index === 0 ? ["Club A", "Club B"] : index === 1 ? ["Club B"] : ["Club A"],
+      })) });
   } };
 }
 const find = (tree: Element, predicate: (node: Element) => boolean) => {
@@ -50,11 +32,11 @@ const find = (tree: Element, predicate: (node: Element) => boolean) => {
 };
 const rows = (tree: Element) => elements(tree).filter((node) => node.type === "li");
 const compactText = (tree: Element) => textContent(tree).replace(/\s+/g, " ").trim();
-const noFetch = async () => { throw new Error("Unexpected network request"); };
+
 
 test("Coach junior rows contain only an avatar, name, parenthesized handicap and accessible eye link", async (context) => {
   const db = database();
-  const harness = coachComponentHarness(page, { database: db, fetch: noFetch });
+  const harness = coachComponentHarness(page, { fetch: db.fetch });
   context.after(() => harness.cleanup());
   assert.ok(elements(harness.render()).some((node) => node.type === "skeleton"));
   await flush();
@@ -85,13 +67,12 @@ test("Coach junior rows contain only an avatar, name, parenthesized handicap and
       assert.ok(elements(link).some((node) => node.type === "Eye" && node.props["aria-hidden"] === "true"));
     });
   }
-  assert.deepEqual(db.reads.find((query) => query.table === "profiles")?.filters.id, ["assigned", "transfer", "missing"]);
-  assert.ok(db.reads.filter((query) => query.table === "club_members").every((query) => query.filters.is_active === true));
+  assert.equal(db.reads.length, 1, "One authenticated request replaces the roster fan-out");
 });
 
 test("the compact list retains name/club search and club/gender filters without refetching", async (context) => {
   const db = database();
-  const harness = coachComponentHarness(page, { database: db, fetch: noFetch });
+  const harness = coachComponentHarness(page, { fetch: db.fetch });
   context.after(() => harness.cleanup());
   harness.render(); await flush();
   let tree = harness.render();
@@ -117,8 +98,8 @@ test("the compact list retains name/club search and club/gender filters without 
 
 test("empty memberships and failed directory reads show no junior rows and support retry", async (context) => {
   let fail = true;
-  const harness = coachComponentHarness(page, { database: database({ fail: () => fail }), fetch: noFetch });
-  const empty = coachComponentHarness(page, { database: database({ empty: true }), fetch: noFetch });
+  const harness = coachComponentHarness(page, { fetch: database({ fail: () => fail }).fetch });
+  const empty = coachComponentHarness(page, { fetch: database({ empty: true }).fetch });
   context.after(() => { harness.cleanup(); empty.cleanup(); });
   harness.render(); empty.render(); await flush();
   assert.ok(textContent(empty.render()).includes(messages.fr["coach.players.empty"]));
