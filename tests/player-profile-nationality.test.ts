@@ -43,6 +43,7 @@ function profileFixture(nationality: string | null = null, avatar: string | null
   const harness = coachComponentHarness("app/player/profile/page.tsx", {
     fetch: fetcher, database,
     modules: {
+      "@/components/golf/TrainingDurationSettings": { __esModule: true, default: "duration-settings" },
       "react-easy-crop": { __esModule: true, default: "cropper" },
       "next/image": { __esModule: true, default: "img" },
       "@/components/auth/BiometricLockSettings": { __esModule: true, default: "biometric-settings" },

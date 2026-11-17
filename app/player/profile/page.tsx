@@ -1015,8 +1015,10 @@ export default function PlayerProfilePage() {
 
         <SectionCard title="Documents et données personnelles" icon={<ShieldCheck size={17} aria-hidden="true" />}>
           <nav className={styles.legalLinks} aria-label="Documents et données personnelles">
-            <Link href="/legal/my">Documents et consentements →</Link>
-            <Link href="/legal/request">Mes données →</Link>
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Open legal pages outside the retained Player shell. */}
+            <a href="/legal/my">Documents et consentements →</a>
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Open legal pages outside the retained Player shell. */}
+            <a href="/legal/request">Mes données →</a>
             <DeleteAccountLink variant="text" />
           </nav>
         </SectionCard>
