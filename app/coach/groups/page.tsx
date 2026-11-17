@@ -44,7 +44,7 @@ export default function CoachGroupsPage() {
       const visible = ((groupResult.data ?? []) as RawGroup[]).filter((group) => isOperationalGroup(group) && (assignedIds.has(group.id) || transferClubs.has(group.club_id))); const ids = visible.map((group) => group.id); const clubNames = new Map((clubResult.data ?? []).map((club) => [club.id, club.name ?? ""]));
       if (!ids.length) { if (active) setGroups([]); return; }
       const [players, coaches, categories] = await Promise.all([
-        readCoachGroupRosters(ids, (id) => supabase.from("coach_group_players").select("group_id").eq("group_id", id)), supabase.from("coach_group_coaches").select("group_id").in("group_id", ids), supabase.from("coach_group_categories").select("group_id,category").in("group_id", ids),
+        readCoachGroupRosters(ids, (id) => supabase.from("coach_group_players").select("group_id").eq("group_id", id)), readCoachGroupRosters(ids, (id) => supabase.from("coach_group_coaches").select("group_id").eq("group_id", id)), readCoachGroupRosters(ids, (id) => supabase.from("coach_group_categories").select("group_id,category").eq("group_id", id)),
       ]);
       if (players.error || coaches.error || categories.error) throw new Error(players.error?.message ?? coaches.error?.message ?? categories.error?.message);
       const count = (rows: Array<{ group_id: string }>, id: string) => rows.filter((row) => row.group_id === id).length;

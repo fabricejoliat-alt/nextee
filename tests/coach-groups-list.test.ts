@@ -70,6 +70,10 @@ test("Coach groups show only active authorized groups with five columns and an a
   assert.equal(groupRead?.filters.is_active, true);
   assert.deepEqual(groupRead.filters.club_id, ["club"]);
   assert.deepEqual(db.reads.filter((query) => query.table === "coach_group_players").map((query) => query.filters.group_id), ["active"]);
+  for (const table of ["coach_group_players", "coach_group_coaches", "coach_group_categories"]) {
+    const childReads = db.reads.filter((query) => query.table === table && query.filters.group_id);
+    assert.deepEqual(childReads.map((query) => query.filters.group_id), ["active"], `${table} must be read one group at a time`);
+  }
   assert.ok(!db.reads.some((query) => query.table === "club_events"));
 });
 
