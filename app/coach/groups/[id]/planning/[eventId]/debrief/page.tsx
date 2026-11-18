@@ -5,7 +5,7 @@ import { organizationFetch as fetch } from "@/lib/organizationFetch";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import {
   Check,
   CheckCircle2,
@@ -147,6 +147,7 @@ function formatMoment(value: string, locale: string) {
 
 export default function CoachTrainingDebriefPage() {
   const params = useParams<{ id: string; eventId: string }>();
+  const requestedPlayerId = useSearchParams().get("playerId");
   const groupId = String(params?.id ?? "").trim();
   const eventId = String(params?.eventId ?? "").trim();
   const { locale, t } = useI18n();
@@ -241,10 +242,16 @@ export default function CoachTrainingDebriefPage() {
           const attendee = ((json?.attendees ?? []) as DebriefApiAttendee[]).find((row) => row.player_id === review.player_id);
           return [review.player_id, String(attendee?.feedback?.private_note ?? "")];
         })));
+        const requestedIndex = loadedReviews.findIndex(review => review.player_id === requestedPlayerId);
+        if (requestedPlayerId && requestedIndex < 0) {
+          setReviews([]);
+          setError("coach.error.attendee");
+          return;
+        }
         setReviews(loadedReviews);
         const firstIncomplete = loadedReviews.findIndex((review) => !isEvaluationComplete(review, criteria));
-        setCurrentIndex(firstIncomplete >= 0 ? firstIncomplete : 0);
-        setFlowComplete(loadedReviews.length > 0 && firstIncomplete === -1);
+        setCurrentIndex(requestedIndex >= 0 ? requestedIndex : Math.max(0, firstIncomplete));
+        setFlowComplete(requestedIndex < 0 && loadedReviews.length > 0 && firstIncomplete === -1);
       } catch (caught: unknown) {
         if (active) setError(coachCaughtErrorKey(caught, "coach.error.load"));
       } finally {
@@ -254,7 +261,7 @@ export default function CoachTrainingDebriefPage() {
     return () => {
       active = false;
     };
-  }, [eventId]);
+  }, [eventId, requestedPlayerId]);
 
   function patchIndividualAi(playerId: string, patch: Partial<IndividualAiState>) {
     setIndividualAi((current) => ({
