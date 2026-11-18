@@ -33,7 +33,7 @@ export function assertCalendarAccount(user: User | null) {
 
 /** Re-run live membership, guardian, assignment and legal gates on every feed poll. */
 export async function authorizeCalendar(db: SupabaseClient, actorId: string, scope: CalendarScope) {
-  const legal = await loadLegalGateStatus(db, actorId, scope.organizationId);
+  const legal = await loadLegalGateStatus(db, actorId);
   if (legal.missing.length) throw new CalendarAccessError(403);
   if (scope.kind === "player") {
     const actor = await loadPlayerActorAuthorization(db, actorId);

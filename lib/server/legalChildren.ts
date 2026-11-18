@@ -14,7 +14,7 @@ export async function legalChildren(db: SupabaseClient, actorId: string) {
     db.from("legal_representative_assertions").select("child_id,club_id,status").eq("guardian_id", actorId),
     db.from("profiles").select("id,first_name,last_name").in("id", ids),
     db.from("organizations").select("id,name,org_type").in("id", orgIds),
-    db.from("legal_current_state").select("document_id,beneficiary_id,club_scope,version_id,decision,conflict").in("beneficiary_id", ids).in("club_scope", orgIds),
+    db.from("legal_current_state").select("document_id,beneficiary_id,club_scope,version_id,decision,conflict").in("beneficiary_id", ids),
     db.from("academy_roster_entries").select("academy_id,player_id,status,origin_type,source_approved_at").in("academy_id", orgIds).in("player_id", ids),
   ]);
   for (const result of [links, parentMemberships, memberships, assertions, profiles, organizations, states, roster]) if (result.error) throw result.error;
@@ -34,6 +34,6 @@ export async function legalChildren(db: SupabaseClient, actorId: string) {
       club_name: org?.name ?? null, organization_name: org?.name ?? null, org_type: org?.org_type ?? null,
       can_authorize: editable && (verified || ["parent","father","mother","legal_guardian"].includes(link?.relation ?? "")),
       other_clubs_pending: [], representation_verified: verified, consent_status: membership.player_consent_status,
-      states: (states.data ?? []).filter(row => row.beneficiary_id === scope.player_id && row.club_scope === scope.organization_id) }];
+      states: (states.data ?? []).filter(row => row.beneficiary_id === scope.player_id && (row.club_scope === scope.organization_id || row.club_scope === null)) }];
   });
 }

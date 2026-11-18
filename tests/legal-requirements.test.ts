@@ -24,11 +24,19 @@ test("one current platform acceptance covers a multi-role adult while a new vers
   assert.equal(findMissingLegalActions({ ...base, states: [{ ...base.states[0], version_id: "v2" }] }).length, 0);
 });
 
-test("club scope stays isolated and an optional consent never blocks general access", () => {
+test("another organization's documents and unpublished choices do not create a personal requirement", () => {
   const input = { memberships: [{ club_id: "club-b", role: "coach" }], isAdmin: false,
     documents: [clubNotice, optionalPhoto], versions: [{ id: "n1", document_id: "notice", version_number: 1 }], states: [] };
   assert.deepEqual(findMissingLegalActions(input), []);
   assert.deepEqual(findMissingLegalActions({ ...input, memberships: [{ club_id: "club-a", role: "coach" }] }).map((x) => x.document_id), ["notice"]);
+});
+
+test("a published consent needs a first response, including a refusal", () => {
+  const input = { memberships: [{ club_id: "club-a", role: "parent" }], isAdmin: false,
+    documents: [optionalPhoto], versions: [{ id: "photo-v1", document_id: "photo", version_number: 1 }], states: [] };
+  assert.deepEqual(findMissingLegalActions(input).map(row => row.document_id), ["photo"]);
+  assert.deepEqual(findMissingLegalActions({ ...input, states: [{ document_id: "photo", version_id: "photo-v1",
+    club_scope: "club-a", decision: "refused", conflict: false }] }), []);
 });
 
 test("a refusal or withdrawal cannot satisfy a required document even on the current version", () => {

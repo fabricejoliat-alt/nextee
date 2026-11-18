@@ -2,28 +2,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import DeleteAccountLink from "@/components/legal/DeleteAccountLink";
-import { ArrowRight, Check, ChevronDown, Download, FileText, Globe2, LockKeyhole, LogOut, ShieldCheck, TriangleAlert, X } from "lucide-react";
-import { useI18n } from "@/components/i18n/AppI18nProvider";
-import { organizationAccessLabelKey, type OrganizationAccessSummary } from "@/lib/organizationPolicy";
+import { ArrowRight, Check, ChevronDown, Download, FileText, Globe2, LockKeyhole, LogOut, ShieldCheck, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import styles from "./MyLegalPage.module.css";
 import { parentAuthorizationItems, type LegalChild } from "@/lib/parentAuthorization";
+import { buildLegalChecklist, type ChecklistDocument } from "@/lib/legalChecklist";
 import { requiresParentCode } from "@/lib/legalParentConfirmation";
 
-type Doc = { id: string; document_key: string; kind: string; purpose_key: string; scope: string; club_id: string | null; club_name: string | null; org_type?: string | null; audience_roles: string[]; eligible_role: string | null; action_kind: string; required: boolean;
-  version: { id: string; version_number: number; published_at: string; snapshot: { translations?: Record<string, { title: string }> } } | null;
-  own_choice: { version_id: string; decision: string } | null;
-  state: { version_id: string; decision: string; conflict: boolean } | null };
+type Doc = ChecklistDocument;
 type Presentation = { id: string; rendered_snapshot: { title: string; body: string; action_label: string; version_number: number; locale: string }; expires_at: string };
 type Decision = { id: string; actor_id: string; beneficiary_id: string; decision: string; rendered_snapshot: { title: string; body: string; locale: string }; decided_at: string };
 type Child = LegalChild;
-type MissingAction = { document_id: string; document_key: string; kind: string; club_id: string | null; role: string; version_id: string | null };
+type MissingAction = { document_id: string; document_key: string; kind: string; club_id: string | null; role: string; version_id: string | null; beneficiary_id?: string };
 type AccessState = { state: "loading" | "error" } | { state: "ready"; enforcementEnabled: boolean; missing: MissingAction[]; destination: string; consentRequired: boolean; parentConsentRequired: boolean; playerProfileRequired: boolean; pendingClubNames: string[] };
 const homeDestinations = new Set(["/admin", "/manager", "/coach", "/player"]);
 const languages = [{ code: "fr", label: "Français" }, { code: "en", label: "English" }, { code: "de", label: "Deutsch" }, { code: "it", label: "Italiano" }];
 const decisionLabels: Record<string, string> = { accepted: "Accepté", acknowledged: "Lu et confirmé", authorized: "Autorisé", consented: "Consentement donné", refused: "Refusé", withdrawn: "Retiré" };
-const requiredActionLabels: Record<string, string> = { accept: "À accepter", acknowledge: "À lire et confirmer", read: "À lire et confirmer" };
-function displayTitle(value: string, doc?: Doc) { return value.replace(/\{\{\s*(?:club_name|organization_name)\s*\}\}/gi, doc?.club_name ?? "votre organisation").replace(/\{\{\s*child_name\s*\}\}/gi, "votre enfant"); }
 function DecisionHistory({ rows, onDownload, empty }: { rows: Decision[]; onDownload: (row: Decision) => void; empty: string }) {
   if (!rows.length) return <p className={styles.emptyHistory}>{empty}</p>;
   return <div className={styles.historyList}>{rows.map((row) => <details key={row.id} className={styles.historyItem}>
@@ -32,9 +26,6 @@ function DecisionHistory({ rows, onDownload, empty }: { rows: Decision[]; onDown
   </details>)}</div>;
 }
 export default function MyLegalPage() {
-  const { t } = useI18n();
-  const [organizationFilter, setOrganizationFilter] = useState("all");
-  const [organizations, setOrganizations] = useState<OrganizationAccessSummary[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]); const [history, setHistory] = useState<Decision[]>([]);
   const [childHistory, setChildHistory] = useState<Decision[]>([]);
   const [children, setChildren] = useState<Child[]>([]); const [historyChild, setHistoryChild] = useState<string | null>(null);
@@ -60,10 +51,9 @@ export default function MyLegalPage() {
       ]);
       if (typeof gate.enforcement_enabled !== "boolean" || !Array.isArray(gate.missing)
         || typeof redirect.redirectTo !== "string") throw new Error("État de l’accès indisponible.");
-      setOrganizations(gate.organizations ?? []);
       setDocs(d.documents); setHistory(h.decisions); setChildren(c.children); setParentConfirmation(c.parent_confirmation ?? { email_ready: false, delivery_ready: false, code_required: true });
       setAccess({ state: "ready", enforcementEnabled: gate.enforcement_enabled,
-        missing: gate.missing, destination: redirect.redirectTo, consentRequired: redirect.consentRequired === true,
+        missing: [...new Map([...gate.missing, ...(gate.organization_missing ?? [])].map((item: MissingAction) => [`${item.document_id}:${item.club_id}:${item.beneficiary_id ?? "self"}`, item])).values()] as MissingAction[], destination: redirect.redirectTo, consentRequired: redirect.consentRequired === true,
         parentConsentRequired: redirect.parentConsentRequired === true, playerProfileRequired: redirect.playerProfileRequired === true,
         pendingClubNames: Array.isArray(redirect.pendingClubNames) ? redirect.pendingClubNames.filter((name: unknown): name is string => typeof name === "string") : [] });
       setLoading(false);
@@ -102,14 +92,10 @@ export default function MyLegalPage() {
   function download(row: Decision) { const blob = new Blob([JSON.stringify(row, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `activitee-decision-${row.id}.json`;
     link.click(); URL.revokeObjectURL(url); }
-  const parentItems = parentAuthorizationItems(docs, children, locale).filter(item => organizationFilter === "all" || item.child.club_id === organizationFilter);
-  const personalDocs = docs.filter((doc) => (organizationFilter === "all" || doc.scope === "platform" || doc.club_id === organizationFilter) && !(doc.kind === "parent_authorization" && doc.purpose_key === "service.parent_authorization"));
-  const requiredDocs = personalDocs.filter((doc) => doc.required);
-  const optionalDocs = personalDocs.filter((doc) => !doc.required);
-  const optionalDecisions = optionalDocs.filter(doc => {
-    const choice = doc.purpose_key === "coaching.rewrite" ? doc.own_choice : doc.state;
-    return doc.eligible_role && doc.version && (doc.state?.conflict || choice?.version_id !== doc.version.id);
-  });
+  const parentItems = parentAuthorizationItems(docs, children, locale);
+  const checklist = buildLegalChecklist(docs, children, locale);
+  const unanswered = checklist.filter(item => item.requiredResponse && !item.complete);
+  const groups = [...new Map(checklist.map(item => [item.organizationId, item.organizationName])).entries()];
   const verifiedChildren = children.filter((child) => child.representation_verified);
   const accessMissing = access.state === "ready" && access.enforcementEnabled ? access.missing : [];
   const destination = access.state === "ready" ? access.destination : "";
@@ -118,37 +104,9 @@ export default function MyLegalPage() {
   const parentConsentMissing = access.state === "ready" && (access.parentConsentRequired);
   const playerProfileMissing = access.state === "ready" && access.playerProfileRequired;
   const parentCodeRequired = requiresParentCode(subject === "self", selected, parentConfirmation.code_required);
-  const canEnter = access.state === "ready" && accessMissing.length === 0 && !juniorConsentMissing && !parentConsentMissing && !playerProfileMissing && homeDestinations.has(destination);
+  const canEnter = access.state === "ready" && accessMissing.length === 0 && (destination === "/admin" || unanswered.length === 0) && !juniorConsentMissing && !parentConsentMissing && !playerProfileMissing && homeDestinations.has(destination);
   const currentHistoryChild = children.find((child) => `${child.child_id}:${child.club_id}` === historyChild);
   const subjectName = children.find((child) => child.child_id === subject)?.child_name ?? "votre enfant";
-  function renderDoc(doc: Doc) {
-    const title = displayTitle(doc.version?.snapshot.translations?.[locale]?.title ?? doc.document_key, doc);
-    const choice = doc.purpose_key === "coaching.rewrite" ? doc.own_choice : doc.state;
-    const current = Boolean(doc.version && choice?.version_id === doc.version.id);
-    const stateLabel = doc.kind === "parent_authorization" ? "Décision par enfant" : doc.state?.conflict ? "À examiner"
-      : current ? decisionLabels[choice?.decision ?? ""] ?? choice?.decision : doc.required ? "À confirmer" : "Aucun choix";
-    const childActions = (doc.kind === "parent_authorization" || doc.kind === "specific_consent")
-      ? verifiedChildren.filter((child) => doc.scope === "platform" || child.club_id === doc.club_id) : [];
-    return <article key={doc.id} className={styles.docCard}>
-      <div className={styles.docTop}><span className={styles.docIcon}><FileText size={20} aria-hidden="true" /></span><span className={styles.statusPill}>{stateLabel}</span></div>
-      <h3>{title}</h3>
-      <p className={styles.docMeta}>Version {doc.version?.version_number ?? "—"} <span aria-hidden="true">·</span> {doc.scope === "platform" ? "ActiviTee" : doc.club_name ?? t("organization.context")}</p>
-      <p className={styles.docDescription}>{doc.kind === "parent_authorization" ? "À lire et décider pour chaque enfant concerné."
-        : doc.purpose_key === "coaching.rewrite" ? "Le choix du junior reste nécessaire, même avec l’accord du parent."
-        : doc.required ? "Lisez cette version avant de confirmer votre choix." : "Vous pouvez donner ou retirer ce consentement à tout moment."}</p>
-      <div className={styles.docActions}>
-        {doc.kind !== "parent_authorization" && <button type="button" className={styles.primaryButton} disabled={busy || !doc.eligible_role || !doc.version} onClick={() => open(doc)}>Lire et décider <ArrowRight size={16} aria-hidden="true" /></button>}
-        {childActions.map((child) => <button key={`${doc.id}-${child.child_id}-${child.club_id}`} type="button" className={styles.secondaryButton} disabled={busy || !doc.version} onClick={() => open(doc, child.child_id)}>Pour {child.child_name ?? "mon enfant"} <ArrowRight size={16} aria-hidden="true" /></button>)}
-        {doc.kind === "parent_authorization" && !childActions.length && <p className={styles.noChild}>Aucun enfant lié à ce document.</p>}
-      </div>
-    </article>;
-  }
-  function documentGroups(items: Doc[]) {
-    return Array.from(new Set(items.map(doc => doc.club_id))).map(id => <div key={id ?? "platform"}>
-      <h3>{id ? items.find(doc => doc.club_id === id)?.club_name : t("organization.platform")}</h3>
-      <div className={styles.cardGrid}>{items.filter(doc => doc.club_id === id).map(renderDoc)}</div>
-    </div>);
-  }
   async function showChildHistory(child: Child) {
     setHistoryChild(`${child.child_id}:${child.club_id}`); setChildHistory([]);
     try { const result = await api(`/api/legal/history?beneficiary_id=${encodeURIComponent(child.child_id)}&club_id=${encodeURIComponent(child.club_id)}`);
@@ -156,41 +114,36 @@ export default function MyLegalPage() {
     catch (error) { setStatus(error instanceof Error ? error.message : "Indisponible"); }
   }
   return <main className={styles.page}><div className={styles.shell}>
-    <header className={styles.hero}><span className={styles.eyebrow}><ShieldCheck size={17} aria-hidden="true" /> Mon espace</span><h1>Documents et consentements</h1><p>Retrouvez les textes qui vous concernent, consultez leur version actuelle et gardez une trace de vos décisions.</p></header>
+    <header className={styles.hero}><span className={styles.eyebrow}><ShieldCheck size={17} aria-hidden="true" /> Mon espace</span><h1>Documents et consentements</h1><p>Répondez à chaque document pour vous et vos enfants, puis accédez à votre espace.</p></header>
     <div className={styles.content}>
-      <div className={styles.documentControls}>
-      <div className={styles.toolbar}><div><strong>Mes documents</strong><span>Les choix facultatifs restent indépendants des documents requis.</span></div>
+      <div className={styles.listToolbar}><div><strong>Mes consentements</strong><p>Une réponse est nécessaire pour chaque document.</p></div>
         <label className={styles.languageSelect}><Globe2 size={17} aria-hidden="true" /><span>Langue</span><select value={locale} onChange={(event) => { setLocale(event.target.value); closePresentation(); }}>{languages.map((language) => <option key={language.code} value={language.code}>{language.label}</option>)}</select></label>
-      </div>
-      <div className={styles.toolbar}><label className={styles.languageSelect}>{t("organization.context")} <select value={organizationFilter} onChange={event => setOrganizationFilter(event.target.value)}>
-        <option value="all">{t("organization.all")}</option>{Array.from(new Map(organizations.map(org => [org.organization_id, org])).values()).map(org => <option key={org.organization_id} value={org.organization_id}>{org.name}</option>)}
-      </select></label><span>{t("organization.ownAccess")}</span></div>
-      {organizations.length > 0 && <div className={styles.childTabs}>{organizations.map(org => <span key={`${org.organization_id}:${org.player_id}`} className={styles.childButton}>{org.name} · {t(organizationAccessLabelKey(org))}</span>)}</div>}
       </div>
       <section className={styles.accessCard} aria-labelledby="access-title">
         <div className={styles.accessHeading}><span className={styles.accessIcon}><ShieldCheck size={21} aria-hidden="true" /></span><div><h2 id="access-title">Accès à ActiviTee</h2>
           {canEnter ? <p>{access.state === "ready" && access.enforcementEnabled
-            ? "Vos documents requis sont à jour. Vous pouvez rejoindre votre espace."
+            ? "Toutes les réponses ont été enregistrées. Vous pouvez rejoindre votre espace."
             : "Vous pouvez rejoindre votre espace ActiviTee."}</p>
             : access.state === "loading" ? <p>Vérification de vos documents et de votre accès…</p>
             : access.state === "error" ? <p>Impossible de vérifier votre accès pour le moment. Réessayez en actualisant la page.</p>
-            : accessMissing.length || juniorConsentMissing || parentConsentMissing || playerProfileMissing ? <p>Voici les conditions à remplir avant d’accéder à votre espace.</p>
+            : unanswered.length || accessMissing.length || juniorConsentMissing || parentConsentMissing || playerProfileMissing ? <p>{unanswered.length ? `${unanswered.length} réponse${unanswered.length > 1 ? "s" : ""} à enregistrer avant d’accéder à votre espace.` : "Votre accès nécessite encore une vérification."}</p>
             : <p>Aucun espace ActiviTee n’est associé à ce compte. Contactez votre club.</p>}</div></div>
-        {accessMissing.length > 0 && <ul className={styles.accessMissing}>{accessMissing.map((item) => {
-          const doc = docs.find((entry) => entry.id === item.document_id);
-          const title = displayTitle(doc?.version?.snapshot.translations?.[locale]?.title
-            ?? doc?.version?.snapshot.translations?.fr?.title ?? item.document_key, doc);
-          return <li key={item.document_id}><div><strong>{title}</strong><span>{requiredActionLabels[doc?.action_kind ?? ""] ?? "Décision requise"} · {doc?.club_name ?? "ActiviTee"} · {doc?.version ? `Version ${doc.version.version_number}` : "Version à vérifier"}</span></div>
-            {doc?.version && <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => open(doc)}>Lire et décider <ArrowRight size={15} aria-hidden="true" /></button>}</li>;
-        })}</ul>}
-        {optionalDecisions.length > 0 && <div className={styles.optionalAccess}>
-          <div><h3>Documents facultatifs</h3><p>Ces choix sont facultatifs et ne bloquent pas l’accès à votre espace.</p></div>
-          <ul className={styles.accessMissing}>{optionalDecisions.map(doc => <li key={doc.id}>
-            <div><strong>{displayTitle(doc.version?.snapshot.translations?.[locale]?.title ?? doc.version?.snapshot.translations?.fr?.title ?? doc.document_key, doc)}</strong>
-              <span>Facultatif · {doc.club_name ?? "ActiviTee"} · Version {doc.version?.version_number}</span></div>
-            <button type="button" className={styles.secondaryButton} disabled={busy} onClick={() => open(doc)}>Lire et décider <ArrowRight size={15} aria-hidden="true" /></button>
-          </li>)}</ul>
-        </div>}
+        {loading ? <p className={styles.emptyHistory}>Chargement des consentements…</p> : groups.map(([organizationId, name]) =>
+          <section key={organizationId ?? "platform"} className={styles.consentGroup} aria-label={name}>
+            <h3>{name}</h3>
+            <ul className={styles.consentList}>{checklist.filter(item => item.organizationId === organizationId).map(item =>
+              <li key={item.key} className={styles.consentRow}>
+                <div className={styles.consentDetails}><span className={styles.consentPerson}>{item.child ? `Pour ${item.child.child_name ?? "mon enfant"}` : "Pour vous"}</span>
+                  <strong>{item.title}</strong>
+                  <span className={item.complete ? styles.responseComplete : styles.responsePending}>
+                    {item.complete && <Check size={15} aria-hidden="true" />}{item.complete ? decisionLabels[item.decision ?? ""] ?? "Réponse enregistrée" : "À répondre"}
+                  </span>{item.note && <small>{item.note}</small>}
+                </div>
+                <button type="button" className={styles.secondaryButton} disabled={busy || !item.actionable || !item.doc}
+                  onClick={() => item.doc && open(item.doc, item.child?.child_id)}>{item.complete ? "Consulter" : "Lire et répondre"}<ArrowRight size={15} aria-hidden="true" /></button>
+              </li>)}</ul>
+          </section>)}
+        {!loading && !checklist.length && <p className={styles.emptyHistory}>Aucun consentement à renseigner.</p>}
         {playerProfileMissing && <div className={styles.parentConsentNotice}>
           <LockKeyhole size={19} aria-hidden="true" /><div><strong>Date de naissance et statut à vérifier</strong>
             <p>Votre compte est indiqué comme majeur, mais sa date de naissance ne permet pas de confirmer ce statut. Demandez à votre club de vérifier et corriger votre fiche.</p>
@@ -206,37 +159,17 @@ export default function MyLegalPage() {
           onClick={() => refresh().catch((error) => setStatus(error instanceof Error ? error.message : "Vérification indisponible."))}>
           Vérifier à nouveau
         </button>}
-        {parentItems.length > 0 && <div className={styles.parentChildrenNotice}>
-          <div className={styles.parentChildrenHeading}><LockKeyhole size={19} aria-hidden="true" /><div><strong>Autorisations pour mes enfants</strong>
-            <p>{t("organization.legalScope")}</p></div></div>
-          <ul>{parentItems.map((item) => <li key={item.key}><div className={styles.parentChildDetails}>
-            <strong>{item.child.child_name ?? "Mon enfant"} <span>· {item.child.club_name ?? t("organization.context")}</span></strong>
-            <span>{displayTitle(item.title,item.doc)}</span>
-            <small className={styles.authorizationStatus}>
-              {item.complete ? <Check size={16} strokeWidth={3} className={styles.authorizationCompleteIcon} aria-hidden="true" />
-                : !item.conflict ? <TriangleAlert size={16} className={styles.authorizationPendingIcon} aria-hidden="true" /> : null}
-              <span>{item.complete ? "Autorisation enregistrée" : item.conflict ? "Retrait ou refus à examiner avec l’organisation" : "Autorisation à donner"}{item.doc?.version ? ` · Version ${item.doc.version.version_number}` : ""}</span>
-            </small>
-            {Boolean(item.child.other_clubs_pending?.length) && <small>L’accès de cet enfant reste aussi en attente auprès de {item.child.other_clubs_pending!.join(", ")}. Ce club doit activer votre accès Parent pour que vous puissiez y donner l’autorisation.</small>}
-            {!item.child.can_authorize && <small>Votre club doit vérifier votre habilitation à autoriser cet enfant.</small>}
-            {!item.doc?.version && <small>Le document de ce club n’est pas disponible. Contactez votre club.</small>}
-          </div>{item.doc?.version && item.child.can_authorize && <button type="button" className={styles.secondaryButton} disabled={busy}
-            onClick={() => open(item.doc!, item.child.child_id)}>{item.complete ? "Consulter l’autorisation" : "Lire et autoriser"}<ArrowRight size={15} aria-hidden="true" /></button>}</li>)}</ul>
-        </div>}
         {canEnter ? <Link className={styles.primaryButton} href={destination}>Accéder à ActiviTee <ArrowRight size={17} aria-hidden="true" /></Link>
           : <button type="button" className={styles.primaryButton} disabled>Accéder à ActiviTee <ArrowRight size={17} aria-hidden="true" /></button>}
       </section>
       {status && <p className={styles.notice} role="status">{status}</p>}
-      {loading ? <div className={styles.loadingGrid} aria-label="Chargement des documents"><div /><div /><div /></div> : <>
-        {requiredDocs.length > 0 && <section className={styles.section} aria-labelledby="required-title"><div className={styles.sectionHeading}><div><span className={styles.sectionEyebrow}>À consulter</span><h2 id="required-title">Documents requis</h2></div><span className={styles.count}>{requiredDocs.length}</span></div>{documentGroups(requiredDocs)}</section>}
-        {optionalDocs.length > 0 && <section className={styles.section} aria-labelledby="optional-title"><div className={styles.sectionHeading}><div><span className={styles.sectionEyebrow}>À votre choix</span><h2 id="optional-title">Consentements facultatifs</h2></div><span className={styles.count}>{optionalDocs.length}</span></div>{documentGroups(optionalDocs)}</section>}
-        {!docs.length && <div className={styles.emptyDocuments}><Check size={22} aria-hidden="true" /><h2>Aucun document à traiter</h2><p>Vos documents apparaîtront ici lorsqu’ils vous concerneront.</p></div>}
-      </>}
+      <details className={styles.historyArchive}><summary>Historique des réponses <ChevronDown size={17} aria-hidden="true" /></summary>
       <section className={styles.section} aria-labelledby="history-title"><div className={styles.sectionHeading}><div><span className={styles.sectionEyebrow}>Vos preuves</span><h2 id="history-title">Historique de mes décisions</h2></div></div><DecisionHistory rows={history} onDownload={download} empty="Aucune décision enregistrée pour le moment." /></section>
       {verifiedChildren.length > 0 && <section className={styles.section} aria-labelledby="children-title"><div className={styles.sectionHeading}><div><span className={styles.sectionEyebrow}>Représentation parentale</span><h2 id="children-title">Décisions concernant mes enfants</h2></div></div>
-        <div className={styles.childTabs}>{verifiedChildren.map((child) => <button type="button" key={`${child.child_id}-${child.club_id}`} className={historyChild === `${child.child_id}:${child.club_id}` ? styles.activeChild : styles.childButton} onClick={() => showChildHistory(child)}>{child.child_name ?? "Mon enfant"} <span>· {child.club_name ?? t("organization.context")}</span></button>)}</div>
+        <div className={styles.childTabs}>{verifiedChildren.map((child) => <button type="button" key={`${child.child_id}-${child.club_id}`} className={styles.textButton} onClick={() => showChildHistory(child)}>{child.child_name ?? "Mon enfant"} <span>· {child.club_name ?? "votre organisation"}</span></button>)}</div>
         {historyChild && <div className={styles.childHistory}><h3>{currentHistoryChild?.child_name ?? "Mon enfant"}</h3><DecisionHistory rows={childHistory} onDownload={download} empty="Aucune décision enregistrée pour cet enfant." /></div>}
       </section>}
+      </details>
       <footer className={styles.footer}><div><Link href="/legal">Textes publics</Link><Link href="/legal/request">Demande relative à mes données</Link><DeleteAccountLink /></div><button type="button" onClick={async () => { await supabase.auth.signOut(); window.location.assign("/"); }}><LogOut size={16} aria-hidden="true" /> Se déconnecter</button></footer>
     </div>
   </div>

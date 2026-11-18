@@ -113,7 +113,7 @@ async function checkedProxy(req: NextRequest, timing: ReturnType<typeof createRe
   const legalRoute = legalRouteKind(path);
   // Independent reads overlap; neither gate can release business data alone.
   const legalCheck = legalRoute && database && data.user
-    ? timing.measure("legal", () => loadLegalGateStatus(database, data.user!.id, requestedOrganizationId(req.url)))
+    ? timing.measure("legal", () => loadLegalGateStatus(database, data.user!.id))
       .then(value => ({ value, error: null }), error => ({ value: null, error })) : null;
   // A platform admin must not bypass MFA through legacy Manager/Coach APIs.
   // This role lookup overlaps the existing legal checks for ordinary users.
