@@ -96,7 +96,7 @@ export default function MyLegalPage() {
   const checklist = buildLegalChecklist(docs, children, locale);
   const unanswered = checklist.filter(item => item.requiredResponse && !item.complete);
   const groups = [...new Map(checklist.map(item => [item.organizationId, item.organizationName])).entries()];
-  const verifiedChildren = children.filter((child) => child.representation_verified);
+  const verifiedChildren = children.filter((child) => child.can_decide ?? child.representation_verified);
   const accessMissing = access.state === "ready" && access.enforcementEnabled ? access.missing : [];
   const destination = access.state === "ready" ? access.destination : "";
   const juniorConsentMissing = access.state === "ready" && access.consentRequired;

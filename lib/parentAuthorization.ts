@@ -1,7 +1,7 @@
 export type LegalChild = {
   child_id: string; club_id: string; child_name: string | null; club_name: string | null;
   other_clubs_pending?: string[];
-  can_authorize: boolean; representation_verified: boolean; consent_status: string;
+  can_authorize: boolean; can_decide?: boolean; representation_verified: boolean; consent_status: string;
   states: Array<{ document_id: string; version_id: string; decision: string; conflict: boolean }>;
 };
 type ParentDocument = {

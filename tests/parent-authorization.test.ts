@@ -31,7 +31,7 @@ test("another club, a new version, a refusal or conflict never inherits an autho
   }
 });
 
-test("linked father is listed for both children without granting verified authority for optional AI", async () => {
+test("a linked father can decide for both children without a separate manual review", async () => {
   const { db } = managerDatabase({
     player_guardian_scopes: ["one", "two", "hidden"].map(player_id => ({ player_id, guardian_user_id: "parent", organization_id: "A", status: "active", can_view: player_id !== "hidden", can_edit: true })),
     player_guardians: ["one", "two", "hidden"].map((id) => ({ player_id: id, guardian_user_id: "parent",
@@ -47,6 +47,7 @@ test("linked father is listed for both children without granting verified author
   assert.deepEqual(result.map((row: LegalChild) => [row.child_name, row.club_id, row.can_authorize, row.representation_verified]), [
     ["Junior One", "A", true, false], ["Junior Two", "A", true, false],
   ]);
+  assert.ok(result.every((row: LegalChild) => row.can_decide === true));
 });
 
 test("read-only, other contacts and revoked legal authority cannot authorize", async () => {
@@ -65,4 +66,5 @@ test("read-only, other contacts and revoked legal authority cannot authorize", a
   const result = await legalChildren(db, "parent");
   assert.equal(result.length, 3);
   assert.ok(result.every((row: LegalChild) => row.can_authorize === false));
+  assert.ok(result.every((row: LegalChild) => row.can_decide === false));
 });

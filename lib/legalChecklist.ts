@@ -46,7 +46,7 @@ export function buildLegalChecklist<T extends ChecklistDocument>(documents: T[],
         : !item.child.can_authorize ? "Votre organisation doit vérifier votre habilitation pour cet enfant." : null });
   }
   const seen = new Set<string>();
-  const sortedChildren = [...children].sort((a, b) => Number(b.representation_verified) - Number(a.representation_verified));
+  const sortedChildren = [...children].sort((a, b) => Number(b.can_decide ?? b.representation_verified) - Number(a.can_decide ?? a.representation_verified));
   for (const child of sortedChildren) {
     if (child.consent_status === "adult") continue;
     for (const doc of documents) {
@@ -59,8 +59,8 @@ export function buildLegalChecklist<T extends ChecklistDocument>(documents: T[],
       items.push({ key, doc, child, title: title(doc, child), organizationId: doc.club_id,
         organizationName: doc.club_name ?? "ActiviTee", complete: legalResponseComplete(doc, doc.version.id, state),
         decision: state?.version_id === doc.version.id ? state.decision : null,
-        actionable: child.representation_verified, requiredResponse: child.can_authorize || child.representation_verified,
-        note: child.representation_verified ? null : "Validez d’abord l’autorisation d’utilisation pour cet enfant." });
+        actionable: child.can_decide ?? child.representation_verified, requiredResponse: child.can_authorize || child.representation_verified,
+        note: (child.can_decide ?? child.representation_verified) ? null : "Votre organisation doit vérifier le lien parent–enfant et vos droits de modification." });
     }
   }
   return items.sort((a, b) => Number(a.organizationId !== null) - Number(b.organizationId !== null)

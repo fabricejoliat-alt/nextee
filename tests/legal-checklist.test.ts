@@ -51,3 +51,13 @@ test("the junior's own rewrite response is never replaced by a parent's decision
   doc.own_choice = { version_id: "v-rewrite", decision: "refused" };
   assert.equal(buildLegalChecklist([doc], [], "fr")[0].complete, true);
 });
+
+test("an organization-linked parent can answer without an admin representation assertion", () => {
+  const doc = checklistDoc("consent-A", "A");
+  const child = { ...checklistChild("one", "A"), representation_verified: false, can_decide: true };
+  const item = buildLegalChecklist([doc], [child], "fr").find(item => item.child)!;
+  assert.equal(item.actionable, true);
+  assert.equal(item.note, null);
+  const revoked = { ...child, can_authorize: false, can_decide: false };
+  assert.equal(buildLegalChecklist([doc], [revoked], "fr").find(item => item.child)!.actionable, false);
+});

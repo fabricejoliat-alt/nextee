@@ -12,6 +12,11 @@ async function setup(){
  elements(h.render()).find(n=>n.type==='button'&&textContent(n).includes('fixture terms'))!.props.onClick();h.render();h.render();
  return {h,mutation};
 }
+test('the legal admin workspace no longer requires manual parent-child representation reviews', async () => {
+ const {h,mutation}=await setup();
+ try {assert.doesNotMatch(textContent(h.render()),/Qualité de représentant|Enregistrer la vérification|Origine et motif de la revue/);}
+ finally {mutation.resolve(Response.json({ok:true}));h.cleanup();}
+});
 test('Admin cannot type into fields or switch document language while a save refresh is pending',async()=>{
  const {h,mutation}=await setup();try{
   const pending=button(h.render(),'Approuver').props.onClick();const tree=h.render();

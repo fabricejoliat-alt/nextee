@@ -12,6 +12,7 @@ export async function legalPageFixture() {
   docs.forEach(doc => { doc.version!.snapshot.translations!.fr.title = doc.kind === "terms" ? "Conditions d’utilisation d’ActiviTee"
     : doc.kind === "parent_authorization" ? "Autorisation d’utilisation pour {{child_name}}" : "Utilisation de l’assistance IA"; });
   const children = [checklistChild("one", "A"), checklistChild("two", "A"), checklistChild("one", "B")];
+  children.forEach(child => { child.representation_verified = false; child.can_decide = true; });
   children[1].states = children[1].states.filter(state => state.document_id !== "consent-A");
   let beneficiary = ""; let documentId = "";
   const decisions: object[] = [];

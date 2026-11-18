@@ -49,10 +49,6 @@ export default function LegalAdminWorkspace() {
   const [decisions, setDecisions] = useState<Array<{ id: string; actor_id: string; beneficiary_id: string; decision: string; rendered_snapshot: { title?: string; body?: string; locale?: string }; decided_at: string }>>([]);
   const [conflicts, setConflicts] = useState<Array<{ document_id: string; beneficiary_id: string; club_scope: string | null; decision: string; decided_at: string }>>([]);
   const [resolutionReason, setResolutionReason] = useState("");
-  const [representativeClub, setRepresentativeClub] = useState("");
-  const [representativeCandidates, setRepresentativeCandidates] = useState<Array<{ guardian_id: string; child_id: string; guardian_name: string; child_name: string }>>([]);
-  const [representativeAssertions, setRepresentativeAssertions] = useState<Array<{ guardian_id: string; child_id: string; status: string }>>([]);
-  const [representativePair, setRepresentativePair] = useState(""); const [representativeBasis, setRepresentativeBasis] = useState("");
   const load = useCallback(async () => {
     const token = (await supabase.auth.getSession()).data.session?.access_token;
     const response = await adminFetch("/api/admin/legal", { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
@@ -351,49 +347,6 @@ export default function LegalAdminWorkspace() {
           setConflicts((current) => current.filter((item) => item !== row)); setResolutionReason(""); setMessage("Résolution enregistrée.");
         } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } finally { setBusy(false); } }}>Enregistrer la résolution</button>
       </details>)}
-    </section>
-    <section className={styles.panel}>
-      <h2>Qualité de représentant</h2>
-      <p>Le lien familial et l’accès au club sont contrôlés par le serveur. La qualité permettant une décision parentale nécessite une revue distincte et motivée.</p>
-      <p>La liste est limitée à 500 adhésions actives ; la recherche ciblée reste à ajouter pour les clubs plus grands.</p>
-      <label>Club <select disabled={busy} value={representativeClub} onChange={(e) => { setRepresentativeClub(e.target.value); setRepresentativeCandidates([]); setRepresentativePair(""); }}>
-        <option value="">{t("organization.choose")}</option>{clubs.map((club) => <option value={club.id} key={club.id}>{club.name}</option>)}</select></label>
-      <button disabled={!representativeClub || busy} onClick={async () => { try {
-        const token = (await supabase.auth.getSession()).data.session?.access_token;
-        const response = await adminFetch(`/api/admin/legal/representatives?club_id=${encodeURIComponent(representativeClub)}`,
-          { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
-        const data = await response.json(); if (!response.ok) throw new Error(data.error);
-        setRepresentativeCandidates(data.candidates); setRepresentativeAssertions(data.assertions);
-      } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } }}>Charger les liens du club</button>
-      <label>Parent et enfant <select disabled={busy} value={representativePair} onChange={(e) => setRepresentativePair(e.target.value)}>
-        <option value="">Choisir un lien</option>{representativeCandidates.map((pair) => <option
-          key={`${pair.guardian_id}:${pair.child_id}`} value={`${pair.guardian_id}:${pair.child_id}`}>
-          {pair.guardian_name} → {pair.child_name} · {representativeAssertions.find((row) => row.guardian_id === pair.guardian_id && row.child_id === pair.child_id)?.status ?? "non vérifié"}
-        </option>)}</select></label>
-      <label>Origine et motif de la revue<textarea disabled={busy} value={representativeBasis} onChange={(e) => setRepresentativeBasis(e.target.value)}
-        placeholder="Décrire la vérification réalisée, sans joindre systématiquement une pièce d’identité" style={{ display: "block", width: "100%" }} /></label>
-      <button disabled={!representativePair || representativeBasis.trim().length < 20 || busy} onClick={async () => {
-        const [guardian_id, child_id] = representativePair.split(":"); setBusy(true); try {
-          const token = (await supabase.auth.getSession()).data.session?.access_token;
-          const response = await adminFetch("/api/admin/legal/representatives", { method: "POST", headers: {
-            Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({
-              guardian_id, child_id, club_id: representativeClub, status: "verified", basis: representativeBasis }) });
-          const data = await response.json(); if (!response.ok) throw new Error(data.error);
-          setRepresentativeAssertions((current) => [...current.filter((row) => row.guardian_id !== guardian_id || row.child_id !== child_id),
-            { guardian_id, child_id, status: "verified" }]); setRepresentativeBasis(""); setMessage("Qualité vérifiée et tracée.");
-        } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } finally { setBusy(false); }
-      }}>Enregistrer la vérification</button>
-      <button disabled={!representativePair || representativeBasis.trim().length < 20 || busy} onClick={async () => {
-        const [guardian_id, child_id] = representativePair.split(":"); setBusy(true); try {
-          const token = (await supabase.auth.getSession()).data.session?.access_token;
-          const response = await adminFetch("/api/admin/legal/representatives", { method: "POST", headers: {
-            Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({
-              guardian_id, child_id, club_id: representativeClub, status: "revoked", basis: representativeBasis }) });
-          const data = await response.json(); if (!response.ok) throw new Error(data.error);
-          setRepresentativeAssertions((current) => [...current.filter((row) => row.guardian_id !== guardian_id || row.child_id !== child_id),
-            { guardian_id, child_id, status: "revoked" }]); setRepresentativeBasis(""); setMessage("Qualité révoquée et tracée.");
-        } catch (error) { setMessage(error instanceof Error ? error.message : "Erreur"); } finally { setBusy(false); }
-      }}>Révoquer la qualité</button>
     </section>
   </div>;
 }
