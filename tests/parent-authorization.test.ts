@@ -31,6 +31,14 @@ test("another club, a new version, a refusal or conflict never inherits an autho
   }
 });
 
+test("authorization titles resolve organization names separately for each child's club", () => {
+  const docs = [document("A"), document("B")];
+  for (const doc of docs) doc.version.snapshot.translations.fr.title = "Utilisation par {{child_name}} auprès de {{organization_name}}";
+  assert.deepEqual(parentAuthorizationItems(docs, [child("one", "A"), child("one", "B")], "fr").map(item => item.title), [
+    "Utilisation par Junior one auprès de Club A", "Utilisation par Junior one auprès de Club B",
+  ]);
+});
+
 test("a linked father can decide for both children without a separate manual review", async () => {
   const { db } = managerDatabase({
     player_guardian_scopes: ["one", "two", "hidden"].map(player_id => ({ player_id, guardian_user_id: "parent", organization_id: "A", status: "active", can_view: player_id !== "hidden", can_edit: true })),

@@ -20,6 +20,6 @@ export function parentAuthorizationItems<T extends ParentDocument>(documents: T[
       ?? doc?.version?.snapshot.translations?.fr?.title ?? "Autorisation d’utilisation d’ActiviTee";
     return { key: `${child.child_id}:${child.club_id}`, child, doc, complete, conflict: state?.conflict === true,
       title: template.replace(/\{\{\s*child_name\s*\}\}/gi, child.child_name ?? "votre enfant")
-        .replace(/\{\{\s*club_name\s*\}\}/gi, child.club_name ?? "votre club") };
+        .replace(/\{\{\s*(?:club_name|organization_name)\s*\}\}/gi, child.club_name ?? "votre organisation") };
   });
 }

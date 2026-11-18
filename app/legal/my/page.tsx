@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import DeleteAccountLink from "@/components/legal/DeleteAccountLink";
-import { ArrowRight, Check, ChevronDown, Download, FileText, Globe2, LockKeyhole, LogOut, ShieldCheck, X } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, Download, FileText, Globe2, LockKeyhole, LogOut, ShieldCheck, TriangleAlert, X } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import styles from "./MyLegalPage.module.css";
 import { parentAuthorizationItems, type LegalChild } from "@/lib/parentAuthorization";
@@ -132,14 +132,14 @@ export default function MyLegalPage() {
           <section key={organizationId ?? "platform"} className={styles.consentGroup} aria-label={name}>
             <h3>{name}</h3>
             <ul className={styles.consentList}>{checklist.filter(item => item.organizationId === organizationId).map(item =>
-              <li key={item.key} className={styles.consentRow}>
+              <li key={item.key} className={`${styles.consentRow}${!item.complete ? ` ${styles.consentRowPending}` : ""}`}>
                 <div className={styles.consentDetails}><span className={styles.consentPerson}>{item.child ? `Pour ${item.child.child_name ?? "mon enfant"}` : "Pour vous"}</span>
                   <strong>{item.title}</strong>
                   <span className={item.complete ? styles.responseComplete : styles.responsePending}>
-                    {item.complete && <Check size={15} aria-hidden="true" />}{item.complete ? decisionLabels[item.decision ?? ""] ?? "Réponse enregistrée" : "À répondre"}
+                    {item.complete ? <Check size={15} aria-hidden="true" /> : <TriangleAlert size={18} className={styles.pendingIcon} aria-hidden="true" />}{item.complete ? decisionLabels[item.decision ?? ""] ?? "Réponse enregistrée" : "À répondre"}
                   </span>{item.note && <small>{item.note}</small>}
                 </div>
-                <button type="button" className={styles.secondaryButton} disabled={busy || !item.actionable || !item.doc}
+                <button type="button" className={item.complete ? styles.secondaryButton : `${styles.secondaryButton} ${styles.pendingButton}`} disabled={busy || !item.actionable || !item.doc}
                   onClick={() => item.doc && open(item.doc, item.child?.child_id)}>{item.complete ? "Consulter" : "Lire et répondre"}<ArrowRight size={15} aria-hidden="true" /></button>
               </li>)}</ul>
           </section>)}
