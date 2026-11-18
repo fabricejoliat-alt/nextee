@@ -3,7 +3,7 @@
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { loadCoachPlanningRoster, loadTrainingGuestPlayers } from "@/lib/coachPlanningRoster";
+import { loadCoachPlanningRoster } from "@/lib/coachPlanningRoster";
 import { coachEventEditSnapshot, coachEventSaveErrorKey, type CoachEventEditSnapshot } from "@/lib/coachEventEditor";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -494,7 +494,7 @@ export default function CoachEventEditPage() {
       if (!ev || ev.id !== eventId || ev.group_id !== groupId) throw new Error("event_not_found");
       if (String(ev.event_type) === "competition") throw new Error("forbidden");
       const roster = await loadCoachPlanningRoster(supabase, groupId, uRes.user.id);
-      const guestPlayers = await loadTrainingGuestPlayers(supabase, groupId);
+      const guestPlayers = roster.guestPlayers;
       if (version !== loadVersion.current) return;
       setTrainingGuests(guestPlayers);
       if (roster.group.club_id !== ev.club_id) throw new Error("forbidden");
@@ -1413,26 +1413,7 @@ export default function CoachEventEditPage() {
                         </button>
                       </div>
 
-                      <div style={{ position: "relative" }}>
-                        <Search
-                          size={18}
-                          style={{
-                            position: "absolute",
-                            left: 14,
-                            top: "50%",
-                            transform: "translateY(-50%)",
-                            opacity: 0.7,
-                          }}
-                        />
-                        <input
-                          value={queryPlayers}
-                          onChange={(e) => setQueryPlayers(e.target.value)}
-                          disabled={busy}
-                          aria-label={t("coach.form.searchPlayers")}
-                  placeholder={t("coach.form.searchPlayers")}
-                          style={{ paddingLeft: 44 }}
-                        />
-                      </div>
+
 
                       <div style={{ display: "grid", gap: 10 }}>
                         <div className="pill-soft">{t("coach.form.selection")} ({selectedPlayersList.length})</div>
@@ -1472,6 +1453,27 @@ export default function CoachEventEditPage() {
                             ))}
                           </div>
                         )}
+                      </div>
+
+                      <div style={{ position: "relative" }}>
+                        <Search
+                          size={18}
+                          style={{
+                            position: "absolute",
+                            left: 14,
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            opacity: 0.7,
+                          }}
+                        />
+                        <input
+                          value={queryPlayers}
+                          onChange={(e) => setQueryPlayers(e.target.value)}
+                          disabled={busy}
+                          aria-label={t("coach.form.searchPlayers")}
+                  placeholder={t("coach.form.searchPlayers")}
+                          style={{ paddingLeft: 44 }}
+                        />
                       </div>
 
                       <div style={{ display: "grid", gap: 10 }}>

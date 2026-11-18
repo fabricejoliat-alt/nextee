@@ -16,16 +16,17 @@ function detail() {
     campDay:null as Record<string,unknown>|null,groupName:"Groupe témoin",clubName:"Club témoin"};
 }
 type Result={data:unknown;error:unknown};
-function database(save:(args:Record<string,unknown>)=>Promise<Result>, opts:{permission?:boolean;series?:unknown;historical?:boolean;expectedRpc?:string}={}) {
+function database(save:(args:Record<string,unknown>)=>Promise<Result>, opts:{permission?:boolean;series?:unknown;historical?:boolean;expectedRpc?:string;unauthorizedPlayer?:boolean}={}) {
   const writes:string[]=[];let reads=0;
   return {writes,get reads(){return reads;},
     rpc:(name:string,args:Record<string,unknown>)=>{
       if (name === "coach_training_guest_players") return { order: () => ({
-        range: async () => ({ data: [{ id: "visitor", first_name: "Jules", last_name: "Invité", avatar_url: null }], error: null })
+        range: async () => ({ data: [...(opts.unauthorizedPlayer ? [profile] : []), { id: "visitor", first_name: "Jules", last_name: "Invité", avatar_url: null }], error: null })
       }) };
 
       if(name==='can_manage_assigned_group') return {data:opts.permission??true,error:null};
-      if(name==='organization_actor_legal_ready'||name==='organization_actor_access') return {data:true,error:null};
+      if(name==='organization_actor_access') return {data:!opts.unauthorizedPlayer,error:null};
+      if(name==='organization_actor_legal_ready') return {data:true,error:null};
       writes.push(name);assert.equal(name,opts.expectedRpc??'update_coach_event_occurrence_v1');return save(args);
     },
     from(table:string){
@@ -55,6 +56,29 @@ async function init(db:ReturnType<typeof database>, data=detail(), options:{noti
   harness.render();await flush();harness.render();
   return {harness,navigation,get fetches(){return fetches;}};
 }
+
+test("a group junior without parental authorization stays expected and the search follows the selected list", async () => {
+  let saved: Record<string, unknown> | undefined;
+  const db = database(async args => { saved = args; return ok(); }, { unauthorizedPlayer: true });
+  const { harness } = await init(db);
+  try {
+    const tree = harness.render();
+    const sections = elements(tree).filter(node => node.type === "section");
+    const expected = sections.find(node => textContent(node).includes(messages.fr["coach.form.players"]));
+    const guests = sections.find(node => textContent(node).includes(messages.fr["coach.form.guests"]));
+    assert.ok(expected);
+    assert.ok(guests);
+    assert.ok(textContent(expected).includes("Junior Témoin"));
+    assert.ok(!textContent(guests).includes("Junior Témoin"));
+    const nodes = elements(expected);
+    const remove = nodes.findIndex(node => node.type === "button" && node.props["aria-label"]?.includes("Junior Témoin"));
+    const search = nodes.findIndex(node => node.type === "input" && node.props["aria-label"] === messages.fr["coach.form.searchPlayers"]);
+    assert.ok(remove >= 0 && search > remove);
+    saveButton(tree).props.onClick();
+    await flush();
+    assert.deepEqual(saved?.p_player_ids, ["player"]);
+  } finally { harness.cleanup(); }
+});
 
 test("editing an existing training adds a guest alongside its current junior", async () => {
   let saved: Record<string, unknown> | undefined;

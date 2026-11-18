@@ -8,7 +8,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
-import { loadCoachPlanningRoster, loadTrainingGuestPlayers } from "@/lib/coachPlanningRoster";
+import { loadCoachPlanningRoster } from "@/lib/coachPlanningRoster";
 import formStyles from "@/components/coach/CoachActivityForm.module.css";
 import layoutStyles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
@@ -464,7 +464,7 @@ export default function CoachGroupPlanningPage() {
       setMeId(uRes.user.id);
 
       const roster = await loadCoachPlanningRoster(supabase, groupId, uRes.user.id);
-      const guestPlayers = await loadTrainingGuestPlayers(supabase, groupId);
+      const guestPlayers = roster.guestPlayers;
       if (version !== loadVersion.current) return;
       setTrainingGuests(guestPlayers);
       setGroup(roster.group); setClubName(roster.clubName);
