@@ -26,6 +26,7 @@ import {
 import { coachPlayerEvaluationComplete, validCoachCriterionValue, type CoachEvaluationResponseState } from "@/lib/coachCalendar";
 import type { EventEvaluationCriterion } from "@/lib/evaluationCriteria";
 import EvaluationResponseField from "@/components/evaluations/EvaluationResponseField";
+import CoachActivityDocuments from "@/components/coach/CoachActivityDocuments";
 import styles from "./CoachDebrief.module.css";
 
 type PlayerProfile = {
@@ -70,6 +71,7 @@ type IndividualAiState = {
 
 type EventRow = {
   id: string;
+  club_id: string;
   title: string | null;
   starts_at: string;
   location_text: string | null;
@@ -151,6 +153,7 @@ export default function CoachTrainingDebriefPage() {
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [documentsBusy, setDocumentsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [event, setEvent] = useState<EventRow | null>(null);
@@ -783,11 +786,20 @@ export default function CoachTrainingDebriefPage() {
               ) : null}
             </div>
 
+              {event?.club_id ? <CoachActivityDocuments
+                key={`${eventId}:${currentReview.player_id}`}
+                playerId={currentReview.player_id}
+                eventId={eventId}
+                organizationId={event.club_id}
+                disabled={busy}
+                onBusyChange={setDocumentsBusy}
+              /> : null}
+
               <div className={styles.workflowActions}>
-                <button type="button" className={styles.secondaryAction} disabled={busy || currentIndex === 0} onClick={() => { setCurrentIndex((index) => Math.max(0, index - 1)); setError(null); setMessage(null); }}>
+                <button type="button" className={styles.secondaryAction} disabled={busy || documentsBusy || currentIndex === 0} onClick={() => { setCurrentIndex((index) => Math.max(0, index - 1)); setError(null); setMessage(null); }}>
                   <ChevronLeft size={18} aria-hidden="true" />{t("coachDebrief.previousPlayer")}
                 </button>
-                <button type="button" className={styles.primaryAction} disabled={busy || currentAi.analyzing || currentPrivateAi.analyzing} onClick={() => void saveCurrentEvaluation()}>
+                <button type="button" className={styles.primaryAction} disabled={busy || documentsBusy || currentAi.analyzing || currentPrivateAi.analyzing} onClick={() => void saveCurrentEvaluation()}>
                   {busy ? t("coachDebrief.saving") : currentIndex === reviews.length - 1 ? t("coachDebrief.saveAndFinish") : t("coachDebrief.saveAndNext")}
                   {!busy ? <ChevronRight size={18} aria-hidden="true" /> : null}
                 </button>
