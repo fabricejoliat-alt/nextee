@@ -49,6 +49,11 @@ test("a linked father can decide for both children without a separate manual rev
       { user_id: "one", role: "player", organization_id: "B", is_active: true, player_consent_status: "pending" }],
     profiles: [{ id: "one", first_name: "Junior", last_name: "One" }, { id: "two", first_name: "Junior", last_name: "Two" }],
     organizations: [{ id: "A", name: "Club A" }], legal_representative_assertions: [], legal_current_state: [],
+    legal_decisions: [
+      { document_id: "rewrite", beneficiary_id: "one", actor_id: "one", club_id: "A", version_id: "v1", decision: "consented", source: "user_flow", decided_at: "2026-11-17" },
+      { document_id: "rewrite", beneficiary_id: "two", actor_id: "parent", club_id: "A", version_id: "v1", decision: "refused", source: "user_flow", decided_at: "2026-11-17" },
+      { document_id: "other-club", beneficiary_id: "two", actor_id: "parent", club_id: "B", version_id: "v1", decision: "consented", source: "user_flow", decided_at: "2026-11-17" },
+    ],
   });
   const { legalChildren } = loadManagerModule("lib/server/legalChildren.ts", {});
   const result = await legalChildren(db, "parent");
@@ -56,6 +61,8 @@ test("a linked father can decide for both children without a separate manual rev
     ["Junior One", "A", true, false], ["Junior Two", "A", true, false],
   ]);
   assert.ok(result.every((row: LegalChild) => row.can_decide === true));
+  assert.deepEqual(result[0].own_choices, []);
+  assert.deepEqual(result[1].own_choices.map((row: { document_id: string; decision: string }) => [row.document_id, row.decision]), [["rewrite", "refused"]]);
 });
 
 test("read-only, other contacts and revoked legal authority cannot authorize", async () => {

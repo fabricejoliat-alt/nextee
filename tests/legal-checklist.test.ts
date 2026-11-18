@@ -61,3 +61,14 @@ test("an organization-linked parent can answer without an admin representation a
   const revoked = { ...child, can_authorize: false, can_decide: false };
   assert.equal(buildLegalChecklist([doc], [revoked], "fr").find(item => item.child)!.actionable, false);
 });
+
+test("a junior's aggregate consent does not count as the parent's own response", () => {
+  const doc = checklistDoc("consent-A", "A");
+  const child = { ...checklistChild("one", "A"), own_choices: [] as Array<{ document_id: string; version_id: string; decision: string }> };
+  child.states[1].decision = "consented";
+  assert.equal(buildLegalChecklist([doc], [child], "fr").find(item => item.child)!.complete, false);
+  child.own_choices.push({ document_id: doc.id, version_id: doc.version!.id, decision: "refused" });
+  const item = buildLegalChecklist([doc], [child], "fr").find(item => item.child)!;
+  assert.equal(item.complete, true);
+  assert.equal(item.decision, "refused");
+});

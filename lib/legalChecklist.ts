@@ -55,7 +55,7 @@ export function buildLegalChecklist<T extends ChecklistDocument>(documents: T[],
       const key = `${doc.id}:${child.child_id}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const state = child.states.find(state => state.document_id === doc.id);
+      const state = (child.own_choices ?? child.states).find(state => state.document_id === doc.id);
       items.push({ key, doc, child, title: title(doc, child), organizationId: doc.club_id,
         organizationName: doc.club_name ?? "ActiviTee", complete: legalResponseComplete(doc, doc.version.id, state),
         decision: state?.version_id === doc.version.id ? state.decision : null,

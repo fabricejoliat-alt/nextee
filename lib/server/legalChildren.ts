@@ -7,7 +7,7 @@ export async function legalChildren(db: SupabaseClient, actorId: string) {
   const ids = [...new Set((scopes.data ?? []).map(row => row.player_id))];
   const orgIds = [...new Set((scopes.data ?? []).map(row => row.organization_id))];
   if (!ids.length || !orgIds.length) return [];
-  const [links, parentMemberships, memberships, assertions, profiles, organizations, states, roster] = await Promise.all([
+  const [links, parentMemberships, memberships, assertions, profiles, organizations, states, roster, ownChoices] = await Promise.all([
     db.from("player_guardians").select("player_id,relation").eq("guardian_user_id", actorId).in("player_id", ids),
     db.from("organization_members").select("organization_id").eq("user_id", actorId).eq("role", "parent").eq("is_active", true),
     db.from("organization_members").select("user_id,organization_id,player_consent_status").in("user_id", ids).in("organization_id", orgIds).eq("role", "player").eq("is_active", true),
@@ -16,8 +16,10 @@ export async function legalChildren(db: SupabaseClient, actorId: string) {
     db.from("organizations").select("id,name,org_type").in("id", orgIds),
     db.from("legal_current_state").select("document_id,beneficiary_id,club_scope,version_id,decision,conflict").in("beneficiary_id", ids),
     db.from("academy_roster_entries").select("academy_id,player_id,status,origin_type,source_approved_at").in("academy_id", orgIds).in("player_id", ids),
+    db.from("legal_decisions").select("document_id,beneficiary_id,club_id,version_id,decision,decided_at")
+      .eq("actor_id", actorId).in("beneficiary_id", ids).eq("source", "user_flow").order("decided_at", { ascending: false }),
   ]);
-  for (const result of [links, parentMemberships, memberships, assertions, profiles, organizations, states, roster]) if (result.error) throw result.error;
+  for (const result of [links, parentMemberships, memberships, assertions, profiles, organizations, states, roster, ownChoices]) if (result.error) throw result.error;
   return (scopes.data ?? []).flatMap(scope => {
     const membership = (memberships.data ?? []).find(row => row.user_id === scope.player_id && row.organization_id === scope.organization_id);
     if (!membership || !(parentMemberships.data ?? []).some(row => row.organization_id === scope.organization_id)) return [];
@@ -35,6 +37,8 @@ export async function legalChildren(db: SupabaseClient, actorId: string) {
       club_name: org?.name ?? null, organization_name: org?.name ?? null, org_type: org?.org_type ?? null,
       can_authorize: linkedParent, can_decide: linkedParent,
       other_clubs_pending: [], representation_verified: verified, consent_status: membership.player_consent_status,
+      own_choices: (ownChoices.data ?? []).filter(row => row.beneficiary_id === scope.player_id && (row.club_id === scope.organization_id || row.club_id === null))
+        .filter((row, index, rows) => rows.findIndex(other => other.document_id === row.document_id) === index),
       states: (states.data ?? []).filter(row => row.beneficiary_id === scope.player_id && (row.club_scope === scope.organization_id || row.club_scope === null)) }];
   });
 }

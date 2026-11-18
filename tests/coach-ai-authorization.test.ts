@@ -285,6 +285,7 @@ test("current parent authority is required even with an earlier verified decisio
 
 test("an organization-linked parent's current consent permits preview without manual admin review", async () => {
   const tables = minorFixture();
+  tables.legal_documents[0].scope = "organization";
   tables.legal_decisions[1].authority_snapshot.authority = "club_linked_parent";
   const env = setup(tables, { env: minorEnv });
   const preview = await env.route("debrief/analyze-player").POST(managerRequest("POST", { ...rewriteValues, intent: "preview" }), ctx);
@@ -292,6 +293,13 @@ test("an organization-linked parent's current consent permits preview without ma
   assert.ok((await preview.json()).preview.review);
   assert.equal(env.payloads.length, 0);
   assert.equal(env.writes.length, 0);
+});
+
+test("canonical organization consent also authorizes an adult within that organization", async () => {
+  const tables = fixture(); tables.legal_documents[0].scope = "organization";
+  const env = setup(tables);
+  assert.equal((await env.rewrite()).status, 200);
+  assert.equal(await env.helper.loadCoachAiPlayerGrant(env.db, "B", player), null);
 });
 
 test("an organization-linked parent's consent still requires current authority, verified email and junior consent", async () => {

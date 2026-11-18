@@ -3,6 +3,7 @@ export type LegalChild = {
   other_clubs_pending?: string[];
   can_authorize: boolean; can_decide?: boolean; representation_verified: boolean; consent_status: string;
   states: Array<{ document_id: string; version_id: string; decision: string; conflict: boolean }>;
+  own_choices?: Array<{ document_id: string; version_id: string; decision: string }>;
 };
 type ParentDocument = {
   id: string; kind: string; purpose_key: string; club_id: string | null;

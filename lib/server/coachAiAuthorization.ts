@@ -73,7 +73,7 @@ export async function loadCoachAiPlayerGrant(db: SupabaseClient, clubId: string,
 
   const docs = await db.from("legal_documents")
     .select("id,kind,action_kind,required,audience_roles,applicability")
-    .eq("scope", "club").eq("club_id", clubId).eq("purpose_key", adult ? "coaching.ai" : "coaching.rewrite").eq("active", true);
+    .in("scope", ["club", "organization"]).eq("club_id", clubId).eq("purpose_key", adult ? "coaching.ai" : "coaching.rewrite").eq("active", true);
   if (docs.error) throw new Error("AI authorization unavailable");
   // An ambiguous or incomplete purpose configuration never silently chooses a document.
   if (docs.data?.length !== 1) return null;
