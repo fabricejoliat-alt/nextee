@@ -16,19 +16,11 @@ import RulesVisual from "@/components/rules/RulesVisual";
 import rulesVisualStyles from "@/components/rules/RulesVisual.module.css";
 import styles from "./CoachLearningCards.module.css";
 
-type ValidationExercisePreview = {
+type ValidationHighlight = {
   id: string;
   name: string;
-  illustration_url: string | null;
-  challengers?: Array<{ id: string }>;
-};
-type ValidationHighlight = {
-  sectionId: string;
-  sectionName: string;
-  exerciseId: string;
-  exerciseName: string;
   imageUrl: string | null;
-  challengerCount: number;
+  exerciseCount: number;
 };
 type RulesOverview = {
   currentSeriesId: string | null;
@@ -44,45 +36,43 @@ export default function CoachLearningCards() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     void (async () => {
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token;
-      if (!token) {
-        if (active) setValidationLoading(false);
-        return;
-      }
-      const headers = { Authorization: `Bearer ${token}` };
-      const [validationResult, rulesResult] = await Promise.allSettled([
-        fetch("/api/coach/validations", { headers, cache: "no-store" }),
-        fetch("/api/rules/overview", { headers, cache: "no-store" }),
-      ]);
-      if (!active) return;
-      if (validationResult.status === "fulfilled" && validationResult.value.ok) {
-        const payload = await validationResult.value.json().catch(() => ({})) as {
-          sections?: Array<{ id: string; name: string; exercises?: ValidationExercisePreview[] }>;
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token;
+        if (!token) {
+          if (active) setValidationLoading(false);
+          return;
+        }
+        const options = {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store" as const,
+          signal: controller.signal,
         };
-        const highlights = (payload.sections ?? []).slice(0, 4).flatMap((section) => {
-          const exercises = section.exercises ?? [];
-          const exercise = exercises.find(item => (item.challengers?.length ?? 0) > 0) ?? exercises[0];
-          if (!exercise) return [];
-          return [{
-            sectionId: section.id,
-            sectionName: section.name,
-            exerciseId: exercise.id,
-            exerciseName: exercise.name,
-            imageUrl: exercise.illustration_url,
-            challengerCount: exercise.challengers?.length ?? 0,
-          }];
-        });
-        if (active) setValidationHighlights(highlights);
+        await Promise.allSettled([
+          (async () => {
+            try {
+              const response = await fetch("/api/coach/validations/preview", options);
+              if (!response.ok) return;
+              const payload = await response.json();
+              if (active && Array.isArray(payload.sections)) setValidationHighlights(payload.sections);
+            } finally {
+              if (active) setValidationLoading(false);
+            }
+          })(),
+          (async () => {
+            const response = await fetch("/api/rules/overview", options);
+            if (!response.ok) return;
+            const payload = await response.json() as RulesOverview;
+            if (active && Array.isArray(payload.series)) setRules(payload);
+          })(),
+        ]);
+      } catch {
+        if (active) setValidationLoading(false);
       }
-      if (rulesResult.status === "fulfilled" && rulesResult.value.ok) {
-        const payload = await rulesResult.value.json().catch(() => ({})) as RulesOverview;
-        if (active && Array.isArray(payload.series)) setRules(payload);
-      }
-      if (active) setValidationLoading(false);
     })();
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, []);
 
   const current = rules?.series.find(series => series.id === rules.currentSeriesId) ?? null;
@@ -95,9 +85,9 @@ export default function CoachLearningCards() {
       <section className={`${styles.card} ${styles.validationCard}`}>
         <span className={styles.cardHeader}><span><h3>{t("coach.nav.validations")}</h3><p>{t("coach.learning.challenges")}</p></span><Link href="/coach/validations" aria-label={t("coach.learning.allValidations")}><ArrowRight size={16} aria-hidden="true" /></Link></span>
         {validationLoading ? <span className={styles.validationSkeleton} aria-label={t("coach.learning.loading")}><i /><i /><i /><i /></span> : validationHighlights.length ? <span className={styles.validationList}>
-          {validationHighlights.map(item => <Link href="/coach/validations" className={styles.validationItem} key={item.sectionId}>
+          {validationHighlights.map(item => <Link href="/coach/validations" className={styles.validationItem} key={item.id}>
             <span className={styles.validationThumbnail}>{item.imageUrl ? <Image src={item.imageUrl} alt="" fill sizes="92px" unoptimized /> : <ClipboardCheck size={20} aria-hidden="true" />}</span>
-            <span className={styles.validationContent}><small>{item.sectionName}</small><b>{item.exerciseName}</b><span>{item.challengerCount} {t("coach.validation.challengers")}</span></span>
+            <span className={styles.validationContent}><b>{item.name}</b><span>{coachText(t, item.exerciseCount === 1 ? "coach.learning.exerciseCountOne" : "coach.learning.exerciseCount", { count: item.exerciseCount })}</span></span>
             <ArrowRight size={16} aria-hidden="true" />
           </Link>)}
         </span> : <Link className={styles.validationEmpty} href="/coach/validations"><ClipboardCheck size={21} aria-hidden="true" /><span>{t("coach.learning.catalog")}</span><ArrowRight size={16} aria-hidden="true" /></Link>}

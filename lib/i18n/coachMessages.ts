@@ -849,11 +849,13 @@ const rows = {
     "Materialien, mit denen deine Junioren von Training zu Training Fortschritte machen.",
     "Materiali per aiutare i tuoi juniores a progredire, allenamento dopo allenamento."
   ],
+  "coach.learning.exerciseCountOne": ["{count} exercice", "{count} exercise", "{count} Übung", "{count} esercizio"],
+  "coach.learning.exerciseCount": ["{count} exercices", "{count} exercises", "{count} Übungen", "{count} esercizi"],
   "coach.learning.challenges": [
-    "Les prochains défis à travailler par secteur.",
-    "The next challenges to work on by section.",
-    "Die nächsten Aufgaben nach Bereich.",
-    "Le prossime sfide da affrontare per settore."
+    "Les exercices par secteur.",
+    "Exercises by section.",
+    "Übungen nach Bereich.",
+    "Gli esercizi per settore."
   ],
   "coach.learning.allValidations": [
     "Toutes les validations",
