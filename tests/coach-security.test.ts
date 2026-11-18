@@ -617,3 +617,17 @@ test("all browser feedback readers use explicit non-private fields or an authori
     assert.doesNotMatch(readFileSync(resolve(root, file), "utf8"), /\.from\("club_event_coach_feedback"\)\s*\.select\([^\n]*(?:private_note|\*)/);
   }
 });
+
+test("event detail exposes the evaluation action for a registered guest outside the group", async () => {
+  const data = planningFixture();
+  data.coach_group_players = [];
+  const { db } = fakeDatabase(data);
+  const route = loadModule<{ GET: (req: Request, ctx: { params: Promise<{ eventId: string }> }) => Promise<Response> }>(
+    "app/api/coach/events/[eventId]/route.ts", apiMocks(db));
+  const response = await route.GET(request("/api/coach/events/event-A"),
+    { params: Promise.resolve({ eventId: "event-A" }) });
+  const body = await response.json();
+  assert.equal(response.status, 200, JSON.stringify(body));
+  assert.equal(body.attendees[0].player_id, "player");
+  assert.equal(body.attendees[0].can_access_details, true);
+});

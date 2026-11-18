@@ -109,7 +109,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
         attendeeRows = attendeeRows.filter((row) => registeredPlayerIds.has(String(row.player_id ?? "").trim()));
       }
     }
-    const permitted=await authorizedCoachPlayers(supabaseAdmin,callerId,clubId,attendeeRows.map(row=>row.player_id));
+    const permitted=await authorizedCoachPlayers(supabaseAdmin,callerId,clubId,attendeeRows.map(row=>row.player_id),eventId);
     const rosterPermitted = await coachRosterPlayerIds(supabaseAdmin, callerId, clubId, attendeeRows.map(row => row.player_id));
     attendeeRows = attendeeRows.filter(row => rosterPermitted.has(row.player_id));
     const playerIds = uniq(attendeeRows.map((row) => row.player_id));
