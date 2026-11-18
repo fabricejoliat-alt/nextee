@@ -1,8 +1,7 @@
 "use client";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
-import Link from "next/link";
-import DeleteAccountLink from "@/components/legal/DeleteAccountLink";
+import ProfileLegalDocuments from "@/components/legal/ProfileLegalDocuments";
 
 import ProfileCustomFieldControl from "@/components/ProfileCustomFieldControl";
 
@@ -1013,15 +1012,6 @@ export default function PlayerProfilePage() {
 
         {info && <div className={styles.successAlert}>{info}</div>}
 
-        <SectionCard title="Documents et données personnelles" icon={<ShieldCheck size={17} aria-hidden="true" />}>
-          <nav className={styles.legalLinks} aria-label="Documents et données personnelles">
-            {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Open legal pages outside the retained Player shell. */}
-            <a href="/legal/my">Documents et consentements →</a>
-            {/* eslint-disable-next-line @next/next/no-html-link-for-pages -- Open legal pages outside the retained Player shell. */}
-            <a href="/legal/request">Mes données →</a>
-            <DeleteAccountLink variant="text" />
-          </nav>
-        </SectionCard>
         <section className={styles.profileContent}>
           <div className={styles.contentHeading}><div><span>Mon compte</span><h2>Informations personnelles</h2></div></div>
 
@@ -1378,6 +1368,10 @@ export default function PlayerProfilePage() {
 
           {/* ✅ Logout supprimé */}
         </section>
+
+        <SectionCard title="Documents et données personnelles" icon={<ShieldCheck size={17} aria-hidden="true" />}>
+          <ProfileLegalDocuments />
+        </SectionCard>
 
         <div style={{ height: 12 }} />
       </div>

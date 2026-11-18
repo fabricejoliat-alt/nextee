@@ -77,11 +77,24 @@ export default function MyLegalPage() {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { setPresentation(null); triggerButton.current?.focus(); } };
     window.addEventListener("keydown", onKeyDown); return () => { document.body.style.overflow = overflow; window.removeEventListener("keydown", onKeyDown); }; }, [presentation]);
   function closePresentation() { setPresentation(null); triggerButton.current?.focus(); }
-  async function open(d: Doc, childId?: string) { setBusy(true); setStatus(""); setSelected(d); setPresentation(null); setCode(""); setPendingKey(""); setParentConsentChecked(false);
+  const open = useCallback(async (d: Doc, childId?: string) => { setBusy(true); setStatus(""); setSelected(d); setPresentation(null); setCode(""); setPendingKey(""); setParentConsentChecked(false);
     triggerButton.current = document.activeElement instanceof HTMLButtonElement ? document.activeElement : null;
     try { const result = await api("/api/legal/present", { document_id: d.id, beneficiary_id: childId || undefined,
       role: childId ? "parent" : d.eligible_role, locale }); setPresentation(result.presentation); setSubject(childId ?? "self"); }
-    catch (error) { setStatus(error instanceof Error ? error.message : "Indisponible"); } finally { setBusy(false); } }
+    catch (error) { setStatus(error instanceof Error ? error.message : "Indisponible"); } finally { setBusy(false); } }, [api, locale]);
+  const requestedDocumentOpened = useRef(false);
+  useEffect(() => {
+    if (loading || requestedDocumentOpened.current) return;
+    const query = new URLSearchParams(window.location?.search ?? "");
+    const documentId = query.get("document");
+    if (!documentId) return;
+    requestedDocumentOpened.current = true;
+    const beneficiary = query.get("beneficiary");
+    const item = buildLegalChecklist(docs, children, locale).find(item => item.doc?.id === documentId
+      && (item.child?.child_id ?? null) === beneficiary);
+    if (item?.doc && item.actionable) void open(item.doc, item.child?.child_id);
+    else setStatus("Ce document n’est pas disponible pour ce compte. Consultez les documents ci-dessous.");
+  }, [loading, docs, children, locale, open]);
   async function sendCode() { if (!presentation) return; setBusy(true); try { await api("/api/legal/parent-confirmation", { presentation_id: presentation.id });
     setStatus("Code envoyé à l’adresse vérifiée du parent."); } catch (error) { setStatus(error instanceof Error ? error.message : "Indisponible"); } finally { setBusy(false); } }
   async function decide(decision: string) { if (!presentation) return; setBusy(true); setStatus("");
@@ -170,7 +183,7 @@ export default function MyLegalPage() {
         {historyChild && <div className={styles.childHistory}><h3>{currentHistoryChild?.child_name ?? "Mon enfant"}</h3><DecisionHistory rows={childHistory} onDownload={download} empty="Aucune décision enregistrée pour cet enfant." /></div>}
       </section>}
       </details>
-      <footer className={styles.footer}><div><Link href="/legal">Textes publics</Link><Link href="/legal/request">Demande relative à mes données</Link><DeleteAccountLink /></div><button type="button" onClick={async () => { await supabase.auth.signOut(); window.location.assign("/"); }}><LogOut size={16} aria-hidden="true" /> Se déconnecter</button></footer>
+      <footer className={styles.footer}><div><Link href="/legal">Textes publics</Link><Link href="/legal/request">Demande relative à mes données</Link><DeleteAccountLink variant="text" /></div><button type="button" onClick={async () => { await supabase.auth.signOut(); window.location.assign("/"); }}><LogOut size={16} aria-hidden="true" /> Se déconnecter</button></footer>
     </div>
   </div>
   {presentation && <div className={styles.modalBackdrop} onMouseDown={(event) => { if (event.target === event.currentTarget) closePresentation(); }}><section role="dialog" aria-modal="true" aria-labelledby="legal-title" className={styles.modal}>

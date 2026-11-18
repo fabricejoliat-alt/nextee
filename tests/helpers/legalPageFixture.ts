@@ -1,10 +1,10 @@
 import { coachComponentHarness, flush } from "./coachComponentHarness.ts";
 import { checklistChild, checklistDoc } from "./legalChecklistFixtures.ts";
 
-export async function legalPageFixture() {
+export async function legalPageFixture(search = "") {
   const previous = { document: globalThis.document, window: globalThis.window, HTMLButtonElement: globalThis.HTMLButtonElement };
   globalThis.document = { visibilityState: "visible", addEventListener() {}, removeEventListener() {}, body: { style: { overflow: "" } }, activeElement: null } as unknown as Document;
-  globalThis.window = { addEventListener() {}, removeEventListener() {} } as unknown as Window & typeof globalThis;
+  globalThis.window = { location: { search }, addEventListener() {}, removeEventListener() {} } as unknown as Window & typeof globalThis;
   globalThis.HTMLButtonElement = class {} as typeof HTMLButtonElement;
   const docs = [checklistDoc("Conditions ActiviTee", null, "terms"), ...["A", "B"].flatMap(club => [
     checklistDoc(`authorization-${club}`, club, "parent_authorization"), checklistDoc(`consent-${club}`, club)])];

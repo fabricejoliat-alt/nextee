@@ -32,3 +32,24 @@ test("answering the last child's consent with a refusal unlocks entry after the 
     assert.equal(elements(tree).filter(node => node.type === "li").length, 9);
   } finally { fixture.cleanup(); }
 });
+
+test("a profile document link opens the selected child's document without deciding for them", async () => {
+  const fixture = await legalPageFixture("?document=consent-A&beneficiary=two");
+  try {
+    await flush();
+    const tree = fixture.h.render();
+    assert.match(textContent(tree), /Cette décision concerne\s+Enfant two/);
+    assert.ok(elements(tree).some(node => node.props.role === "dialog"));
+    assert.deepEqual(fixture.decisions, []);
+  } finally { fixture.cleanup(); }
+});
+
+test("a profile link cannot open a document for another beneficiary", async () => {
+  const fixture = await legalPageFixture("?document=consent-A&beneficiary=not-my-child");
+  try {
+    const tree = fixture.h.render();
+    assert.ok(!elements(tree).some(node => node.props.role === "dialog"));
+    assert.match(textContent(tree), /Ce document n’est pas disponible pour ce compte/);
+    assert.deepEqual(fixture.decisions, []);
+  } finally { fixture.cleanup(); }
+});
