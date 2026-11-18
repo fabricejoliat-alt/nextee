@@ -13,7 +13,7 @@ test("the parent sees a single list with every organization and child, without d
     assert.doesNotMatch(textContent(tree), /Documents facultatifs|Consentements facultatifs|Documents requis/);
     assert.equal(elements(tree).find(node => node.type === "button" && textContent(node).includes("Accéder à ActiviTee"))?.props.disabled, true);
     assert.match(textContent(tree), /1 réponse à enregistrer/);
-    assert.ok(elements(tree).some(node => node.type === "details" && node.props.className === "historyArchive" && !node.props.open));
+    assert.ok(elements(tree).some(node => node.type === "details" && node.props.className === "historyArchive" && node.props.open));
   } finally { fixture.cleanup(); }
 });
 

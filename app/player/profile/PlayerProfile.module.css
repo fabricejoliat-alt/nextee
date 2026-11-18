@@ -239,3 +239,5 @@
   .saveBar :global(.cta-green) { width: 100% !important; }
   .cardActions :global(.cta-green) { width: 100% !important; }
 }
+.pageHeading{display:flex;align-items:center;justify-content:space-between;gap:20px}.topSaveButton{flex:none;display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:44px}
+@media(max-width:750px){.pageHeading{flex-wrap:wrap;gap:16px}.topSaveButton{margin-left:auto}}

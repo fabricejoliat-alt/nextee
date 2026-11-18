@@ -917,8 +917,14 @@ export default function PlayerProfilePage() {
       <div className={`app-shell player-profile-page ${styles.page}`}>
         <PlayerBreadcrumb items={[{ label: "Player", href: "/player" }, { label: t("common.profile") }]} />
         <header className={styles.pageHeading}>
+          <div>
           <h1>{t("common.profile")}</h1>
           <p>Gère tes informations personnelles et ton historique sportif.</p>
+          </div>
+          <button className={`cta-green ${styles.topSaveButton}`} type="button" onClick={save}
+            disabled={loading || !userId || !canSave}>
+            <Save size={16} aria-hidden="true" />{busy ? t("playerProfile.saving") : saveFlash ? "Profil enregistré !" : "Enregistrer le profil"}
+          </button>
         </header>
         <div className={styles.identityCard}>
           <button

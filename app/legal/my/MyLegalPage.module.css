@@ -35,3 +35,4 @@
 @media(max-width:750px){.listToolbar{align-items:stretch;flex-direction:column}.consentRow{align-items:stretch;flex-direction:column;gap:13px;padding:16px}.consentRow>.secondaryButton{align-self:flex-start}.consentGroup h3{font-size:15px}}
 .consentRowPending{background:#fffbeb;box-shadow:inset 4px 0 #eab308}.consentRowPending .responsePending{color:#854d0e;font-weight:750}.pendingIcon{flex:none;color:#a16207;fill:#fde047}.pendingButton{background:#fef08a;border-color:#eab308;color:#713f12}.pendingButton:hover:not(:disabled){background:#fde047;border-color:#ca8a04}
 .accessCard>.primaryButton{justify-self:center;width:min(100%,420px);min-height:58px;padding:16px 28px;font-size:17px;border-radius:12px;text-align:center}
+.footer>div{align-items:center}.footer a,.footer button{display:inline-flex;align-items:center;min-height:44px;line-height:1.4}.footer button{padding:0}

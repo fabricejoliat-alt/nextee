@@ -176,7 +176,7 @@ export default function MyLegalPage() {
           : <button type="button" className={styles.primaryButton} disabled>Accéder à ActiviTee <ArrowRight size={17} aria-hidden="true" /></button>}
       </section>
       {status && <p className={styles.notice} role="status">{status}</p>}
-      <details className={styles.historyArchive}><summary>Historique des réponses <ChevronDown size={17} aria-hidden="true" /></summary>
+      <details className={styles.historyArchive} open><summary>Historique des réponses <ChevronDown size={17} aria-hidden="true" /></summary>
       <section className={styles.section} aria-labelledby="history-title"><div className={styles.sectionHeading}><div><span className={styles.sectionEyebrow}>Vos preuves</span><h2 id="history-title">Historique de mes décisions</h2></div></div><DecisionHistory rows={history} onDownload={download} empty="Aucune décision enregistrée pour le moment." /></section>
       {verifiedChildren.length > 0 && <section className={styles.section} aria-labelledby="children-title"><div className={styles.sectionHeading}><div><span className={styles.sectionEyebrow}>Représentation parentale</span><h2 id="children-title">Décisions concernant mes enfants</h2></div></div>
         <div className={styles.childTabs}>{verifiedChildren.map((child) => <button type="button" key={`${child.child_id}-${child.club_id}`} className={styles.textButton} onClick={() => showChildHistory(child)}>{child.child_name ?? "Mon enfant"} <span>· {child.club_name ?? "votre organisation"}</span></button>)}</div>
