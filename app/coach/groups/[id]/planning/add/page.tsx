@@ -8,7 +8,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { coachDateLocale, coachText } from "@/lib/i18n/coachMessages";
-import { loadCoachPlanningRoster } from "@/lib/coachPlanningRoster";
+import { loadCoachPlanningRoster, loadTrainingGuestPlayers } from "@/lib/coachPlanningRoster";
 import formStyles from "@/components/coach/CoachActivityForm.module.css";
 import layoutStyles from "@/components/admin/AdminHomeStats.module.css";
 import actionStyles from "@/components/admin/organizations/OrganizationSettingsAdmin.module.css";
@@ -231,6 +231,7 @@ export default function CoachGroupPlanningPage() {
 
   const [coaches, setCoaches] = useState<CoachLite[]>([]);
   const [players, setPlayers] = useState<ProfileLite[]>([]);
+  const [trainingGuests, setTrainingGuests] = useState<ClubMemberLite[]>([]);
   const [clubMembers, setClubMembers] = useState<ClubMemberLite[]>([]);
 
   // Coaches selected (simple chips)
@@ -362,16 +363,19 @@ export default function CoachGroupPlanningPage() {
 
   const candidateGuests = useMemo(() => {
     const q = queryGuests.trim().toLowerCase();
-    if (!q) return [] as ClubMemberLite[];
-    const base = clubMembers.filter((m) => !guestBlockedIds.has(m.id) && !selectedGuests[m.id]);
+    const pool = new Map(clubMembers.map(member => [member.id, member]));
+    if (eventType === "training") {
+      for (const guest of trainingGuests) if (!pool.has(guest.id)) pool.set(guest.id, guest);
+    }
+    const base = [...pool.values()].filter((m) => !guestBlockedIds.has(m.id) && !selectedGuests[m.id]);
     return base
       .filter((m) => {
         const n = fullName(m).toLowerCase();
         const role = memberRoleLabel(m.role).toLowerCase();
         return n.includes(q) || role.includes(q);
       })
-      .slice(0, 30);
-  }, [queryGuests, clubMembers, guestBlockedIds, selectedGuests, memberRoleLabel]);
+      .sort((a, b) => fullName(a).localeCompare(fullName(b), locale));
+  }, [eventType, trainingGuests, locale, queryGuests, clubMembers, guestBlockedIds, selectedGuests, memberRoleLabel]);
 
   useEffect(() => {
     setSelectedGuests((prev) => {
@@ -426,6 +430,17 @@ export default function CoachGroupPlanningPage() {
     });
   }
 
+  function changeEventType(next: typeof eventType) {
+    setEventType(next);
+    if (next !== "training") {
+      const trainingOnly = new Set(trainingGuests.map(guest => guest.id));
+      clubMembers.forEach(member => trainingOnly.delete(member.id));
+      setSelectedGuests(previous => Object.fromEntries(
+        Object.entries(previous).filter(([id]) => !trainingOnly.has(id))
+      ));
+    }
+  }
+
   function toggleSelectedGuest(m: ClubMemberLite) {
     setSelectedGuests((prev) => {
       const next = { ...prev };
@@ -449,7 +464,9 @@ export default function CoachGroupPlanningPage() {
       setMeId(uRes.user.id);
 
       const roster = await loadCoachPlanningRoster(supabase, groupId, uRes.user.id);
+      const guestPlayers = await loadTrainingGuestPlayers(supabase, groupId);
       if (version !== loadVersion.current) return;
+      setTrainingGuests(guestPlayers);
       setGroup(roster.group); setClubName(roster.clubName);
       setClubMembers(roster.members); setCoaches(roster.coaches); setPlayers(roster.players);
       setCoachIdsSelected(roster.coaches.map((coach) => coach.id));
@@ -585,7 +602,7 @@ export default function CoachGroupPlanningPage() {
                 <div style={{ display: "grid", gap: 10 }}>
                   <label className={actionStyles.field}>
                     <span>{t("coach.form.eventType")}</span>
-                    <select value={eventType} onChange={(e) => setEventType(e.target.value as typeof eventType)} disabled={busy}>
+                    <select value={eventType} onChange={(e) => changeEventType(e.target.value as typeof eventType)} disabled={busy}>
                       {EVENT_TYPE_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {eventTypeLabelLocalized(opt.value)}
@@ -663,7 +680,7 @@ export default function CoachGroupPlanningPage() {
                 <div style={{ display: "grid", gap: 10 }}>
                   <label className={actionStyles.field}>
                     <span>{t("coach.form.eventType")}</span>
-                    <select value={eventType} onChange={(e) => setEventType(e.target.value as typeof eventType)} disabled={busy}>
+                    <select value={eventType} onChange={(e) => changeEventType(e.target.value as typeof eventType)} disabled={busy}>
                       {EVENT_TYPE_OPTIONS.map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {eventTypeLabelLocalized(opt.value)}
@@ -1129,13 +1146,13 @@ export default function CoachGroupPlanningPage() {
                 )}
               </div>
 
-              {queryGuests.trim().length > 0 ? (
+
                 <div style={{ display: "grid", gap: 10 }}>
                   <div className="pill-soft">{t("common.add")} ({candidateGuests.length})</div>
                   {candidateGuests.length === 0 ? (
                     <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>{t("coach.form.noResults")}</div>
                   ) : (
-                    <div style={{ display: "grid", gap: 10 }}>
+                    <div style={{ display: "grid", gap: 10, maxHeight: 360, overflowY: "auto" }}>
                       {candidateGuests.map((m) => (
                         <div key={m.id} className={formStyles.row}>
                           <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
@@ -1164,11 +1181,6 @@ export default function CoachGroupPlanningPage() {
                     </div>
                   )}
                 </div>
-              ) : (
-                <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,0.55)" }}>
-                  {t("coach.form.guestsHint")}
-                </div>
-              )}
             </section>
 
             <div className={formStyles.actions}>

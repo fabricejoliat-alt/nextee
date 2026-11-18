@@ -59,7 +59,13 @@ export default function CoachCalendarPage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [groupFilter, setGroupFilter] = useState("all");
   const [anchorDate, setAnchorDate] = useState(() => new Date());
-  const [referenceNow] = useState(() => Date.now());
+  const [referenceNow, setReferenceNow] = useState(() => Date.now());
+  useEffect(() => {
+    const nextStart = Math.min(...events.map(event => Date.parse(event.starts_at)).filter(start => start > referenceNow));
+    if (nextStart - referenceNow > 2_147_483_647) return;
+    const timer = setTimeout(() => setReferenceNow(Date.now()), Math.max(0, nextStart - Date.now()) + 1);
+    return () => clearTimeout(timer);
+  }, [events, referenceNow]);
 
   const [reload, setReload] = useState(0);
   const requestedView = searchParams.get("view");

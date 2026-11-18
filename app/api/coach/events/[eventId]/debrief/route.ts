@@ -27,6 +27,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ eventId: st
       return NextResponse.json({ error: "Only training sessions can be debriefed." }, { status: 400 });
     }
 
+    if (event.status === "cancelled" || Date.parse(event.starts_at) > Date.now()) {
+      return NextResponse.json({ code: event.status === "cancelled" ? "event_cancelled" : "event_not_started" }, { status: 400 });
+    }
+
     const assistanceEnabled = await isCoachTrainingAssistanceEnabled(supabaseAdmin, event.club_id, callerId);
     const [evaluationState, attendanceLockedIds] = await Promise.all([
       loadCoachEvaluationState(supabaseAdmin, [eventId]), playerEvaluationLockedIds(supabaseAdmin, eventId),

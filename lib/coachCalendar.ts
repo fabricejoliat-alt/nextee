@@ -36,6 +36,10 @@ function validTimestamp(value: string | null | undefined) {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
+export function coachTrainingHasStarted(event: { starts_at: string; event_type: string | null; status?: string }, nowMs = Date.now()) {
+  return event.event_type === "training" && event.status !== "cancelled" && Date.parse(event.starts_at) <= nowMs;
+}
+
 export function coachEventEndMs(event: Pick<CoachCalendarEventTiming, "starts_at" | "ends_at" | "duration_minutes">) {
   const explicitEnd = validTimestamp(event.ends_at);
   if (explicitEnd != null) return explicitEnd;
@@ -142,7 +146,7 @@ export function coachCalendarActionState(
   nowMs: number
 ): CoachCalendarActionState {
   if (event.event_type !== "training" || event.status === "cancelled") return "view_activity";
-  if (coachEventEndMs(event) > nowMs) return event.preparation_pending === false ? "view_activity" : "prepare_training";
+  if (!coachTrainingHasStarted(event, nowMs)) return event.preparation_pending === false ? "view_activity" : "prepare_training";
   if (event.requires_evaluation === false || event.evaluation_eligible_count === 0) return "view_activity";
   return evaluationComplete ? "evaluation_complete" : "needs_evaluation";
 }

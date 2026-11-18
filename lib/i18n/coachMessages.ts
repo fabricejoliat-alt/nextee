@@ -151,6 +151,7 @@ const rows = {
     "Fülle die erforderlichen benutzerdefinierten Kriterien aus.",
     "Completa i criteri personalizzati obbligatori."
   ],
+  "coach.error.notStarted": ["L’évaluation s’ouvre au début de l’entraînement.", "Evaluation opens when training starts.", "Die Bewertung öffnet sich bei Trainingsbeginn.", "La valutazione si apre all’inizio dell’allenamento."],
   "coach.error.notFinished": [
     "L’entraînement doit être terminé avant l’évaluation.",
     "Training must finish before it can be evaluated.",

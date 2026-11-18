@@ -1,4 +1,4 @@
-import { authorizedCoachPlayers } from "@/lib/coachAccess";
+import { authorizedCoachPlayers } from "./coachAccess.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type PlanningMember = { id: string; first_name: string | null; last_name: string | null; avatar_url: string | null; handicap: number | null; role: string | null };
@@ -54,4 +54,13 @@ export async function loadCoachPlanningRoster(db: SupabaseClient, groupId: strin
   return { group, clubName: club.data?.name ?? "", members: roster,
     coaches: roster.filter((row) => coachIds.has(row.id) && ["coach", "manager"].includes(row.role ?? "")),
     players: roster.filter((row) => playerIds.has(row.id) && row.role === "player") };
+}
+
+
+// Guest identities do not become group defaults or grant access to player details.
+export async function loadTrainingGuestPlayers(db: SupabaseClient, groupId: string): Promise<PlanningMember[]> {
+  const rows = await allRows<Pick<PlanningMember, "id" | "first_name" | "last_name" | "avatar_url">>(
+    (from, to) => db.rpc("coach_training_guest_players", { p_group_id: groupId }).order("id").range(from, to)
+  );
+  return rows.map(row => ({ ...row, role: "player", handicap: null }));
 }

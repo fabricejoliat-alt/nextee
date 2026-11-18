@@ -3,7 +3,7 @@ import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { resolveCoachAssignments } from "@/lib/coachAccess";
-import { coachEventEndMs } from "@/lib/coachCalendar";
+import { coachTrainingHasStarted } from "@/lib/coachCalendar";
 import { loadCoachEvaluationWorkload } from "@/lib/server/coachEvaluation";
 import { coachRows } from "@/lib/server/coachRows";
 
@@ -183,10 +183,9 @@ export async function GET(req: NextRequest) {
         event.event_type === "camp" ? (campDayIndexByEventId[String(event.id ?? "").trim()] ?? null) : null,
     }));
     const upcomingEvents = sortByStartsAtAsc(allEventsWithCampDay.filter((e) => e.status === "scheduled" && new Date(e.starts_at).getTime() >= new Date(nowIso).getTime())).slice(0, 80);
-    const pastEvents = allEventsWithCampDay
-      .filter((e) => e.status === "scheduled" && coachEventEndMs(e) <= new Date(nowIso).getTime())
+    const evaluationEvents = allEventsWithCampDay
+      .filter(event => event.status === "scheduled" && event.requires_evaluation !== false && coachTrainingHasStarted(event, Date.parse(nowIso)))
       .sort((a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime());
-    const evaluationEvents = pastEvents.filter((event) => event.event_type === "training" && event.requires_evaluation !== false);
 
     const groupPlayersRes = groupIds.length > 0
       ? await supabaseAdmin.from("coach_group_players").select("player_user_id").in("group_id", groupIds)
@@ -198,7 +197,7 @@ export async function GET(req: NextRequest) {
 
     const allowedByOrg=await Promise.all(scope.clubIds.map(id=>authorizedCoachPlayers(supabaseAdmin,coachId,id,[...candidatePlayers])));
     const followedPlayerIds=new Set(allowedByOrg.flatMap(ids=>[...ids]));
-    if (pastEvents.length === 0) {
+    if (evaluationEvents.length === 0) {
       return NextResponse.json({
         me,
         groupNameById,

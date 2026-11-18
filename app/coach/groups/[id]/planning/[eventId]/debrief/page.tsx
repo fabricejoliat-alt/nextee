@@ -718,6 +718,7 @@ export default function CoachTrainingDebriefPage() {
               )}
             </section>
 
+              <div className={styles.feedbackColumn}>
               {currentReview.status === "present" ? (
                 <section className={`${styles.workflowCard} ${styles.feedbackCard}`} aria-labelledby="activity-feedback-title">
                   <div className={`${styles.sectionBlock} ${styles.feedbackSection}`}>
@@ -784,7 +785,6 @@ export default function CoachTrainingDebriefPage() {
                     </div>
                 </section>
               ) : null}
-            </div>
 
               {event?.club_id ? <CoachActivityDocuments
                 key={`${eventId}:${currentReview.player_id}`}
@@ -794,6 +794,8 @@ export default function CoachTrainingDebriefPage() {
                 disabled={busy}
                 onBusyChange={setDocumentsBusy}
               /> : null}
+              </div>
+            </div>
 
               <div className={styles.workflowActions}>
                 <button type="button" className={styles.secondaryAction} disabled={busy || documentsBusy || currentIndex === 0} onClick={() => { setCurrentIndex((index) => Math.max(0, index - 1)); setError(null); setMessage(null); }}>

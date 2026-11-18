@@ -8,6 +8,7 @@ const messages: Record<string, string> = {
   evaluation_disabled: "coach.error.disabled",
   unknown_attendee: "coach.error.attendee",
   player_not_attendee: "coach.error.attendee",
+  event_not_started: "coach.error.notStarted",
   event_not_finished: "coach.error.notFinished",
   event_cancelled: "coach.error.cancelled",
   assistance_disabled: "coach.error.aiDisabled",

@@ -79,6 +79,10 @@ test("the exact end instant is past and duration is the fallback when ends_at is
   const event = { event_type: "training", starts_at: "2026-09-26T11:00:00Z", ends_at: null, duration_minutes: 60 };
   const end = Date.parse("2026-09-26T12:00:00Z");
   assert.equal(coachEventEndMs(event), end);
-  assert.equal(coachCalendarActionState(event, false, end - 1), "prepare_training");
+  const start = Date.parse(event.starts_at);
+  assert.equal(coachCalendarActionState(event, false, start - 1), "prepare_training");
+  assert.equal(coachCalendarActionState(event, false, start), "needs_evaluation");
+  assert.equal(coachCalendarActionState(event, false, end - 1), "needs_evaluation");
+  assert.equal(coachCalendarActionState({ ...event, status: "cancelled" }, false, start), "view_activity");
   assert.equal(coachCalendarActionState(event, false, end), "needs_evaluation");
 });

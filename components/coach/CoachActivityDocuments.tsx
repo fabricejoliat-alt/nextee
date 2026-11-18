@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { FileText, Paperclip, Upload } from "lucide-react";
+import { ChevronDown, FileText, Paperclip, Upload } from "lucide-react";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import DocumentUploadProgress from "@/components/ui/DocumentUploadProgress";
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
@@ -85,9 +85,13 @@ export default function CoachActivityDocuments({ playerId, eventId, organization
     }
   }
 
-  return <section className={styles.panel} aria-label={text("Documents de l’activité", "Activity documents", "Aktivitätsdokumente", "Documenti dell’attività")}>
-    <h3><Paperclip size={18} aria-hidden="true" />{text("Documents de l’activité", "Activity documents", "Aktivitätsdokumente", "Documenti dell’attività")}</h3>
-    <p>{text("Les fichiers sont liés à cette activité et au junior affiché. Ils sont visibles dans ses documents. L’ajout est enregistré immédiatement.", "Files are linked to this activity and the current junior, and appear in their documents. Uploads are saved immediately.", "Dateien werden mit dieser Aktivität und dem aktuellen Junior verknüpft und in seinen Dokumenten angezeigt. Sie werden sofort gespeichert.", "I file sono collegati a questa attività e al junior visualizzato e compaiono nei suoi documenti. Il caricamento viene salvato subito.")}</p>
+  return <details className={styles.panel}>
+    <summary><Paperclip size={18} aria-hidden="true" /><span>{text("Documents de l’activité", "Activity documents", "Aktivitätsdokumente", "Documenti dell’attività")}</span>
+      {documents.length > 0 && <span className={styles.count}>{documents.length}</span>}
+      <ChevronDown size={18} className={styles.chevron} aria-hidden="true" />
+    </summary>
+    <div className={styles.body}>
+    <p>{text("Chaque fichier ajouté est immédiatement visible par le junior.", "Each file you add is immediately visible to the junior.", "Jede hinzugefügte Datei ist für den Junior sofort sichtbar.", "Ogni file aggiunto è subito visibile al junior.")}</p>
     <fieldset disabled={disabled || uploading || loading} className={styles.fields}>
       <label>{text("Choisir un fichier", "Choose a file", "Datei auswählen", "Scegli un file")}
         <input ref={picker} type="file" accept={PLAYER_DOCUMENT_ACCEPT} onChange={event => {
@@ -105,5 +109,6 @@ export default function CoachActivityDocuments({ playerId, eventId, organization
       <FileText size={17} aria-hidden="true" /><span>{document.file_name}{document.coach_only ? <small>{text("Coachs uniquement", "Coaches only", "Nur Trainer", "Solo allenatori")}</small> : null}</span>
       {document.public_url ? <a href={document.public_url} target="_blank" rel="noreferrer">{text("Ouvrir", "Open", "Öffnen", "Apri")}</a> : null}
     </li>)}</ul> : null}
-  </section>;
+    </div>
+  </details>;
 }

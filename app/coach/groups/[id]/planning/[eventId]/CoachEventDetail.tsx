@@ -1,4 +1,5 @@
 "use client";
+import { coachTrainingHasStarted } from "@/lib/coachCalendar";
 import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
 import { organizationFetch as fetch } from "@/lib/organizationFetch";
@@ -247,6 +248,15 @@ export default function CoachEventDetail({ routeParams }: { routeParams: { id: s
   const [error, setError] = useState<string | null>(null);
 
   const [event, setEvent] = useState<EventRow | null>(null);
+  const [, refreshStartTime] = useState(0);
+  useEffect(() => {
+    if (!event) return;
+    const remaining = Date.parse(event.starts_at) - Date.now();
+    if (remaining > 0 && remaining < 2_147_483_647) {
+      const timer = setTimeout(() => refreshStartTime(value => value + 1), remaining + 1);
+      return () => clearTimeout(timer);
+    }
+  }, [event]);
   const [campDay, setCampDay] = useState<CampDayRow | null>(null);
   const [clubName, setClubName] = useState("");
   const [groupName, setGroupName] = useState("");
@@ -641,9 +651,9 @@ export default function CoachEventDetail({ routeParams }: { routeParams: { id: s
     setAttendanceBusyIds((m) => ({ ...m, [playerId]: true }));
     setAttendees((list) => list.map((a) => (a.player_id === playerId ? { ...a, status: nextStatus } : a)));
 
-    const isPastTraining = event.event_type === "training" && new Date(event.ends_at ?? event.starts_at).getTime() <= Date.now();
+    const trainingStarted = coachTrainingHasStarted(event);
     let up: { error: { message: string } | null };
-    try { up = isPastTraining ? await (async () => {
+    try { up = trainingStarted ? await (async () => {
       const { data } = await supabase.auth.getSession();
       const response = await fetch(`/api/coach/events/${encodeURIComponent(event.id)}/attendance`, {
         method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token ?? ""}` },
@@ -661,7 +671,7 @@ export default function CoachEventDetail({ routeParams }: { routeParams: { id: s
       setError(up.error.message);
       setAttendees((list) => list.map((a) => (a.player_id === playerId ? { ...a, status: prev } : a)));
     }
-    else if (isPastTraining) setAttendees((list) => list.map((a) => a.player_id === playerId ? { ...a, coach_recorded_status: nextStatus } : a));
+    else if (trainingStarted) setAttendees((list) => list.map((a) => a.player_id === playerId ? { ...a, coach_recorded_status: nextStatus } : a));
 
     setAttendanceBusyIds((m) => ({ ...m, [playerId]: false }));
   }
@@ -721,7 +731,7 @@ export default function CoachEventDetail({ routeParams }: { routeParams: { id: s
   }
 
   const isEventPast = new Date(event.starts_at).getTime() < Date.now();
-  const isTrainingPast = event.event_type === "training" && new Date(event.ends_at ?? event.starts_at).getTime() <= Date.now();
+  const canOpenTrainingEvaluation = coachTrainingHasStarted(event);
   const showPreparationInsights = coachTrainingAssistanceEnabled && event.event_type === "training" && !isEventPast;
 
   return (
@@ -748,7 +758,7 @@ export default function CoachEventDetail({ routeParams }: { routeParams: { id: s
               {t("common.edit")}
             </Link>
           ) : null}
-          {isTrainingPast ? (
+          {canOpenTrainingEvaluation ? (
             <Link className={actionStyles.primaryButton} href={`/coach/groups/${groupId}/planning/${eventId}/debrief`}>
               <ClipboardCheck size={16} aria-hidden="true" />
               {coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")}
@@ -833,7 +843,7 @@ export default function CoachEventDetail({ routeParams }: { routeParams: { id: s
                   ) : (
                     <AttendanceToggle variant="pill" checked={attendanceStatus === "present"} onToggle={() => handleAttendanceToggle(attendee.player_id, attendanceStatus ?? attendee.status)} disabled={!canAccessDetails || Boolean(attendanceBusyIds[attendee.player_id])} ariaLabel={tr("Basculer présence", "Toggle attendance")} leftLabel={tr("Absent", "Absent")} rightLabel={tr("Présent", "Present")} />
                   )}
-                  {canAccessDetails && isTrainingPast ? <Link className={eventStyles.actionIconButton} aria-label={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} title={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} href={`/coach/groups/${groupId}/planning/${eventId}/debrief`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
+                  {canAccessDetails && canOpenTrainingEvaluation ? <Link className={eventStyles.actionIconButton} aria-label={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} title={coachTrainingAssistanceEnabled ? t("coachDebrief.reportAction") : t("coachDebrief.attendanceAction")} href={`/coach/groups/${groupId}/planning/${eventId}/debrief`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
                   {canEvaluate ? <Link className={eventStyles.actionIconButton} aria-label={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} title={evaluation ? tr("Modifier l’évaluation", "Edit evaluation") : tr("Évaluer", "Evaluate")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/edit`}><ClipboardCheck size={17} aria-hidden="true" /></Link> : null}
                   {canStructure ? <Link className={eventStyles.actionIconButton} aria-label={tr("Structurer", "Structure")} title={tr("Structurer", "Structure")} href={`/coach/groups/${groupId}/planning/${eventId}/players/${attendee.player_id}/structure`}><Pencil size={17} aria-hidden="true" /></Link> : null}
                 </div>

@@ -19,7 +19,11 @@ type Result={data:unknown;error:unknown};
 function database(save:(args:Record<string,unknown>)=>Promise<Result>, opts:{permission?:boolean;series?:unknown;historical?:boolean;expectedRpc?:string}={}) {
   const writes:string[]=[];let reads=0;
   return {writes,get reads(){return reads;},
-    rpc:async(name:string,args:Record<string,unknown>)=>{
+    rpc:(name:string,args:Record<string,unknown>)=>{
+      if (name === "coach_training_guest_players") return { order: () => ({
+        range: async () => ({ data: [{ id: "visitor", first_name: "Jules", last_name: "Invité", avatar_url: null }], error: null })
+      }) };
+
       if(name==='can_manage_assigned_group') return {data:opts.permission??true,error:null};
       if(name==='organization_actor_legal_ready'||name==='organization_actor_access') return {data:true,error:null};
       writes.push(name);assert.equal(name,opts.expectedRpc??'update_coach_event_occurrence_v1');return save(args);
@@ -51,6 +55,18 @@ async function init(db:ReturnType<typeof database>, data=detail(), options:{noti
   harness.render();await flush();harness.render();
   return {harness,navigation,get fetches(){return fetches;}};
 }
+
+test("editing an existing training adds a guest alongside its current junior", async () => {
+  let saved: Record<string, unknown> | undefined;
+  const db = database(async args => { saved = args; return ok(); });
+  const { harness } = await init(db);
+  try {
+    find(harness.render(), node => node.props["aria-label"] === "Ajouter Jules Invité").props.onClick();
+    saveButton(harness.render()).props.onClick();
+    await flush();
+    assert.deepEqual(saved?.p_player_ids, ["player", "visitor"]);
+  } finally { harness.cleanup(); }
+});
 
 test('occurrence edit sends one atomic save, blocks double-clicks and never deletes/reinserts from the browser',async()=>{
   const pending=deferred<Result>();let payload:Record<string,unknown>|undefined;

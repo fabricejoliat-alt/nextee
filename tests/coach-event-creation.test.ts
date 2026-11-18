@@ -12,8 +12,13 @@ function database(save: (args: Record<string, unknown>) => Promise<Result>, opti
   const calls: Record<string, unknown>[] = [], reads: { table: string; select: string; ids: string[] }[] = [];
   const juniors = Array.from({ length: options.count ?? 1 }, (_, index) => ({ user_id: `player-${index}`, role: "player" }));
   return { calls, reads,
-    rpc: async (name: string, args: Record<string, unknown>) => {
+    rpc: (name: string, args: Record<string, unknown>) => {
+      if (name === "coach_training_guest_players") return { order: () => ({
+        range: async () => ({ data: [{ id: "visitor", first_name: "Jules", last_name: "Invité", avatar_url: null }], error: null })
+      }) };
+
       if (name === "can_manage_assigned_group") return { data: options.permission ?? true, error: null };
+      if (name === "organization_actor_access" || name === "organization_actor_legal_ready") return { data: true, error: null };
       assert.equal(name, "create_coach_events_v1"); calls.push(args); return save(args);
     },
     from(table: string) {
@@ -86,6 +91,17 @@ test("known rejection preserves the draft and permits a corrected request with a
   } finally { harness.cleanup(); }
 });
 
+test("a coach can select an outside junior before searching and invite them to a single training", async () => {
+  const db = database(async () => ok());
+  const { harness } = await init(db);
+  try {
+    find(harness.render(), node => node.props["aria-label"] === "Ajouter Jules Invité").props.onClick();
+    button(harness.render(), "coach.form.create").props.onClick();
+    await flush();
+    assert.deepEqual(db.calls[0].p_player_ids, ["player-0", "visitor"]);
+  } finally { harness.cleanup(); }
+});
+
 test("notification failure after confirmed creation does not permit duplicate activities", async () => {
   const db = database(async () => ok()), { harness, navigation } = await init(db, async () => { throw new Error("notification detail"); });
   try {
@@ -107,7 +123,7 @@ test("a denied or partially loaded roster never offers activity creation", async
 test("planning roster paginates large groups, includes only active role-correct defaults and minimizes handicap reads", async () => {
   const db = database(async () => ok(), { count: 1003 });
   const roster = await loadCoachPlanningRoster(db as unknown as SupabaseClient, "group", "coach");
-  assert.equal(roster.players.length, 1003); assert.equal(roster.members.length, 1005); assert.deepEqual(roster.coaches.map(row => row.id), ["coach"]);
+  assert.equal(roster.players.length, 1003); assert.equal(roster.members.length, 1004); assert.deepEqual(roster.coaches.map(row => row.id), ["coach"]);
   assert.ok(db.reads.filter(row => row.table === "profiles").every(row => row.ids.length <= 150));
   assert.ok(db.reads.filter(row => row.select === "id,handicap").every(row => !row.ids.includes("coach") && !row.ids.includes("guest")));
 });
