@@ -85,7 +85,7 @@ export default function CoachActivityDocuments({ playerId, eventId, organization
     }
   }
 
-  return <details className={styles.panel}>
+  return <details open className={styles.panel}>
     <summary><Paperclip size={18} aria-hidden="true" /><span>{text("Documents de l’activité", "Activity documents", "Aktivitätsdokumente", "Documenti dell’attività")}</span>
       {documents.length > 0 && <span className={styles.count}>{documents.length}</span>}
       <ChevronDown size={18} className={styles.chevron} aria-hidden="true" />

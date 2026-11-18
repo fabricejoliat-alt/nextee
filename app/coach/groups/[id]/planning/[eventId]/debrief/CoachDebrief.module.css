@@ -56,7 +56,7 @@
 .commentField textarea { width: 100%; box-sizing: border-box; border: 1px solid rgba(0, 0, 0, 0.14); border-radius: 14px; background: rgba(255, 255, 255, 0.96); color: #15231d; font: inherit; font-size: 16px; line-height: 1.45; padding: 12px; }
 .commentField textarea:focus { outline: 3px solid rgba(34, 197, 94, 0.2); border-color: #16a34a; }
 .proposalApproved { border-color: rgba(22, 163, 74, 0.34); background: rgba(236, 253, 245, 0.8); }
-.workflowActions { position: static; display: grid; grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr); gap: 8px; margin-top: 2px; padding-top: 18px; border-top: 1px solid #e1e8df; }
+.workflowActions { position: static; display: grid; grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr); gap: 8px; margin-top: 2px; padding-top: 18px; }
 .finishCard { display: grid; justify-items: center; gap: 10px; padding-block: 34px; text-align: center; color: var(--green-dark); }
 .finishCard h2 { margin: 2px 0 0; font-size: 24px; }
 .finishCard p { margin: 0; max-width: 520px; color: rgba(0, 0, 0, 0.62); font-weight: 750; line-height: 1.5; }
@@ -281,7 +281,7 @@
   .workflowHeader { align-items: center; }
   .currentPlayer { padding: 12px; }
   .ratingButtons { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .workflowActions { grid-template-columns: 1fr; border-top: 0; }
+  .workflowActions { grid-template-columns: 1fr; }
   .finishActions { grid-template-columns: 1fr; }
   .skeletonHero { align-items: stretch; flex-direction: column; }
   .skeletonBack { width: 100%; flex-basis: 42px; }
