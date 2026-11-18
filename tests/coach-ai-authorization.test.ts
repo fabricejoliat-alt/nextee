@@ -247,8 +247,19 @@ const rewriteValues = { player_id: player, source_text: "Léon Exemple progresse
 
 for (const key of Object.keys(minorEnv)) test(`under-13 rewrite stays closed without ${key}`, async () => {
   const env = setup(minorFixture("2018-01-01"), { env: { ...minorEnv, [key]: "" } });
-  assert.equal((await env.rewrite()).status, 403);
+  const response = await env.rewrite();
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).code, "ai_configuration_required");
   assert.equal(env.payloads.length, 0);
+});
+
+test("valid 13plus consents without junior configuration report configuration, without provider transport", async () => {
+  const env = setup(minorFixture("2013-01-01"));
+  const response = await env.rewrite();
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).code, "ai_configuration_required");
+  assert.equal(env.payloads.length, 0);
+  assert.equal(env.writes.length, 0);
 });
 
 const minorDenied: Array<[string, (t: Record<string, Row[]>) => void]> = [
@@ -453,7 +464,8 @@ test("age correction below 13 during non-ZDR transport discards the answer", asy
   const env = setup(tables, { env: { ...minorEnv, OPENAI_COACH_ZDR_CONFIRMED: "false" },
     duringTransport: () => { tables.profiles[0].birth_date = "2018-01-01"; } });
   const result = await env.rewrite();
-  assert.equal(result.status, 403);
+  assert.equal(result.status, 503);
+  assert.equal((await result.clone().json()).code, "ai_configuration_required");
   assert.equal((await result.json()).proposal, undefined);
   assert.equal(env.payloads.length, 1);
   assert.equal(env.writes.length, 0);

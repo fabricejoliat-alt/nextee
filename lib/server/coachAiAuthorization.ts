@@ -9,6 +9,11 @@ export class CoachAiAuthorizationError extends Error {
   constructor() { super("AI assistance is unavailable for this player. Manual entry remains available."); }
 }
 
+export class CoachAiConfigurationError extends Error {
+  readonly code = "ai_configuration_required";
+  constructor() { super("Junior AI rewrite is not configured on the server."); }
+}
+
 function hasReachedAge(birthDate: unknown, years: number, now: Date) {
   if (typeof birthDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) return false;
   const parsed = new Date(`${birthDate}T12:00:00Z`);
@@ -69,7 +74,7 @@ export async function loadCoachAiPlayerGrant(db: SupabaseClient, clubId: string,
   if (!born || !Number.isFinite(born.getTime()) || born.toISOString().slice(0, 10) !== birthDate || born > new Date()) return null;
   const requiresZdr = !isCoachAiAtLeast13(birthDate);
   const provider = !adult && usage === "rewrite" ? minorRewriteProvider(requiresZdr) : null;
-  if (!adult && !provider) return null;
+  if (!adult && usage !== "rewrite") return null;
 
   const docs = await db.from("legal_documents")
     .select("id,kind,action_kind,required,audience_roles,applicability")
@@ -122,7 +127,8 @@ export async function loadCoachAiPlayerGrant(db: SupabaseClient, clubId: string,
     if (authority.data !== true || childChoice.data?.decision !== "consented" || childChoice.data?.version_id !== version.data.id
       || childChoice.data.authority_snapshot?.authority !== "self" || childChoice.data.authority_snapshot?.role !== "player"
       || !Number.isFinite(childAt.getTime()) || childAt > new Date() || childAt < born) return null;
-    return `rewrite-minor:${requiresZdr ? "under13" : "13plus"}:${provider!.project}:${version.data.id}:${decision.data.id}:${childChoice.data.id}`;
+    if (!provider) throw new CoachAiConfigurationError();
+    return `rewrite-minor:${requiresZdr ? "under13" : "13plus"}:${provider.project}:${version.data.id}:${decision.data.id}:${childChoice.data.id}`;
   }
   return `${version.data.id}:${decision.data.id}`;
 }

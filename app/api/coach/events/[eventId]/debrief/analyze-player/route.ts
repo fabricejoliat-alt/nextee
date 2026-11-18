@@ -4,7 +4,7 @@ import { requireCaller } from "@/app/api/messages/_lib";
 import { requireCoachEventAccess } from "@/app/api/coach/events/_access";
 import { COACH_PRIVATE_NOTE_MAX_LENGTH } from "@/lib/coachDebrief";
 import { isCoachTrainingAssistanceEnabled } from "@/lib/server/coachTrainingAssistance";
-import { CoachAiAuthorizationError, requireCoachAiGrant } from "@/lib/server/coachAiAuthorization";
+import { CoachAiAuthorizationError, CoachAiConfigurationError, requireCoachAiGrant } from "@/lib/server/coachAiAuthorization";
 import { legalNoStore } from "@/lib/server/legalAccess";
 import { createRewriteReview, minorRewriteProvider, redactCoachRewriteText, validRewriteReview } from "@/lib/server/coachAiRewrite";
 
@@ -162,6 +162,9 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ eventId: s
       },
     }, { headers: legalNoStore });
   } catch (error: unknown) {
+    if (error instanceof CoachAiConfigurationError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: 503, headers: legalNoStore });
+    }
     if (error instanceof CoachAiAuthorizationError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 403, headers: legalNoStore });
     }

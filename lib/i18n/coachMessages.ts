@@ -229,6 +229,12 @@ const rows = {
     "Die KI-Unterstützung ist für dein Konto in diesem Club nicht aktiviert.",
     "L’assistenza IA non è attiva per il tuo account in questo club."
   ],
+  "coach.error.aiConfiguration": [
+    "L’assistance IA pour les juniors n’est pas configurée sur le serveur. Contactez l’administrateur. Vous pouvez continuer la saisie manuelle.",
+    "Junior AI assistance is not configured on the server. Contact the administrator. You can continue entering notes manually.",
+    "Die KI-Unterstützung für Junioren ist auf dem Server nicht eingerichtet. Wende dich an den Administrator. Du kannst Notizen weiterhin manuell erfassen.",
+    "L’assistenza IA per i junior non è configurata sul server. Contatta l’amministratore. Puoi continuare a inserire le note manualmente."
+  ],
   "coach.error.rateLimit": [
     "Trop de demandes. Patientez puis réessayez.",
     "Too many requests. Wait and try again.",

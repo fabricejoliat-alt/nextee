@@ -13,6 +13,7 @@ const messages: Record<string, string> = {
   assistance_disabled: "coach.error.aiDisabled",
   ai_review_required: "coach.error.aiReview",
   ai_authorization_required: "coach.error.aiAuthorization",
+  ai_configuration_required: "coach.error.aiConfiguration",
   invalid_custom_responses: "coach.error.invalid",
   invalid_custom_criterion: "coach.error.invalid",
   invalid_custom_response: "coach.error.invalid",
