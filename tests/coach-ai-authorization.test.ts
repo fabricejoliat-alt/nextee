@@ -283,6 +283,29 @@ test("current parent authority is required even with an earlier verified decisio
   assert.equal(env.payloads.length, 0);
 });
 
+test("an organization-linked parent's current consent permits preview without manual admin review", async () => {
+  const tables = minorFixture();
+  tables.legal_decisions[1].authority_snapshot.authority = "club_linked_parent";
+  const env = setup(tables, { env: minorEnv });
+  const preview = await env.route("debrief/analyze-player").POST(managerRequest("POST", { ...rewriteValues, intent: "preview" }), ctx);
+  assert.equal(preview.status, 200);
+  assert.ok((await preview.json()).preview.review);
+  assert.equal(env.payloads.length, 0);
+  assert.equal(env.writes.length, 0);
+});
+
+test("an organization-linked parent's consent still requires current authority, verified email and junior consent", async () => {
+  for (const failure of ["authority", "email", "junior"] as const) {
+    const tables = minorFixture();
+    tables.legal_decisions[1].authority_snapshot.authority = "club_linked_parent";
+    if (failure === "email") tables.legal_decisions[1].authority_snapshot.parent_email_confirmed = false;
+    if (failure === "junior") tables.legal_decisions[0].decision = "refused";
+    const env = setup(tables, { env: minorEnv, parentAuthority: failure !== "authority" });
+    assert.equal((await env.rewrite()).status, 403);
+    assert.equal(env.payloads.length, 0);
+  }
+});
+
 test("minor with two choices can preview without transport, then send only masked source to dedicated project", async () => {
   const env = setup(minorFixture(), { env: minorEnv });
   const post = env.route("debrief/analyze-player").POST;

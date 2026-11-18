@@ -107,7 +107,7 @@ export async function loadCoachAiPlayerGrant(db: SupabaseClient, clubId: string,
       || decision.data.authority_snapshot?.role !== "player") return null;
   } else {
     if (born > at || isCoachAiAdult(birthDate, at) || decision.data.actor_id === playerId
-      || decision.data.authority_snapshot?.authority !== "verified_representative"
+      || !["verified_representative", "club_linked_parent"].includes(decision.data.authority_snapshot?.authority)
       || decision.data.authority_snapshot?.role !== "parent"
       || decision.data.authority_snapshot?.parent_email_confirmed !== true) return null;
     const [authority, childChoice] = await Promise.all([
