@@ -20,6 +20,9 @@ function database(save:(args:Record<string,unknown>)=>Promise<Result>, opts:{per
   const writes:string[]=[];let reads=0;
   return {writes,get reads(){return reads;},
     rpc:(name:string,args:Record<string,unknown>)=>{
+      if (name === "coach_planning_group_player_ids") return { order: () => ({
+        range: async (from: number, to: number) => ({ data: opts.historical ? [] : [{ player_user_id: "player" }], error: null })
+      }) };
       if (name === "coach_training_guest_players") return { order: () => ({
         range: async () => ({ data: [...(opts.unauthorizedPlayer ? [profile] : []), { id: "visitor", first_name: "Jules", last_name: "Invité", avatar_url: null }], error: null })
       }) };

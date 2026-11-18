@@ -13,6 +13,9 @@ function database(save: (args: Record<string, unknown>) => Promise<Result>, opti
   const juniors = Array.from({ length: options.count ?? 1 }, (_, index) => ({ user_id: `player-${index}`, role: "player" }));
   return { calls, reads,
     rpc: (name: string, args: Record<string, unknown>) => {
+      if (name === "coach_planning_group_player_ids") return { order: () => ({
+        range: async (from: number, to: number) => ({ data: juniors.map(row => ({ player_user_id: row.user_id })).slice(from, to + 1), error: null })
+      }) };
       if (name === "coach_training_guest_players") return { order: () => ({
         range: async () => ({ data: [{ id: "visitor", first_name: "Jules", last_name: "Invité", avatar_url: null }], error: null })
       }) };

@@ -27,8 +27,7 @@ export async function loadCoachPlanningRoster(db: SupabaseClient, groupId: strin
       .eq("club_id", group.club_id).eq("is_active", true).order("user_id").range(from, to)),
     allRows<{ coach_user_id: string }>((from, to) => db.from("coach_group_coaches").select("coach_user_id")
       .eq("group_id", groupId).order("coach_user_id").range(from, to)),
-    allRows<{ player_user_id: string }>((from, to) => db.from("coach_group_players").select("player_user_id")
-      .eq("group_id", groupId).order("player_user_id").range(from, to)),
+    allRows<{ player_user_id: string }>((from, to) => db.rpc("coach_planning_group_player_ids", { p_group_id: groupId }).order("player_user_id").range(from, to)),
     loadTrainingGuestPlayers(db, groupId),
   ]);
   if (club.error) throw new Error("roster_load_failed");
