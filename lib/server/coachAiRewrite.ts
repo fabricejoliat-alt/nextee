@@ -36,6 +36,7 @@ export function redactCoachRewriteText(source: string, identity: Identity) {
 export type RewriteReviewContext = {
   actor: string; event: string; player: string; audience: string; language: string;
   source: string; redacted: string; grant: string;
+  guidanceRevision?: number;
 };
 
 function signature(context: RewriteReviewContext, expires: number, secret: string) {

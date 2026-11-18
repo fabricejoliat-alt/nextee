@@ -21,6 +21,7 @@ const ROUTES = {
   legal: "/admin/legal",
   contact: "/admin/settings/contact",
   brevo: "/admin/settings/brevo",
+  coachAi: "/admin/settings/coach-ai",
 } as const;
 
 type Props = {
@@ -85,6 +86,7 @@ export default function AdminDesktopDrawer({ open, onClose }: Props) {
       { label: "Documents juridiques", icon: FileText, href: ROUTES.legal },
       { label: "Contact", icon: Mail, href: ROUTES.contact },
       { label: "Contacts Brevo", icon: Users, href: ROUTES.brevo },
+      { label: "Reformulation IA", icon: FileText, href: ROUTES.coachAi },
       { label: "Gestion des validations", icon: ClipboardCheck, href: ROUTES.validations },
       { label: "Règles de golf", icon: BookOpen, href: ROUTES.rules },
       { label: etiquetteText(locale).title, icon: BookOpen, href: ROUTES.etiquette },

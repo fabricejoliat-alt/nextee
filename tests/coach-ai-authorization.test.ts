@@ -13,6 +13,7 @@ const decisionAt = "2026-09-01T12:00:00Z";
 function fixture(): Record<string, Row[]> {
   return {
     profiles: [{ id: player, birth_date: "2000-02-01", first_name: "Léon", last_name: "Exemple" }],
+    coach_ai_rewrite_settings: [{ singleton: true, instructions: "Conserver toutes les observations, les phases du geste et les corrections techniques.", revision: 1, updated_at: "2026-11-18" }],
     club_members: [
       { user_id: "coach", club_id: "A", role: "coach", is_active: true },
       { user_id: player, club_id: "A", role: "player", is_active: true },
@@ -353,6 +354,30 @@ test("old client and forged review cannot skip preview", async () => {
     assert.equal(result.status, 409);
     assert.equal((await result.json()).code, "ai_review_required");
   }
+  assert.equal(env.payloads.length, 0);
+});
+
+test("admin guidance is used in the prompt and changed guidance requires a fresh preview", async () => {
+  const env = setup(); const post = env.route("debrief/analyze-player").POST;
+  const values = { ...rewriteValues, source_text: "Club légèrement intérieur au milieu du backswing : armer les poignets plus tôt pour laisser le club dans le plan." };
+  const { preview } = await (await post(managerRequest("POST", { ...values, intent: "preview" }), ctx)).json();
+  env.tables.coach_ai_rewrite_settings[0].revision = 2;
+  env.tables.coach_ai_rewrite_settings[0].instructions = "Présenter les observations et leurs corrections en liste, sans omission.";
+  const stale = await post(managerRequest("POST", { ...values, review: preview.review, review_confirmed: true }), ctx);
+  assert.equal(stale.status, 409); assert.equal(env.payloads.length, 0);
+  const next = await env.rewrite({ source_text: values.source_text });
+  assert.equal(next.status, 200);
+  const payload = env.payloads[0];
+  assert.match(payload.input[0].content, /BOTH the observed problem and its correction/);
+  assert.match(payload.input[0].content, /Présenter les observations et leurs corrections en liste/);
+  assert.equal(JSON.parse(payload.input[1].content).individual_source, values.source_text);
+  assert.equal(payload.max_output_tokens, 3000);
+});
+
+test("missing instructions never silently run a rewrite with an old prompt", async () => {
+  const tables = fixture(); tables.coach_ai_rewrite_settings = [];
+  const env = setup(tables);
+  assert.equal((await env.rewrite()).status, 500);
   assert.equal(env.payloads.length, 0);
 });
 
