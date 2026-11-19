@@ -631,3 +631,65 @@ test("event detail exposes the evaluation action for a registered guest outside 
   assert.equal(body.attendees[0].player_id, "player");
   assert.equal(body.attendees[0].can_access_details, true);
 });
+
+test("activity document access includes guests but stays within the coach's session and organization", async () => {
+  const data = planningFixture();
+  data.coach_group_players = [];
+  const { db } = fakeDatabase(data);
+  const { resolveCoachActivityPlayerAccess } = loadModule<typeof import("../app/api/coach/players/_access")>("app/api/coach/players/_access.ts");
+  assert.deepEqual(await resolveCoachActivityPlayerAccess(db, "coach", "player", "event-A", "A"), { allowed: true, clubId: "A" });
+  assert.equal((await resolveCoachActivityPlayerAccess(db, "coach", "player", "event-A", "B")).allowed, false);
+  assert.equal((await resolveCoachActivityPlayerAccess(db, "coach", "unrelated", "event-A", "A")).allowed, false);
+  assert.equal((await resolveCoachActivityPlayerAccess(db, "coach", "player", "event-B", "B")).allowed, false);
+  data.club_events[0].status = "cancelled";
+  assert.equal((await resolveCoachActivityPlayerAccess(db, "coach", "player", "event-A", "A")).allowed, false);
+});
+
+test("a guest's activity documents can be listed without exposing unrelated documents", async () => {
+  const data = planningFixture();
+  data.coach_group_players = [];
+  data.player_dashboard_documents = [
+    { id: "linked", player_id: "player", organization_id: "A", club_event_id: "event-A", uploaded_by: "coach" },
+    { id: "unrelated", player_id: "player", organization_id: "A", club_event_id: "other", uploaded_by: "coach" },
+  ];
+  const { db } = fakeDatabase(data);
+  const route = loadModule<typeof import("../app/api/coach/players/[playerId]/documents/route")>("app/api/coach/players/[playerId]/documents/route.ts", apiMocks(db));
+  const response = await route.GET(request("/api/coach/players/player/documents?club_event_id=event-A&organization_id=A") as never,
+    { params: Promise.resolve({ playerId: "player" }) });
+  assert.equal(response.status, 200);
+  assert.deepEqual((await response.json()).documents.map((doc: Row) => doc.id), ["linked"]);
+});
+
+test("prepare and finalize authorize the registered guest before validating the uploaded file", async () => {
+  const data = planningFixture();
+  data.coach_group_players = [];
+  const { db } = fakeDatabase(data);
+  let validations = 0;
+  const route = loadModule<typeof import("../app/api/coach/players/[playerId]/documents/route")>("app/api/coach/players/[playerId]/documents/route.ts", {
+    ...apiMocks(db),
+    "@/lib/playerDocumentPolicy": { validatePlayerDocumentFile: () => { validations++; return { ok: false, error: "test validation" }; } },
+  });
+  for (const action of ["prepare", "finalize"]) {
+    const req = new Request("http://localhost/documents?organization_id=A", {
+      method: "POST", headers: { Authorization: "Bearer test", "Content-Type": "application/json" },
+      body: JSON.stringify({ action, organization_id: "A", club_event_id: "event-A", original_name: "swing.mov", size_bytes: 10 }),
+    });
+    const response = await route.POST(req as never, { params: Promise.resolve({ playerId: "player" }) });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, "test validation");
+  }
+  assert.equal(validations, 2);
+});
+
+test("camp documents use the attendee's registration independently of their group or parental consent", async () => {
+  const data = planningFixture();
+  data.coach_group_players = [];
+  data.club_events[0].event_type = "camp";
+  data.club_camp_days = [{ event_id: "event-A", camp_id: "camp" }];
+  data.club_camp_players = [{ camp_id: "camp", player_id: "player", registration_status: "registered" }];
+  const { db } = fakeDatabase(data);
+  const { resolveCoachActivityPlayerAccess } = loadModule<typeof import("../app/api/coach/players/_access")>("app/api/coach/players/_access.ts");
+  assert.equal((await resolveCoachActivityPlayerAccess(db, "coach", "player", "event-A", "A")).allowed, true);
+  data.club_camp_players[0].registration_status = "declined";
+  assert.equal((await resolveCoachActivityPlayerAccess(db, "coach", "player", "event-A", "A")).allowed, false);
+});

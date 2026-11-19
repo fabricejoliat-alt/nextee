@@ -1,5 +1,5 @@
 export type DocumentUploadProgress = {
-  phase: "preparing" | "uploading" | "finalizing" | "complete" | "error";
+  phase: "optimizing" | "preparing" | "uploading" | "finalizing" | "complete" | "error";
   percent: number;
   error?: string;
 };

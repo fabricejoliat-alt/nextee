@@ -1,19 +1,22 @@
 "use client";
 
+import { optimizeVideoUpload } from "./clientVideoUpload.ts";
+
 type OptimizeImageOptions = {
   maxWidth?: number;
   maxHeight?: number;
   quality?: number;
+  onVideoProgress?: (percent: number) => void;
 };
 
-const DEFAULT_OPTIONS: Required<OptimizeImageOptions> = {
+const DEFAULT_OPTIONS: Required<Omit<OptimizeImageOptions, "onVideoProgress">> = {
   maxWidth: 2000,
   maxHeight: 2000,
   quality: 0.82,
 };
 
 function shouldOptimizeImage(file: File) {
-  if (!file.type.startsWith("image/")) return false;
+  if (!file.type.startsWith("image/") && !/\.(jpe?g|png|webp|heic|heif)$/i.test(file.name)) return false;
   const lower = file.type.toLowerCase();
   if (lower === "image/gif" || lower === "image/svg+xml") return false;
   return true;
@@ -41,6 +44,9 @@ function buildOutputName(fileName: string) {
 }
 
 export async function optimizeUploadFile(file: File, options?: OptimizeImageOptions) {
+  if (file.type.startsWith("video/") || /\.(mov|mp4|m4v|webm)$/i.test(file.name)) {
+    return optimizeVideoUpload(file, options?.onVideoProgress);
+  }
   if (!shouldOptimizeImage(file)) return file;
 
   const { maxWidth, maxHeight, quality } = { ...DEFAULT_OPTIONS, ...(options ?? {}) };
@@ -61,6 +67,8 @@ export async function optimizeUploadFile(file: File, options?: OptimizeImageOpti
     const ctx = canvas.getContext("2d");
     if (!ctx) return file;
 
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, targetWidth, targetHeight);
     ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
 
     const blob = await new Promise<Blob | null>((resolve) => {

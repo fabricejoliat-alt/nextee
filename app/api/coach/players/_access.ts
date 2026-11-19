@@ -116,3 +116,35 @@ export async function resolveCampCoachPlayerAccess(
     clubId,
   };
 }
+
+/** Activity documents are scoped to an actual attendee and the responsible coach. */
+export async function resolveCoachActivityPlayerAccess(
+  db: SupabaseClient, callerId: string, playerId: string, eventId: string,
+  organizationId?: string | null
+): Promise<CampCoachPlayerAccessResult> {
+  const denied = { allowed: false, clubId: null };
+  const result = await db.from("club_events").select("id,club_id,group_id,event_type,status")
+    .eq("id", eventId).maybeSingle();
+  if (result.error) throw result.error;
+  const event = result.data;
+  if (!event || event.status === "cancelled" || (organizationId && event.club_id !== organizationId)) return denied;
+  if (!await canCoachAccessEvent(db, callerId, event.id, event.group_id, event.club_id)) return denied;
+  const [member, attendee] = await Promise.all([
+    db.from("club_members").select("user_id").eq("club_id", event.club_id).eq("user_id", playerId)
+      .eq("role", "player").eq("is_active", true).maybeSingle(),
+    db.from("club_event_attendees").select("player_id").eq("event_id", event.id).eq("player_id", playerId).maybeSingle(),
+  ]);
+  if (member.error || attendee.error) throw new Error("activity_access_failed");
+  if (!member.data || !attendee.data) return denied;
+  if (event.event_type === "camp") {
+    const day = await db.from("club_camp_days").select("camp_id").eq("event_id", event.id).maybeSingle();
+    if (day.error) throw day.error;
+    if (!day.data) return denied;
+    const registration = await db.from("club_camp_players").select("player_id")
+      .eq("camp_id", day.data.camp_id).eq("player_id", playerId)
+      .eq("registration_status", "registered").maybeSingle();
+    if (registration.error) throw registration.error;
+    if (!registration.data) return denied;
+  }
+  return { allowed: true, clubId: event.club_id };
+}

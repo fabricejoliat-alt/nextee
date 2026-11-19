@@ -30,6 +30,7 @@ export default function CoachActivityDocuments({ playerId, eventId, organization
   const [reload, setReload] = useState(0);
   const [file, setFile] = useState<File | null>(null);
   const [name, setName] = useState("");
+  const [optimizationNote, setOptimizationNote] = useState("");
   const [progress, setProgress] = useState<UploadState | null>(null);
   const [uploading, setUploading] = useState(false);
   const inFlight = useRef(false);
@@ -64,11 +65,21 @@ export default function CoachActivityDocuments({ playerId, eventId, organization
     inFlight.current = true;
     setUploading(true);
     onBusyChange(true);
-    setProgress({ phase: "preparing", percent: 0 });
+    setOptimizationNote("");
+    setProgress({ phase: "optimizing", percent: 0 });
     try {
+      const optimized = await optimizeUploadFile(file, {
+        maxWidth: 1600, maxHeight: 1600, quality: 0.78,
+        onVideoProgress: percent => setProgress({ phase: "optimizing", percent }),
+      });
+      const size = (bytes: number) => new Intl.NumberFormat(locale, { style: "unit", unit: "megabyte", maximumFractionDigits: 1 }).format(bytes / 1024 / 1024);
+      if (optimized.size < file.size) {
+        setOptimizationNote(text("Fichier réduit", "File reduced", "Datei verkleinert", "File ridotto") + " · " + size(file.size) + " → " + size(optimized.size));
+      } else if (file.type.startsWith("video/") || /\.(mov|mp4|m4v|webm)$/i.test(file.name)) {
+        setOptimizationNote(text("Compression indisponible ou sans gain : envoi du fichier original.", "Compression unavailable or no saving: uploading the original.", "Komprimierung nicht verfügbar oder ohne Einsparung: Original wird hochgeladen.", "Compressione non disponibile o senza risparmio: caricamento dell’originale."));
+      }
       const { data } = await supabase.auth.getSession();
       if (!data.session?.access_token) throw new Error(text("Session expirée. Reconnectez-vous.", "Session expired. Sign in again.", "Sitzung abgelaufen. Bitte erneut anmelden.", "Sessione scaduta. Accedi di nuovo."));
-      const optimized = await optimizeUploadFile(file);
       const document = await uploadCoachActivityDocument({
         playerId, eventId, organizationId, token: data.session.access_token, file: optimized, name,
       }, { fetch, transfer: uploadDocumentWithProgress, progress: setProgress });
@@ -92,11 +103,12 @@ export default function CoachActivityDocuments({ playerId, eventId, organization
     </summary>
     <div className={styles.body}>
     <p>{text("Chaque fichier ajouté est immédiatement visible par le junior.", "Each file you add is immediately visible to the junior.", "Jede hinzugefügte Datei ist für den Junior sofort sichtbar.", "Ogni file aggiunto è subito visibile al junior.")}</p>
+    {optimizationNote && <p role="status">{optimizationNote}</p>}
     <fieldset disabled={disabled || uploading || loading} className={styles.fields}>
       <label>{text("Choisir un fichier", "Choose a file", "Datei auswählen", "Scegli un file")}
         <input ref={picker} type="file" accept={PLAYER_DOCUMENT_ACCEPT} onChange={event => {
           const selected = event.target.files?.[0] ?? null;
-          setFile(selected); setName(selected?.name ?? ""); setProgress(null);
+          setFile(selected); setName(selected?.name ?? ""); setProgress(null); setOptimizationNote("");
         }} />
       </label>
       <small>{text("Photos : 15 Mo · Documents : 25 Mo · Vidéos : 100 Mo", "Photos: 15 MB · Documents: 25 MB · Videos: 100 MB", "Fotos: 15 MB · Dokumente: 25 MB · Videos: 100 MB", "Foto: 15 MB · Documenti: 25 MB · Video: 100 MB")}</small>

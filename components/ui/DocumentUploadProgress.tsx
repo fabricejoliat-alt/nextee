@@ -16,6 +16,7 @@ export default function DocumentUploadProgress({ state }: { state: UploadState |
   }, [state]);
   if (!state || dismissedState === state) return null;
   const labels = {
+    optimizing: pickLocaleText(locale, "Réduction de la taille du fichier…", "Reducing file size…", "Dateigröße wird reduziert…", "Riduzione delle dimensioni del file…"),
     preparing: pickLocaleText(locale, "Préparation du fichier…", "Preparing file…", "Datei wird vorbereitet…"),
     uploading: pickLocaleText(locale, "Envoi en cours…", "Uploading…", "Wird hochgeladen…"),
     finalizing: pickLocaleText(locale, "Envoi terminé, enregistrement du document…", "Upload complete, saving document…", "Upload abgeschlossen, Dokument wird gespeichert…"),
@@ -25,7 +26,7 @@ export default function DocumentUploadProgress({ state }: { state: UploadState |
   return <div className={styles.container}>
     <div className={styles.heading} role="status" aria-live="polite">
       <span>{labels[state.phase]}</span>
-      {state.phase === "uploading" ? <b>{state.percent}%</b> : null}
+      {(state.phase === "uploading" || state.phase === "optimizing") ? <b>{state.percent}%</b> : null}
     </div>
     {state.phase !== "error" ? <progress className={styles.progress} max={100}
       value={state.phase === "preparing" ? undefined : state.percent}

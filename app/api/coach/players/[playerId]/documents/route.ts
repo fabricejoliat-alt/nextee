@@ -1,7 +1,7 @@
 import { requestedOrganizationId } from "@/lib/organizationPolicy";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
-import { resolveCampCoachPlayerAccess, resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
+import { resolveCoachActivityPlayerAccess, resolveCoachPlayerAccess } from "@/app/api/coach/players/_access";
 import {
   buildPlayerDocumentObjectPath,
   issuePlayerDocumentUploadReservation,
@@ -51,16 +51,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ playerId: s
     const access = await resolveCoachPlayerAccess(supabaseAdmin, callerId, playerId,requestedOrganizationId(req.url));
     const url = new URL(req.url);
     const requestedEventId = String(url.searchParams.get("club_event_id") ?? "").trim();
-    const campAccess = requestedEventId
-      ? await resolveCampCoachPlayerAccess(supabaseAdmin, callerId, playerId, requestedEventId)
+    const activityAccess = requestedEventId
+      ? await resolveCoachActivityPlayerAccess(supabaseAdmin, callerId, playerId, requestedEventId, requestedOrganizationId(req.url))
       : { allowed: false, clubId: null };
     const allowedSharedClubIds = Array.from(
       new Set([
         ...access.sensitiveClubIds,
-        ...(campAccess.allowed && campAccess.clubId ? [campAccess.clubId] : []),
+        ...(activityAccess.allowed && activityAccess.clubId ? [activityAccess.clubId] : []),
       ])
     );
-    const canAccessDocuments = (access.sensitiveClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
+    const canAccessDocuments = (access.sensitiveClubIds.length > 0 && access.canAccessSensitiveSections) || activityAccess.allowed;
     if (allowedSharedClubIds.length === 0 || !canAccessDocuments) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
@@ -153,16 +153,16 @@ export async function POST(req: NextRequest, ctx: { params: Promise<{ playerId: 
       const organizationIdFromBody = String(body?.organization_id ?? "").trim();
       const coachOnlyFromBody = String(body?.coach_only ?? "false").trim() === "true";
       const clubEventIdFromBody = String(body?.club_event_id ?? "").trim() || null;
-      const campAccess = clubEventIdFromBody
-        ? await resolveCampCoachPlayerAccess(supabaseAdmin, callerId, playerId, clubEventIdFromBody)
+      const activityAccess = clubEventIdFromBody
+        ? await resolveCoachActivityPlayerAccess(supabaseAdmin, callerId, playerId, clubEventIdFromBody, requestedOrganizationId(req.url))
         : { allowed: false, clubId: null };
       const allowedSharedClubIds = Array.from(
         new Set([
           ...access.sensitiveClubIds,
-          ...(campAccess.allowed && campAccess.clubId ? [campAccess.clubId] : []),
+          ...(activityAccess.allowed && activityAccess.clubId ? [activityAccess.clubId] : []),
         ])
       );
-      const canAccessDocuments = (access.sensitiveClubIds.length > 0 && access.canAccessSensitiveSections) || campAccess.allowed;
+      const canAccessDocuments = (access.sensitiveClubIds.length > 0 && access.canAccessSensitiveSections) || activityAccess.allowed;
       if (!canAccessDocuments) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
