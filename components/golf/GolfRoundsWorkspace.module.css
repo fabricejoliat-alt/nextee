@@ -90,3 +90,10 @@
 }
 
 .matchScore strong { font-size: 20px; white-space: normal; overflow-wrap: anywhere; }
+
+/* Embed the shared Player list in a light manager panel. */
+.embedded { margin-block: 22px; padding-block: 18px; border-block: 1px solid #e7ece6; }
+.embedded .roundShortcutCopy h2 { color: #293b30 !important; font-size: 20px; }
+.embedded .roundShortcutCopy p { color: #647269; }
+.embedded .filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 640px) { .embedded .filters { grid-template-columns: 1fr; } }

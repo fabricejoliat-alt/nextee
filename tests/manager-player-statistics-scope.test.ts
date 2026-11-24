@@ -54,8 +54,8 @@ function addVolumeReferences(tables: Record<string, Row[]>) {
   tables.training_volume_targets = [[club, 300], [academy, 600]].map(([organization_id, minutes]) => ({ organization_id, sort_order: 1, ftem_code: "T1", level_label: "QA", handicap_min: 0, handicap_max: 54, minutes_offseason: minutes, minutes_inseason: minutes }));
 }
 
-function setup(tables = fixture(), denied: string[] = [], path = routePath) {
-  const fake = managerDatabase(tables);
+function setup(tables = fixture(), denied: string[] = [], path = routePath, maxRows?: number) {
+  const fake = managerDatabase(tables, { maxRows });
   fake.db.rpc = async (_name: string, args: Row) => ({ data: !denied.includes(args.p_org), error: null }) as any;
   const reads: string[] = [];
   const from = fake.db.from.bind(fake.db);
@@ -119,6 +119,40 @@ test("manager weekly chart and FTEM totals match Player for single and combined 
     assert.equal(body.overview.training.objectiveRate, rate);
     assert.equal(body.scope.objectiveMode, scope === "all" ? "maximum" : "organization");
   }
+});
+
+test("manager scorecards follow the authorized club, academy, personal and date scope", async () => {
+  const tables = fixture();
+  tables.golf_rounds = [
+    { id: "club-round", club_id: club }, { id: "academy-round", club_id: academy },
+    { id: "personal-round", club_id: null }, { id: "foreign-round", club_id: other },
+    { id: "previous-round", club_id: club, start_at: "2026-08-20T10:00:00Z" },
+  ].map(row => ({ user_id: "player", start_at: "2026-09-03T10:00:00Z", course_name: row.id, competition_name: "Junior Trophy", tee_name: "Yellow", round_type: "competition", score_entry_mode: "hole_by_hole", total_score: 72, ...row }));
+  tables.golf_round_holes = tables.golf_rounds.flatMap(round => Array.from({ length: 18 }, (_, index) => ({ round_id: round.id, hole_no: index + 1, par: 4, score: 4, putts: 2, fairway_hit: true })));
+  const h = setup(tables);
+  for (const [scope, personal, expected] of [
+    [club, false, ["club-round"]], [academy, false, ["academy-round"]],
+    ["all", false, ["club-round", "academy-round"]], ["all", true, ["club-round", "academy-round", "personal-round"]],
+  ] as const) {
+    const { response, body } = await h.get(`scope=${scope}&include_personal=${personal}`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.play.rounds.map((round: Row) => round.id), expected);
+    assert.deepEqual([...new Set(body.play.scorecardHoles.map((hole: Row) => hole.round_id))], expected);
+    assert.equal(body.play.scorecardHoles.length, expected.length * 18);
+    assert.equal(body.play.rounds[0].competition_name, "Junior Trophy");
+    assert.equal(body.play.scorecardHoles[0].putts, 2);
+  }
+});
+
+test("manager scorecards paginate all holes instead of truncating at the database row limit", async () => {
+  const tables = fixture();
+  tables.golf_rounds = Array.from({ length: 70 }, (_, i) => ({ id: `round-${i}`, user_id: "player", club_id: club, start_at: "2026-09-03T10:00:00Z", round_type: "training" }));
+  tables.golf_round_holes = tables.golf_rounds.flatMap(round => Array.from({ length: 18 }, (_, index) => ({ round_id: round.id, hole_no: index + 1, par: 4, score: 4 })));
+  const { response, body } = await setup(tables, [], routePath, 1000).get("include_personal=false");
+  assert.equal(response.status, 200);
+  assert.equal(body.play.rounds.length, 70);
+  assert.equal(body.play.scorecardHoles.length, 1260);
+  assert.equal(body.play.completedRounds, 70);
 });
 
 test("inactive memberships, revoked authorization and suspended academy rosters are excluded before reading sports data", async () => {
