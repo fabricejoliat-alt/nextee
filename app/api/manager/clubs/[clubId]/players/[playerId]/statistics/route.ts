@@ -1,3 +1,4 @@
+import { managerTrainingVolumeSeries } from "@/lib/managerTrainingVolume";
 import { managerStatisticsOrganizations } from "@/lib/server/managerStatisticsScope";
 import { resolvePlayerStatisticsScope, statisticsRowInScope } from "@/lib/playerStatisticsScope";
 import { canReadPlayerHistory, readablePlayerHistoryIds } from "@/lib/server/personalHistoryAccess";
@@ -151,6 +152,12 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       const hcp = handicapProgression(handicapHistory, period, typeof profile.data?.handicap === "number" ? profile.data.handicap : null);
       return { periodTraining, periodAttendance, regularity, totalMinutes, periodRounds, competitionRounds, objective, hcp };
     }
+    const volumeObjective = {
+      seasonMonths: (settings.data?.season_months ?? []).map(Number),
+      targets: (targets.data ?? []).map((row: any) => ({ ...row, handicap_min: row.handicap_min == null ? null : Number(row.handicap_min), handicap_max: row.handicap_max == null ? null : Number(row.handicap_max), minutes_offseason: Number(row.minutes_offseason ?? 0), minutes_inseason: Number(row.minutes_inseason ?? 0) })),
+      handicapHistory,
+      currentHandicap: typeof profile.data?.handicap === "number" ? profile.data.handicap : null,
+    };
     const current = metrics(range);
     const previous = compareRange ? metrics(compareRange) : null;
 
@@ -162,8 +169,10 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       const entry = categories.get(key) ?? { minutes: 0, sessions: new Set<string>() };
       entry.minutes += Number(item.minutes ?? 0); entry.sessions.add(String(item.session_id)); categories.set(key, entry);
     }
-    const byOrigin = ["club", "private", "individual"].map((origin) => {
-      const rows = current.periodTraining.filter((row) => row.sessionType === origin);
+    const origins = ["club", "private", "individual"];
+    if (current.periodTraining.some(row => !origins.includes(row.sessionType ?? ""))) origins.push("other");
+    const byOrigin = origins.map((origin) => {
+      const rows = current.periodTraining.filter((row) => origin === "other" ? !["club", "private", "individual"].includes(row.sessionType ?? "") : row.sessionType === origin);
       const minutes = rows.reduce((sum, row) => sum + Number(row.minutes ?? 0), 0);
       return { key: origin, minutes, sessions: rows.length, percentage: current.totalMinutes ? round1((minutes / current.totalMinutes) * 100) : null };
     });
@@ -293,7 +302,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         evaluations: { expected: evaluationsEvents.length, coachCompleted: coachRows.length, playerCompleted: playerRows.length, completionRate: evaluationsEvents.length ? round1((coachRows.length / evaluationsEvents.length) * 100) : null },
       },
       attendance: { ...current.periodAttendance, previousRate: previous?.periodAttendance.rate ?? null, change: current.periodAttendance.rate != null && previous?.periodAttendance.rate != null ? round1(current.periodAttendance.rate - previous.periodAttendance.rate) : null, monthly: monthlyAttendance, byType: Array.from(attendanceByType, ([label, values]) => ({ label, ...values })) },
-      training: { byOrigin, byCategory: Array.from(categories, ([key, value]) => ({ key, minutes: value.minutes, sessions: value.sessions.size, percentage: current.totalMinutes ? round1((value.minutes / current.totalMinutes) * 100) : null })), feelings: { motivation: average(scopedTrainingRows.filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to).map((row: any) => row.motivation)), difficulty: average(scopedTrainingRows.filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to).map((row: any) => row.difficulty)), satisfaction: average(scopedTrainingRows.filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to).map((row: any) => row.satisfaction)), completed: scopedTrainingRows.filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to && row.motivation != null && row.difficulty != null && row.satisfaction != null).length } },
+      training: { weekly: managerTrainingVolumeSeries(range, current.periodTraining, volumeObjective), byOrigin, byCategory: Array.from(categories, ([key, value]) => ({ key, minutes: value.minutes, sessions: value.sessions.size, percentage: current.totalMinutes ? round1((value.minutes / current.totalMinutes) * 100) : null })), feelings: { motivation: average(scopedTrainingRows.filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to).map((row: any) => row.motivation)), difficulty: average(scopedTrainingRows.filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to).map((row: any) => row.difficulty)), satisfaction: average(scopedTrainingRows.filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to).map((row: any) => row.satisfaction)), completed: scopedTrainingRows.filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to && row.motivation != null && row.difficulty != null && row.satisfaction != null).length } },
       play: { rounds: currentScope ? current.periodRounds : [], holes: documentedHoles.length, completedRounds: completedRounds.length, frequencyPerMonth: round1((current.periodRounds.length / Math.max(1, (new Date(`${range.to}T12:00:00Z`).getTime() - new Date(`${range.from}T12:00:00Z`).getTime()) / 86400000 + 1)) * 30.44), averageScore: average(score18), averagePutts: average(putts18), girRate: girEligible.length ? round1((girHits / girEligible.length) * 100) : null, girSample: girEligible.length, fairwayRate: fairwayHoles.length ? round1((fairwayHoles.filter((hole: any) => hole.fairway_hit).length / fairwayHoles.length) * 100) : null, fairwaySample: fairwayHoles.length, scramblingRate: scramblingOpportunities.length ? round1((scramblingSuccess / scramblingOpportunities.length) * 100) : null, scramblingSample: scramblingOpportunities.length, averagePar3: averageForPar(3), averagePar4: averageForPar(4), averagePar5: averageForPar(5), averageFront: averageForSide(true), averageBack: averageForSide(false), competitionLevels: Array.from(new Set(current.competitionRounds.map((row: any) => row.om_competition_level).filter(Boolean))), orderOfMeritPoints: current.competitionRounds.reduce((sum: number, row: any) => sum + Number(row.om_points_net ?? row.om_points_brut ?? 0), 0), scores: { eagles: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.eagles ?? 0), 0), birdies: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.birdies ?? 0), 0), pars: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.pars ?? 0), 0), bogeys: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.bogeys ?? 0), 0), doublesPlus: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.doubles_plus ?? 0), 0) } },
       evaluations: { events: evaluationsEvents.map((event: any) => ({ id: event.id, title: event.title, startsAt: event.starts_at })), coach: coachRows, player: playerRows, custom, perceptionDifferences },
       handicapHistory: handicapHistory.filter((entry) => entry.effectiveDate >= range.from && entry.effectiveDate <= range.to),

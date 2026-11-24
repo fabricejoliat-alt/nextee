@@ -14,7 +14,7 @@ import { coachComponentHarness, elements, textContent, flush } from "./helpers/c
 const locales: AppLocale[] = ["fr", "en", "de", "it"];
 const tr = (locale: AppLocale) => (key: string) => messages[locale][key] ?? key;
 function localized() { let locale: AppLocale = "fr"; const translators=Object.fromEntries(locales.map(l=>[l,tr(l)]));return {set(l:AppLocale){locale=l;}, module:{useI18n:()=>({locale,t:translators[locale]})}}; }
-const paths = ["PlayerCreatePage", "PlayersExcelImportPage", "FamilyEmailConfigurationPage", "PlayerEditPage", "ManagerPlayerStatistics", "ManagerPeriodicReport"].map(name => `components/manager/${name}.tsx`);
+const paths = ["PlayerCreatePage", "PlayersExcelImportPage", "FamilyEmailConfigurationPage", "PlayerEditPage", "ManagerPlayerStatistics", "ManagerPlayerDocuments", "ManagerPeriodicReport"].map(name => `components/manager/${name}.tsx`);
 async function settle(h: ReturnType<typeof coachComponentHarness>) { let tree=h.render(); for(let i=0;i<4;i++){await flush();tree=h.render();}return tree; }
 const ui = (tree: any) => elements(tree).map(n => [textContent(n), n.props.label, n.props.error, n.props.title, n.props["aria-label"], n.props.placeholder, n.props["data-label"]].filter(v => typeof v === "string").join(" ")).join(" ");
 const button = (tree: any, text: string) => { const found=elements(tree).find(n=>n.type==="button"&&textContent(n).trim()===text);assert.ok(found,text);return found; };

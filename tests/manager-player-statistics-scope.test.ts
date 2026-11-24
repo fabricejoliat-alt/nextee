@@ -92,6 +92,7 @@ test("club, academy and combined views recalculate attendance and count personal
   assert.equal(own.body.overview.training.minutes, 60);
   assert.equal(own.body.attendance.rate, 100);
   assert.equal(combined.body.overview.training.minutes, 150);
+  assert.equal(combined.body.training.weekly.reduce((sum: number, row: Row) => sum + row.total, 0), 150);
   assert.equal(combined.body.attendance.rate, 50);
   assert.equal(combined.body.overview.training.sessions, 2);
   assert.equal(personal.body.overview.training.minutes, 180);
