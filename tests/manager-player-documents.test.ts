@@ -66,7 +66,7 @@ test("a signing failure is reported instead of returning incomplete download lin
   assert.equal(body.documents, undefined);
 });
 
-test("the documents view exposes opening links and removes them immediately when changing junior", async () => {
+test("the documents view opens a modal and removes its signed URL immediately when changing junior", async () => {
   const h = coachComponentHarness("components/manager/ManagerPlayerDocuments.tsx", {
     props: { clubId: club, playerId: "player" },
     fetch: async url => String(url).includes("/player/documents") ? Response.json({ documents: [{ id: "doc", file_name: "Coach QA.pdf", mime_type: "application/pdf", size_bytes: 2048, created_at: "2026-09-01", uploaded_by_name: "Coach QA", coach_only: true, url: "https://storage.invalid/own.pdf", event: { title: "Training QA", starts_at: "2026-09-01" } }] }) : Response.json({ error: "Forbidden" }, { status: 403 }),
@@ -74,13 +74,60 @@ test("the documents view exposes opening links and removes them immediately when
   try {
     let tree = h.render(); for (let i = 0; i < 4; i++) { await flush(); tree = h.render(); }
     assert.match(textContent(tree), /Coach QA.pdf/);
+    assert.ok(!elements(tree).some(node => node.type === "a"));
+    const open = elements(tree).find(node => node.type === "button" && node.props["aria-label"] === "Ouvrir : Coach QA.pdf")!;
+    open.props.onClick(); tree = h.render();
+    assert.ok(elements(tree).some(node => node.type === "dialog"));
+    assert.equal(elements(tree).find(node => node.type === "iframe")?.props.src, "https://storage.invalid/own.pdf#view=FitH");
     const link = elements(tree).find(node => node.type === "a")!;
     assert.equal(link.props.href, "https://storage.invalid/own.pdf");
     assert.match(link.props.rel, /noreferrer/);
     tree = h.render({ clubId: club, playerId: "another-player" });
+    assert.ok(!elements(tree).some(node => node.type === "dialog" || node.type === "iframe"));
     assert.ok(!elements(tree).some(node => node.type === "a"));
     for (let i = 0; i < 4; i++) { await flush(); tree = h.render(); }
     assert.ok(elements(tree).some(node => node.props.role === "alert"));
     assert.ok(!elements(tree).some(node => node.type === "a"));
   } finally { h.cleanup(); }
+});
+
+
+test("manager media previews use native players inside the dialog and stop rendering on close", () => {
+  for (const [mime, file, tag] of [["image/jpeg", "swing.jpg", "img"], ["video/mp4", "swing.mp4", "video"], ["audio/mpeg", "coach.mp3", "audio"], [null, "bilan.pdf", "iframe"]] as const) {
+    const h = coachComponentHarness("components/manager/ManagerPlayerDocuments.tsx", {
+      props: { clubId: club, playerId: "player" }, fetch: async () => { throw new Error("Unexpected request"); },
+      modules: { "./useManagerResource": { useManagerResource: () => ({ data: { documents: [{ id: "media", file_name: file, mime_type: mime, url: "https://storage.invalid/private-media", created_at: "2026-09-01" }] }, loading: false, error: "", reload() {} }) } },
+    });
+    try {
+      let tree = h.render();
+      elements(tree).find(node => node.type === "button" && node.props["aria-label"] === `Ouvrir : ${file}`)!.props.onClick();
+      tree = h.render();
+      const dialog = elements(tree).find(node => node.type === "dialog")!;
+      assert.equal(dialog.props.label, file);
+      assert.equal(dialog.props.portal, true);
+      const media = elements(tree).find(node => node.type === tag)!;
+      assert.ok(media, tag);
+      if (tag === "video" || tag === "audio") { assert.equal(media.props.controls, true); assert.ok(!media.props.autoPlay); }
+      if (tag === "video") assert.equal(media.props.playsInline, true);
+      dialog.props.onClose(); tree = h.render();
+      assert.ok(!elements(tree).some(node => node.type === "dialog" || node.type === tag));
+    } finally { h.cleanup(); }
+  }
+});
+
+test("unsupported or failed media offer an external fallback inside the modal", () => {
+  for (const mime of ["image/jpeg", "application/zip"]) {
+    const h = coachComponentHarness("components/manager/ManagerPlayerDocuments.tsx", {
+      props: { clubId: club, playerId: "player" }, fetch: async () => { throw new Error("Unexpected request"); },
+      modules: { "./useManagerResource": { useManagerResource: () => ({ data: { documents: [{ id: "media", file_name: "Coach file", mime_type: mime, url: "https://storage.invalid/private-media", created_at: "2026-09-01" }] }, loading: false, error: "", reload() {} }) } },
+    });
+    try {
+      let tree = h.render();
+      elements(tree).find(node => node.type === "button" && node.props["aria-label"] === "Ouvrir : Coach file")!.props.onClick(); tree = h.render();
+      if (mime === "image/jpeg") { elements(tree).find(node => node.type === "img")!.props.onError(); tree = h.render(); }
+      assert.match(textContent(tree), /L’aperçu de ce fichier n’est pas disponible/);
+      assert.ok(elements(tree).some(node => node.type === "dialog"));
+      assert.ok(elements(tree).some(node => node.type === "a" && node.props.href === "https://storage.invalid/private-media"));
+    } finally { h.cleanup(); }
+  }
 });
