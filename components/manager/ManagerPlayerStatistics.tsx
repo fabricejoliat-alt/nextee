@@ -4,6 +4,7 @@ import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { managerJuniorFeedback, managerJuniorFormat, managerJuniorDate } from "@/lib/managerJuniorPresentation";
 import { managerCount } from "@/lib/managerLocale";
 import { managerJuniorStatisticsLabels } from "@/lib/managerJuniorStatisticsPresentation";
+import type { StatisticsOrganization } from "@/lib/playerStatisticsScope";
 
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CalendarDays, CheckCircle2, Clock3, Flag, RefreshCw, Target, TrendingDown } from "lucide-react";
@@ -21,6 +22,7 @@ type Breakdown = { key: string; label?: string; minutes: number; sessions: numbe
 type CoachEvaluation = { event_id: string; engagement: number | null; attitude: number | null; performance: number | null; visible_to_player: boolean; player_note: string | null };
 type CustomEvaluation = { event_criterion_id: string; respondent_role: string; value_json: unknown; criterion?: { snapshot_name?: string; snapshot_domain_label?: string; snapshot_choices?: Array<{ value: string | number | boolean; label: string }>; snapshot_response_format?: string } | null };
 type Stats = {
+  scope?: { selected: string; organizations: StatisticsOrganization[]; objectiveOrganization: { id: string; name: string } };
   generatedAt?: string;
   summary: string;
   player: { isPerformance: boolean };
@@ -53,7 +55,7 @@ function rangeFor(preset: Preset, seasonRange?: { from: string; to: string }) {
 
 
 
-export default function ManagerPlayerStatistics({ clubId, playerId, seasonRange }: { clubId: string; playerId: string; seasonRange?: { from: string; to: string } }) {
+export default function ManagerPlayerStatistics({ clubId, playerId, seasonRange, initialScope = "current", initialIncludePersonal = true }: { clubId: string; playerId: string; seasonRange?: { from: string; to: string }; initialScope?: string; initialIncludePersonal?: boolean }) {
   const { t, locale } = useI18n();
   const { value } = managerJuniorStatisticsLabels(t, locale);
   const format = (key: string, values: Record<string, string | number>) => managerJuniorFormat(t, `stats.${key}`, values);
@@ -70,35 +72,55 @@ export default function ManagerPlayerStatistics({ clubId, playerId, seasonRange 
   const initial = useMemo(() => rangeFor("season", seasonRange), [seasonRange]);
   const [from, setFrom] = useState(initial.from); const [to, setTo] = useState(initial.to);
   const [comparison, setComparison] = useState("previous"); const [benchmark, setBenchmark] = useState("none");
-  const [stats, setStats] = useState<Stats | null>(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
+  const [scopeChoice, setScopeChoice] = useState({ clubId, playerId, selected: initialScope });
+  const scope = scopeChoice.clubId === clubId && scopeChoice.playerId === playerId ? scopeChoice.selected : "current";
+  const [includePersonal, setIncludePersonal] = useState(initialIncludePersonal);
+  const [scopeOptions, setScopeOptions] = useState<{ clubId: string; playerId: string; organizations: StatisticsOrganization[] } | null>(null);
+  const organizations = scopeOptions?.clubId === clubId && scopeOptions.playerId === playerId ? scopeOptions.organizations : [];
+  const isCurrentScope = scope === "current" || scope === clubId;
+  const requestKey = JSON.stringify([clubId, playerId, from, to, comparison, benchmark, scope, includePersonal]);
+  const [result, setResult] = useState<{ key: string; data: Stats | null; pending: boolean; error: string }>({ key: "", data: null, pending: true, error: "" });
+  const currentResult = result.key === requestKey;
+  const stats = currentResult ? result.data : null;
+  const error = currentResult ? result.error : "";
+  const loading = Boolean(from && to && from <= to && (!currentResult || result.pending));
 
   const validRange = Boolean(from && to && from <= to);
   function selectPreset(next: Preset) { setPreset(next); if (next !== "custom") { const range = rangeFor(next, seasonRange); setFrom(range.from); setTo(range.to); } }
   useEffect(() => {
-    if (!clubId || !playerId || !from || !to || from > to) { setLoading(false); return; }
+    if (!clubId || !playerId || !from || !to || from > to) return;
     const controller = new AbortController();
     void (async () => {
-      setLoading(true); setError("");
+      setResult({ key: requestKey, data: null, pending: true, error: "" });
       try {
         const session = await supabase.auth.getSession(); const token = session.data.session?.access_token;
-        const query = new URLSearchParams({ from, to, comparison, benchmark });
+        const query = new URLSearchParams({ from, to, comparison, benchmark: isCurrentScope ? benchmark : "none", scope, include_personal: String(includePersonal) });
         const response = await fetch(`/api/manager/clubs/${clubId}/players/${playerId}/statistics?${query}`, { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: controller.signal, cache: "no-store" });
-        const json = await response.json(); if (!response.ok) throw new Error(json.error ?? "Chargement impossible."); setStats(json);
-      } catch (cause) { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Chargement impossible."); }
-      finally { if (!controller.signal.aborted) setLoading(false); }
+        const json = await response.json(); if (!response.ok) throw new Error(json.error ?? "Chargement impossible.");
+        if (!controller.signal.aborted) {
+          setResult({ key: requestKey, data: json, pending: false, error: "" });
+          setScopeOptions({ clubId, playerId, organizations: json.scope?.organizations ?? [] });
+        }
+      } catch (cause) { if (!controller.signal.aborted) setResult({ key: requestKey, data: null, pending: false, error: cause instanceof Error ? cause.message : "Chargement impossible." }); }
     })();
     return () => controller.abort();
-  }, [benchmark, clubId, comparison, from, playerId, to]);
+  }, [benchmark, clubId, comparison, from, playerId, to, scope, includePersonal, isCurrentScope, requestKey]);
 
   return <div className={styles.stack}>
     <section className={campStyles.panel}>
       <div className={campStyles.panelHeader}><div><h2>{t("manager.administration.statistics")}</h2><p>{t("manager.junior.stats.lead")}</p></div>{stats?.generatedAt ? <span className={styles.updated}>{format("updated", { date: managerJuniorDate(t, locale, stats.generatedAt) })}</span> : null}</div>
       <div className={styles.filters}>
+        <label><span>{t("manager.junior.stats.structure")}</span><select value={scope === "current" ? clubId : scope} onChange={(event) => { setScopeChoice({ clubId, playerId, selected: event.target.value }); setBenchmark("none"); }}>
+          {organizations.length ? organizations.map(org => <option key={org.id} value={org.id}>{org.name} · {t(`organization.${org.org_type}`)}</option>) : <option value={clubId}>{t("manager.junior.stats.currentStructure")}</option>}
+          {organizations.length > 1 ? <option value="all">{t("manager.junior.stats.combinedStructures")}</option> : null}
+        </select></label>
         <label><span>{t("manager.performance.period")}</span><select value={preset} onChange={(event) => selectPreset(event.target.value as Preset)}><option value="season">{t("manager.junior.stats.currentSeason")}</option><option value="30d">{t("manager.junior.stats.days30")}</option><option value="3m">{t("common.last3Months")}</option><option value="6m">{t("manager.junior.stats.months6")}</option><option value="12m">{t("manager.junior.stats.months12")}</option><option value="custom">{t("manager.junior.stats.customPeriod")}</option></select></label>
         {preset === "custom" ? <><label><span>{t("coach.form.startDate")}</span><input type="date" value={from} max={to} onChange={(event) => setFrom(event.target.value)} /></label><label><span>{t("coach.form.endDate")}</span><input type="date" value={to} min={from} onChange={(event) => setTo(event.target.value)} /></label></> : null}
         <label><span>{t("manager.junior.stats.compareWith")}</span><select value={comparison} onChange={(event) => setComparison(event.target.value)}><option value="previous">{t("manager.performance.previous")}</option><option value="previous_season">{t("manager.junior.stats.previousSeason")}</option><option value="none">{t("manager.junior.stats.noBenchmark")}</option></select></label>
-        <label><span>{t("manager.junior.stats.benchmark")}</span><select value={benchmark} onChange={(event) => setBenchmark(event.target.value)}><option value="none">{t("manager.junior.stats.noBenchmark")}</option><option value="group">{t("manager.junior.stats.groupMedian")}</option><option value="ftem">{t("manager.junior.stats.sameFtem")}</option><option value="club">{t("manager.junior.stats.clubMedian")}</option></select></label>
+        <label><span>{t("manager.junior.stats.benchmark")}</span><select value={isCurrentScope ? benchmark : "none"} disabled={!isCurrentScope} onChange={(event) => setBenchmark(event.target.value)}><option value="none">{t("manager.junior.stats.noBenchmark")}</option><option value="group">{t("manager.junior.stats.groupMedian")}</option><option value="ftem">{t("manager.junior.stats.sameFtem")}</option><option value="club">{t("manager.junior.stats.clubMedian")}</option></select></label>
       </div>
+      <label className={styles.personalChoice}><input type="checkbox" checked={includePersonal} onChange={(event) => setIncludePersonal(event.target.checked)} /><span>{t("manager.junior.stats.includePersonal")}</span></label>
+      <p className={styles.caption}>{t("manager.junior.stats.scopeHelp")}{stats?.scope?.objectiveOrganization ? ` ${format("objectiveStructure", { name: stats.scope.objectiveOrganization.name })}` : ""}</p>
       <div className={styles.period}><CalendarDays size={14} />{format("period", { from: from ? managerJuniorDate(t, locale, from, false) : "—", to: to ? managerJuniorDate(t, locale, to, false) : "—" })}{!validRange ? <b role="alert">{t("manager.junior.stats.invalidPeriod")}</b> : null}</div>
     </section>
     <ManagerStatisticsTabs<Section> items={sectionTabs} value={section} onChange={setSection} ariaLabel={t("manager.junior.stats.sections")} />

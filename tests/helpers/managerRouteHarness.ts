@@ -61,6 +61,13 @@ export function managerDatabase(tables: Record<string, Row[]> = {}, options: {
         eq(key: string, value: unknown) { rows = rows.filter((row) => row[key] === value); return query; },
         neq(key: string, value: unknown) { rows = rows.filter((row) => row[key] !== value); return query; },
         in(key: string, values: unknown[]) { rows = rows.filter((row) => values.includes(row[key])); return query; },
+        or(expression: string) {
+          const ids = expression.match(/club_id\.in\.\(([^)]*)\)/)?.[1].split(",") ?? [];
+          if (/^(club_id\.is\.null,)?club_id\.in\.\([0-9a-f,-]+\)$/i.test(expression)) {
+            rows = rows.filter(row => row.club_id == null ? expression.includes("club_id.is.null") : ids.includes(row.club_id));
+          } else throw new Error(`Unsupported test filter: ${expression}`);
+          return query;
+        },
         is(key: string, value: unknown) { rows = rows.filter((row) => (row[key] ?? null) === value); return query; },
         ilike(key: string, value: string) { rows = rows.filter((row) => String(row[key] ?? "").toLowerCase() === value.toLowerCase()); return query; },
         gte(key: string, value: string) { rows = rows.filter((row) => row[key] != null && String(row[key]) >= value); return query; },

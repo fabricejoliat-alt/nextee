@@ -1,3 +1,5 @@
+import { managerStatisticsOrganizations } from "@/lib/server/managerStatisticsScope";
+import { resolvePlayerStatisticsScope, statisticsRowInScope } from "@/lib/playerStatisticsScope";
 import { canReadPlayerHistory, readablePlayerHistoryIds } from "@/lib/server/personalHistoryAccess";
 import { personalOrOrganizationFilter } from "@/lib/personalHistoryScope";
 import { NextResponse, type NextRequest } from "next/server";
@@ -82,39 +84,54 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
     if (!(await canReadPlayerHistory(db, callerId, playerId, clubId))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
+    const organizations = await managerStatisticsOrganizations(db, callerId, playerId, clubId);
+    const scope = resolvePlayerStatisticsScope(req.nextUrl.searchParams.get("scope") ?? "current", clubId, organizations);
+    if (!scope) return NextResponse.json({ error: "manager.junior.stats.scopeForbidden" }, { status: 403 });
+    const selectedIds = scope.organizationIds;
+    const includePersonal = req.nextUrl.searchParams.get("include_personal") !== "false";
+    const sourceFilter = includePersonal ? personalOrOrganizationFilter("club_id", selectedIds) : `club_id.in.(${selectedIds.join(",")})`;
+    const objectiveOrganizationId = selectedIds.length === 1 ? selectedIds[0] : clubId;
+    const objectiveOrganization = organizations.find(row => row.id === objectiveOrganizationId)!;
+    const currentScope = selectedIds.length === 1 && selectedIds[0] === clubId;
+
     const [profile, attendeeRows, trainingRows, rounds, handicapRows, settings, targets, coachFeedback, playerFeedback, customLinks, customResponses] = await Promise.all([
       db.from("profiles").select("first_name,last_name,handicap").eq("id", playerId).maybeSingle(),
       db.from("club_event_attendees").select("event_id,status").eq("player_id", playerId).limit(5000),
-      db.from("training_sessions").select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,club_id").or(personalOrOrganizationFilter("club_id", [clubId])).eq("user_id", playerId).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(5000),
-      db.from("golf_rounds").select("id,start_at,round_type,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus,om_competition_level,om_points_net,om_points_brut").or(personalOrOrganizationFilter("club_id", [clubId])).eq("user_id", playerId).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(2000),
+      db.from("training_sessions").select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,club_id").or(sourceFilter).eq("user_id", playerId).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(5000),
+      db.from("golf_rounds").select("id,club_id,start_at,round_type,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus,om_competition_level,om_points_net,om_points_brut").or(sourceFilter).eq("user_id", playerId).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(2000),
       db.from("player_handicap_history").select("effective_date,value").eq("user_id", playerId).lte("effective_date", range.to).order("effective_date"),
-      db.from("training_volume_settings").select("season_months,offseason_months").eq("organization_id", clubId).maybeSingle(),
-      db.from("training_volume_targets").select("ftem_code,level_label,handicap_min,handicap_max,minutes_offseason,minutes_inseason,sort_order").eq("organization_id", clubId).order("sort_order"),
+      db.from("training_volume_settings").select("season_months,offseason_months").eq("organization_id", objectiveOrganizationId).maybeSingle(),
+      db.from("training_volume_targets").select("ftem_code,level_label,handicap_min,handicap_max,minutes_offseason,minutes_inseason,sort_order").eq("organization_id", objectiveOrganizationId).order("sort_order"),
       db.from("club_event_coach_feedback").select("event_id,engagement,attitude,performance,player_note,visible_to_player").eq("player_id", playerId).limit(3000),
       db.from("club_event_player_feedback").select("event_id,motivation,difficulty,satisfaction,submitted_at").eq("player_id", playerId).limit(3000),
-      db.from("club_event_evaluation_criteria").select("id,event_id,snapshot_name,snapshot_response_format,snapshot_domain_label,snapshot_respondent,snapshot_choices").eq("club_id", clubId).eq("is_enabled", true).limit(3000),
-      db.from("club_event_evaluation_responses").select("event_criterion_id,event_id,respondent_role,value_json,submitted_at").eq("club_id", clubId).eq("player_id", playerId).limit(6000),
+      db.from("club_event_evaluation_criteria").select("id,club_id,event_id,snapshot_name,snapshot_response_format,snapshot_domain_label,snapshot_respondent,snapshot_choices").in("club_id", selectedIds).eq("is_enabled", true).limit(3000),
+      db.from("club_event_evaluation_responses").select("club_id,event_criterion_id,event_id,respondent_role,value_json,submitted_at").in("club_id", selectedIds).eq("player_id", playerId).limit(6000),
     ]);
     for (const result of [profile, attendeeRows, trainingRows, rounds, handicapRows, settings, targets, coachFeedback, playerFeedback, customLinks, customResponses]) if (result.error) throw new Error(result.error.message);
 
     const eventIds = Array.from(new Set([
+      ...(trainingRows.data ?? []).map((row: any) => row.club_event_id),
       ...(attendeeRows.data ?? []).map((row: any) => row.event_id),
       ...(coachFeedback.data ?? []).map((row: any) => row.event_id),
       ...(playerFeedback.data ?? []).map((row: any) => row.event_id),
       ...(customLinks.data ?? []).map((row: any) => row.event_id),
     ].filter(Boolean)));
-    const eventsResult = eventIds.length ? await db.from("club_events").select("id,club_id,title,event_type,starts_at,ends_at,duration_minutes,status,requires_evaluation").in("id", eventIds).eq("club_id", clubId).gte("starts_at", startIso(earliest)).lte("starts_at", endIso(range.to)).limit(5000) : { data: [], error: null };
+    const eventsResult = eventIds.length ? await db.from("club_events").select("id,club_id,title,event_type,starts_at,ends_at,duration_minutes,status,requires_evaluation").in("id", eventIds).in("club_id", selectedIds).gte("starts_at", startIso(earliest)).lte("starts_at", endIso(range.to)).limit(5000) : { data: [], error: null };
     if (eventsResult.error) throw new Error(eventsResult.error.message);
     const events = eventsResult.data ?? [];
     const eventById = new Map(events.map((event: any) => [String(event.id), event]));
 
-    const sessionIds = (trainingRows.data ?? []).map((row: any) => row.id);
+    const scopedRow = (row: any) => statisticsRowInScope(row.club_id, selectedIds, includePersonal)
+      && (!row.club_event_id || eventById.has(String(row.club_event_id)));
+    const scopedTrainingRows = (trainingRows.data ?? []).filter(scopedRow);
+    const scopedRounds = (rounds.data ?? []).filter(scopedRow);
+    const sessionIds = scopedTrainingRows.map((row: any) => row.id);
     const itemsResult = sessionIds.length ? await db.from("training_session_items").select("session_id,category,minutes").in("session_id", sessionIds).limit(10000) : { data: [], error: null };
     if (itemsResult.error) throw new Error(itemsResult.error.message);
     const minutesBySession = new Map<string, number>();
     for (const item of itemsResult.data ?? []) minutesBySession.set(String(item.session_id), (minutesBySession.get(String(item.session_id)) ?? 0) + Number(item.minutes ?? 0));
 
-    const training = uniqueTrainingRows((trainingRows.data ?? []).filter((row: any) => row.club_id == null || row.club_id === clubId).map((row: any) => ({
+    const training = uniqueTrainingRows(scopedTrainingRows.map((row: any) => ({
       id: row.id, startAt: row.start_at, minutes: Number(row.total_minutes ?? minutesBySession.get(String(row.id)) ?? 0), sessionType: row.session_type, clubEventId: row.club_event_id,
     })));
     const attendance = (attendeeRows.data ?? []).map((row: any) => {
@@ -128,7 +145,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       const periodAttendance = calculateAttendance(attendance, period);
       const regularity = calculateRegularity(periodTraining, period);
       const totalMinutes = periodTraining.reduce((sum, row) => sum + Number(row.minutes ?? 0), 0);
-      const periodRounds = (rounds.data ?? []).filter((row: any) => dateKey(row.start_at) >= period.from && dateKey(row.start_at) <= period.to);
+      const periodRounds = scopedRounds.filter((row: any) => dateKey(row.start_at) >= period.from && dateKey(row.start_at) <= period.to);
       const competitionRounds = periodRounds.filter((row: any) => row.round_type === "competition");
       const objective = calculateProratedTrainingObjective({ range: period, seasonMonths: (settings.data?.season_months ?? []).map(Number), targets: (targets.data ?? []).map((row: any) => ({ ...row, handicap_min: row.handicap_min == null ? null : Number(row.handicap_min), handicap_max: row.handicap_max == null ? null : Number(row.handicap_max), minutes_offseason: Number(row.minutes_offseason ?? 0), minutes_inseason: Number(row.minutes_inseason ?? 0) })), handicapHistory, currentHandicap: typeof profile.data?.handicap === "number" ? profile.data.handicap : null });
       const hcp = handicapProgression(handicapHistory, period, typeof profile.data?.handicap === "number" ? profile.data.handicap : null);
@@ -181,13 +198,15 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     const averageForPar = (par: number) => average(holes.filter((hole: any) => Number(hole.par) === par && hole.score != null).map((hole: any) => Number(hole.score)));
     const averageForSide = (front: boolean) => average(holes.filter((hole: any) => hole.score != null && (front ? Number(hole.hole_no) <= 9 : Number(hole.hole_no) >= 10)).map((hole: any) => Number(hole.score)));
     const evaluationsEvents = events.filter((event: any) => event.requires_evaluation && dateKey(event.starts_at) >= range.from && dateKey(event.starts_at) <= range.to);
-    const coachRows = (coachFeedback.data ?? []).filter((row: any) => evaluationsEvents.some((event: any) => event.id === row.event_id));
+    const coachRows = (coachFeedback.data ?? []).filter((row: any) => evaluationsEvents.some((event: any) => event.id === row.event_id))
+      .map((row: any) => ({ ...row, player_note: (eventById.get(String(row.event_id)) as any)?.club_id === clubId ? row.player_note : null }));
     const playerRows = (playerFeedback.data ?? []).filter((row: any) => evaluationsEvents.some((event: any) => event.id === row.event_id));
     const criterionById = new Map((customLinks.data ?? []).map((row: any) => [String(row.id), row]));
     const custom = (customResponses.data ?? []).filter((row: any) => {
       const event: any = eventById.get(String(row.event_id));
-      return event && dateKey(event.starts_at) >= range.from && dateKey(event.starts_at) <= range.to;
-    }).map((row: any) => ({ ...row, criterion: criterionById.get(String(row.event_criterion_id)) }));
+      // Only numeric assessments cross the structure boundary; authored notes stay private.
+      return event && (row.club_id === clubId || (criterionById.get(String(row.event_criterion_id)) as any)?.snapshot_response_format !== "short_text" && numericResponse(row.value_json) != null) && dateKey(event.starts_at) >= range.from && dateKey(event.starts_at) <= range.to;
+    }).map((row: any) => ({ ...row, value_json: row.club_id === clubId ? row.value_json : numericResponse(row.value_json), criterion: criterionById.get(String(row.event_criterion_id)) }));
     const perceptionGroups = new Map<string, { criterion: string; event: string; startsAt: string; player: number | null; coach: number | null }>();
     for (const response of custom) {
       const key = `${response.event_id}|${response.event_criterion_id}`;
@@ -202,18 +221,18 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     const quality = {
       attendancePending: current.periodAttendance.pending,
       trainingsWithoutDuration: current.periodTraining.filter((row) => !Number(row.minutes ?? 0)).length,
-      performanceSessionsIncomplete: access.isPerformance ? (trainingRows.data ?? []).filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to && (row.motivation == null || row.difficulty == null || row.satisfaction == null)).length : 0,
+      performanceSessionsIncomplete: access.isPerformance ? scopedTrainingRows.filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to && (row.motivation == null || row.difficulty == null || row.satisfaction == null)).length : 0,
       playerEvaluationsMissing: Math.max(0, evaluationsEvents.length - playerRows.length),
       coachEvaluationsMissing: Math.max(0, evaluationsEvents.length - coachRows.length),
       competitionsWithoutResult: current.competitionRounds.filter((row: any) => row.total_score == null && row.om_points_net == null && row.om_points_brut == null).length,
       lowSample: current.periodAttendance.denominator < 3 || documentedHoles.length < 18,
       lastDataAt: [
-        ...attendance.map((row: any) => row.startsAt), ...training.map((row) => row.startAt), ...(rounds.data ?? []).map((row: any) => row.start_at), ...handicapHistory.map((row) => row.effectiveDate),
+        ...attendance.map((row: any) => row.startsAt), ...training.map((row) => row.startAt), ...scopedRounds.map((row: any) => row.start_at), ...handicapHistory.map((row) => row.effectiveDate),
       ].filter(Boolean).sort().at(-1) ?? null,
     };
     const objectiveRate = current.objective.minutes && current.objective.minutes > 0 ? round1((current.totalMinutes / current.objective.minutes) * 100) : null;
     let benchmark: { enabled: boolean; reason?: string; cohortSize?: number; values?: Record<string, number | null> } = { enabled: false };
-    if (["club", "group", "ftem"].includes(benchmarkMode)) {
+    if (currentScope && ["club", "group", "ftem"].includes(benchmarkMode)) {
       const clubPlayers = await db.from("club_members").select("user_id").eq("club_id", clubId).eq("role", "player").eq("is_active", true).limit(2000);
       if (clubPlayers.error) throw new Error(clubPlayers.error.message);
       let cohortIds = (clubPlayers.data ?? []).map((row: any) => String(row.user_id));
@@ -240,7 +259,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       else {
         const [cohortAttendanceRows, cohortTrainingRows] = await Promise.all([
           db.from("club_event_attendees").select("player_id,event_id,status").in("player_id", cohortIds).limit(20000),
-          db.from("training_sessions").select("id,user_id,start_at,total_minutes,session_type,club_event_id,club_id").or(personalOrOrganizationFilter("club_id", [clubId])).in("user_id", cohortIds).gte("start_at", startIso(range.from)).lte("start_at", endIso(range.to)).limit(20000),
+          db.from("training_sessions").select("id,user_id,start_at,total_minutes,session_type,club_event_id,club_id").or(sourceFilter).in("user_id", cohortIds).gte("start_at", startIso(range.from)).lte("start_at", endIso(range.to)).limit(20000),
         ]);
         if (cohortAttendanceRows.error || cohortTrainingRows.error) throw new Error(cohortAttendanceRows.error?.message ?? cohortTrainingRows.error?.message);
         const cohortEventIds = Array.from(new Set((cohortAttendanceRows.data ?? []).map((row: any) => row.event_id)));
@@ -252,7 +271,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         for (const id of cohortIds) {
           const rows = (cohortAttendanceRows.data ?? []).filter((row: any) => String(row.player_id) === id).flatMap((row: any) => { const event: any = cohortEventMap.get(String(row.event_id)); return event ? [{ id: event.id, startsAt: event.starts_at, status: row.status, eventStatus: event.status, eventType: event.event_type }] : []; });
           const attendanceMetric = calculateAttendance(rows, range); if (attendanceMetric.rate != null) attendanceRates.push(attendanceMetric.rate); participation.push(attendanceMetric.present);
-          const trainingMetric = uniqueTrainingRows((cohortTrainingRows.data ?? []).filter((row: any) => String(row.user_id) === id && (row.club_id == null || row.club_id === clubId)).map((row: any) => ({ id: row.id, startAt: row.start_at, minutes: Number(row.total_minutes ?? 0), sessionType: row.session_type, clubEventId: row.club_event_id })));
+          const trainingMetric = uniqueTrainingRows((cohortTrainingRows.data ?? []).filter((row: any) => String(row.user_id) === id && statisticsRowInScope(row.club_id, [clubId], includePersonal)).map((row: any) => ({ id: row.id, startAt: row.start_at, minutes: Number(row.total_minutes ?? 0), sessionType: row.session_type, clubEventId: row.club_event_id })));
           const regularityMetric = calculateRegularity(trainingMetric, range); if (regularityMetric.rate != null) regularityRates.push(regularityMetric.rate);
           const hcp = profileMap.get(id)?.handicap == null ? null : Number(profileMap.get(id)?.handicap); const target = calculateProratedTrainingObjective({ range, seasonMonths: (settings.data?.season_months ?? []).map(Number), targets: (targets.data ?? []).map((row: any) => ({ ...row, handicap_min: row.handicap_min == null ? null : Number(row.handicap_min), handicap_max: row.handicap_max == null ? null : Number(row.handicap_max), minutes_offseason: Number(row.minutes_offseason ?? 0), minutes_inseason: Number(row.minutes_inseason ?? 0) })), handicapHistory: [], currentHandicap: hcp }); const total = trainingMetric.reduce((sum, row) => sum + Number(row.minutes ?? 0), 0); if (target.minutes) objectiveRates.push(round1((total / target.minutes) * 100));
         }
@@ -262,6 +281,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(), range, comparison: compareRange,
+      scope: { selected: scope.selected, organizations, organizationIds: selectedIds, includePersonal, objectiveOrganization: { id: objectiveOrganization.id, name: objectiveOrganization.name } },
       player: { id: playerId, name: `${profile.data?.first_name ?? ""} ${profile.data?.last_name ?? ""}`.trim(), isPerformance: access.isPerformance },
       summary: summarize({ attendanceRate: current.periodAttendance.rate, objectiveRate, regularityRate: current.regularity.rate, handicapChange: current.hcp.change, samples: current.periodAttendance.denominator }),
       overview: {
@@ -273,8 +293,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         evaluations: { expected: evaluationsEvents.length, coachCompleted: coachRows.length, playerCompleted: playerRows.length, completionRate: evaluationsEvents.length ? round1((coachRows.length / evaluationsEvents.length) * 100) : null },
       },
       attendance: { ...current.periodAttendance, previousRate: previous?.periodAttendance.rate ?? null, change: current.periodAttendance.rate != null && previous?.periodAttendance.rate != null ? round1(current.periodAttendance.rate - previous.periodAttendance.rate) : null, monthly: monthlyAttendance, byType: Array.from(attendanceByType, ([label, values]) => ({ label, ...values })) },
-      training: { byOrigin, byCategory: Array.from(categories, ([key, value]) => ({ key, minutes: value.minutes, sessions: value.sessions.size, percentage: current.totalMinutes ? round1((value.minutes / current.totalMinutes) * 100) : null })), feelings: { motivation: average((trainingRows.data ?? []).filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to).map((row: any) => row.motivation)), difficulty: average((trainingRows.data ?? []).filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to).map((row: any) => row.difficulty)), satisfaction: average((trainingRows.data ?? []).filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to).map((row: any) => row.satisfaction)), completed: (trainingRows.data ?? []).filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to && row.motivation != null && row.difficulty != null && row.satisfaction != null).length } },
-      play: { rounds: current.periodRounds, holes: documentedHoles.length, completedRounds: completedRounds.length, frequencyPerMonth: round1((current.periodRounds.length / Math.max(1, (new Date(`${range.to}T12:00:00Z`).getTime() - new Date(`${range.from}T12:00:00Z`).getTime()) / 86400000 + 1)) * 30.44), averageScore: average(score18), averagePutts: average(putts18), girRate: girEligible.length ? round1((girHits / girEligible.length) * 100) : null, girSample: girEligible.length, fairwayRate: fairwayHoles.length ? round1((fairwayHoles.filter((hole: any) => hole.fairway_hit).length / fairwayHoles.length) * 100) : null, fairwaySample: fairwayHoles.length, scramblingRate: scramblingOpportunities.length ? round1((scramblingSuccess / scramblingOpportunities.length) * 100) : null, scramblingSample: scramblingOpportunities.length, averagePar3: averageForPar(3), averagePar4: averageForPar(4), averagePar5: averageForPar(5), averageFront: averageForSide(true), averageBack: averageForSide(false), competitionLevels: Array.from(new Set(current.competitionRounds.map((row: any) => row.om_competition_level).filter(Boolean))), orderOfMeritPoints: current.competitionRounds.reduce((sum: number, row: any) => sum + Number(row.om_points_net ?? row.om_points_brut ?? 0), 0), scores: { eagles: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.eagles ?? 0), 0), birdies: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.birdies ?? 0), 0), pars: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.pars ?? 0), 0), bogeys: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.bogeys ?? 0), 0), doublesPlus: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.doubles_plus ?? 0), 0) } },
+      training: { byOrigin, byCategory: Array.from(categories, ([key, value]) => ({ key, minutes: value.minutes, sessions: value.sessions.size, percentage: current.totalMinutes ? round1((value.minutes / current.totalMinutes) * 100) : null })), feelings: { motivation: average(scopedTrainingRows.filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to).map((row: any) => row.motivation)), difficulty: average(scopedTrainingRows.filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to).map((row: any) => row.difficulty)), satisfaction: average(scopedTrainingRows.filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to).map((row: any) => row.satisfaction)), completed: scopedTrainingRows.filter((row: any) => dateKey(row.start_at) >= range.from && dateKey(row.start_at) <= range.to && row.motivation != null && row.difficulty != null && row.satisfaction != null).length } },
+      play: { rounds: currentScope ? current.periodRounds : [], holes: documentedHoles.length, completedRounds: completedRounds.length, frequencyPerMonth: round1((current.periodRounds.length / Math.max(1, (new Date(`${range.to}T12:00:00Z`).getTime() - new Date(`${range.from}T12:00:00Z`).getTime()) / 86400000 + 1)) * 30.44), averageScore: average(score18), averagePutts: average(putts18), girRate: girEligible.length ? round1((girHits / girEligible.length) * 100) : null, girSample: girEligible.length, fairwayRate: fairwayHoles.length ? round1((fairwayHoles.filter((hole: any) => hole.fairway_hit).length / fairwayHoles.length) * 100) : null, fairwaySample: fairwayHoles.length, scramblingRate: scramblingOpportunities.length ? round1((scramblingSuccess / scramblingOpportunities.length) * 100) : null, scramblingSample: scramblingOpportunities.length, averagePar3: averageForPar(3), averagePar4: averageForPar(4), averagePar5: averageForPar(5), averageFront: averageForSide(true), averageBack: averageForSide(false), competitionLevels: Array.from(new Set(current.competitionRounds.map((row: any) => row.om_competition_level).filter(Boolean))), orderOfMeritPoints: current.competitionRounds.reduce((sum: number, row: any) => sum + Number(row.om_points_net ?? row.om_points_brut ?? 0), 0), scores: { eagles: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.eagles ?? 0), 0), birdies: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.birdies ?? 0), 0), pars: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.pars ?? 0), 0), bogeys: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.bogeys ?? 0), 0), doublesPlus: current.periodRounds.reduce((sum: number, row: any) => sum + Number(row.doubles_plus ?? 0), 0) } },
       evaluations: { events: evaluationsEvents.map((event: any) => ({ id: event.id, title: event.title, startsAt: event.starts_at })), coach: coachRows, player: playerRows, custom, perceptionDifferences },
       handicapHistory: handicapHistory.filter((entry) => entry.effectiveDate >= range.from && entry.effectiveDate <= range.to),
       quality,
