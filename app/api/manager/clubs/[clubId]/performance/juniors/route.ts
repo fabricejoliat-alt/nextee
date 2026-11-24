@@ -1,7 +1,6 @@
 import { calculateWeeklyTrainingObjective, type TrainingVolumeConfig } from "@/lib/trainingVolumeReference";
 import { managerStatisticsOrganizationMap } from "@/lib/server/managerStatisticsScope";
 import { statisticsRowInScope } from "@/lib/playerStatisticsScope";
-import { readablePlayerHistoryIds } from "@/lib/server/personalHistoryAccess";
 import { personalOrOrganizationFilter } from "@/lib/personalHistoryScope";
 import { NextResponse, type NextRequest } from "next/server";
 import { calculateAttendance, calculateRegularity, handicapProgression, uniqueTrainingRows } from "@/lib/playerStatistics";
@@ -36,8 +35,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       queryRows<GroupRow>(auth.db.from("coach_groups").select("id,name").eq("club_id", clubId).eq("club_season_id", season?.id ?? "00000000-0000-0000-0000-000000000000").eq("is_active", true)),
       season ? queryRows<SeasonRecord>(auth.db.from("club_player_season_records").select("club_member_id,group_id,registration_status").eq("club_season_id", season.id)) : Promise.resolve([]),
     ]);
-    const readableIds = new Set(await readablePlayerHistoryIds(auth.db, auth.callerId, candidateMembers.map(member => member.user_id), clubId));
-    const readableMembers = candidateMembers.filter(member => readableIds.has(member.user_id));
+    const readableMembers = candidateMembers;
     const availableByPlayer = await managerStatisticsOrganizationMap(auth.db, readableMembers.map(member => member.user_id), clubId);
     const organizations = Array.from(new Map(Array.from(availableByPlayer.values()).flat().map(org => [org.id, org])).values())
       .sort((a, b) => Number(b.id === clubId) - Number(a.id === clubId) || a.name.localeCompare(b.name));

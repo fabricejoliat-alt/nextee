@@ -4,7 +4,6 @@ import { calculateWeeklyTrainingObjective, type TrainingVolumeConfig } from "@/l
 import { managerTrainingVolumeSeries } from "@/lib/managerTrainingVolume";
 import { managerStatisticsOrganizations } from "@/lib/server/managerStatisticsScope";
 import { resolvePlayerStatisticsScope, statisticsRowInScope } from "@/lib/playerStatisticsScope";
-import { canReadPlayerHistory, readablePlayerHistoryIds } from "@/lib/server/personalHistoryAccess";
 import { personalOrOrganizationFilter } from "@/lib/personalHistoryScope";
 import { NextResponse, type NextRequest } from "next/server";
 import { requireCaller } from "@/app/api/messages/_lib";
@@ -49,9 +48,9 @@ async function authorize(db: any, callerId: string, clubId: string, playerId: st
   const [admin, manager, player] = await Promise.all([
     db.from("app_admins").select("user_id").eq("user_id", callerId).maybeSingle(),
     db.from("club_members").select("id").eq("club_id", clubId).eq("user_id", callerId).eq("role", "manager").eq("is_active", true).maybeSingle(),
-    db.from("club_members").select("id,is_performance").eq("club_id", clubId).eq("user_id", playerId).eq("role", "player").eq("is_active", true).maybeSingle(),
+    db.from("club_members").select("id,is_performance").eq("club_id", clubId).eq("user_id", playerId).eq("role", "player").maybeSingle(),
   ]);
-  if (player.error) throw new Error(player.error.message);
+  for (const result of [admin, manager, player]) if (result.error) throw new Error(result.error.message);
   if (!player.data) return { ok: false as const, status: 404, error: "Junior introuvable dans ce club." };
   if (!admin.data && !manager.data) return { ok: false as const, status: 403, error: "Forbidden" };
   return { ok: true as const, isPerformance: Boolean(player.data.is_performance) };
@@ -85,9 +84,8 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
     const { supabaseAdmin: db, callerId } = await requireCaller(token);
     const access = await authorize(db, callerId, clubId, playerId);
     if (!access.ok) return NextResponse.json({ error: access.error }, { status: access.status });
-    if (!(await canReadPlayerHistory(db, callerId, playerId, clubId))) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-    const organizations = await managerStatisticsOrganizations(db, callerId, playerId, clubId);
+    const organizations = await managerStatisticsOrganizations(db, playerId, clubId);
     const scope = resolvePlayerStatisticsScope(req.nextUrl.searchParams.get("scope") ?? "current", clubId, organizations);
     if (!scope) return NextResponse.json({ error: "manager.junior.stats.scopeForbidden" }, { status: 403 });
     const selectedIds = scope.organizationIds;
@@ -255,7 +253,6 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
         const peerIds = new Set((peers.data ?? []).map((row: any) => String(row.player_user_id)));
         cohortIds = cohortIds.filter((id: string) => peerIds.has(id));
       }
-      cohortIds = await readablePlayerHistoryIds(db, callerId, cohortIds, clubId);
       const cohortProfiles = cohortIds.length ? await db.from("profiles").select("id,handicap").in("id", cohortIds) : { data: [], error: null };
       if (cohortProfiles.error) throw new Error(cohortProfiles.error.message);
       if (benchmarkMode === "ftem") {

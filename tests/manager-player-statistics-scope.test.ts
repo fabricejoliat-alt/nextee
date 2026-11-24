@@ -62,10 +62,6 @@ function setup(tables = fixture(), denied: string[] = [], path = routePath, maxR
   fake.db.from = (table: string) => { reads.push(table); return from(table); };
   const route = loadManagerModule(path, {
     ...fake.mocks,
-    "@/lib/server/personalHistoryAccess": {
-      canReadPlayerHistory: async (_db: unknown, actorId: string, _player: string, organizationId: string) => actorId === "manager" && organizationId === club,
-      readablePlayerHistoryIds: async (_db: unknown, _actor: string, ids: string[]) => ids,
-    },
   });
   const get = async (params = "") => {
     const req = new Request(`https://test.invalid/stats?from=2026-09-01&to=2026-09-30&comparison=none&${params}`, { headers: { Authorization: "Bearer test" } });
@@ -179,6 +175,44 @@ test("an arbitrary structure or a missing current manager membership cannot open
   const denied = setup(tables);
   assert.equal((await denied.get("scope=all")).response.status, 403);
   assert.ok(!denied.reads.includes("training_sessions"));
+});
+
+test("a manager can read every retained club player's statistics without Player onboarding or a mirrored membership", async () => {
+  for (const kind of ["pending", "missing-mirror", "inactive-player"]) {
+    const tables = fixture();
+    tables.club_members[1].player_consent_status = "pending";
+    if (kind === "missing-mirror") tables.organization_members = tables.organization_members.filter(row => row.organization_id !== club);
+    if (kind === "inactive-player") tables.club_members[1].is_active = false;
+    const h = setup(tables, [club, academy]);
+    const { response, body } = await h.get("scope=current");
+    assert.equal(response.status, 200, kind);
+    assert.equal(body.overview.training.minutes, 90, kind);
+    assert.deepEqual(body.scope.organizations.map((row: Row) => row.id), [club]);
+    assert.ok(!h.rpcs.some(row => row.name === "organization_player_authorized" && row.args.p_org === club));
+    assert.equal((await h.get(`scope=${academy}`)).response.status, 403);
+  }
+});
+
+test("retained inactive players remain in the manager team statistics and the inactive filter", async () => {
+  const tables = fixture(); tables.club_members[1].is_active = false; tables.organization_members = [];
+  const h = setup(tables, [club], "app/api/manager/clubs/[clubId]/performance/juniors/route.ts");
+  const { response, body } = await h.get("status=inactive&include_personal=false");
+  assert.equal(response.status, 200);
+  assert.equal(body.rows.length, 1);
+  assert.equal(body.rows[0].id, "player");
+  assert.equal(body.rows[0].active, false);
+  assert.equal(body.rows[0].trainingMinutes, 60);
+});
+
+test("a missing player membership or an inactive manager cannot read junior statistics", async () => {
+  for (const kind of ["missing-player", "inactive-manager"]) {
+    const tables = fixture();
+    if (kind === "missing-player") tables.club_members.pop();
+    else tables.club_members[0].is_active = false;
+    const h = setup(tables);
+    assert.equal((await h.get()).response.status, kind === "missing-player" ? 404 : 403);
+    assert.ok(!h.reads.includes("training_sessions"));
+  }
 });
 
 test("legacy active academy affiliations without a roster entry remain usable", async () => {

@@ -5,6 +5,7 @@ import { loadManagerModule, managerDatabase } from "./helpers/managerRouteHarnes
 test("junior performance uses the selected season's actual roster and filters every group", async () => {
   const { db } = managerDatabase({
     club_members: [{id:"member",user_id:"lea",club_id:"club",role:"player",is_active:true}],
+    organizations: [{id:"club",name:"Club QA",org_type:"club",is_active:true}],
     profiles: [{id:"lea",first_name:"Léa",last_name:"Martin",handicap:10}],
     coach_groups: [
       {id:"competition",name:"Compétition 1",club_id:"club",club_season_id:"season",is_active:true},
@@ -19,7 +20,6 @@ test("junior performance uses the selected season's actual roster and filters ev
   db.from=((table:string)=>{const q=from(table); return Object.assign(q,{or:()=>q});}) as typeof db.from;
   const {GET}=loadManagerModule<{GET:(req:{nextUrl:URL},ctx:{params:Promise<{clubId:string}>})=>Promise<Response>}>("app/api/manager/clubs/[clubId]/performance/juniors/route.ts",{
     "next/server":{NextResponse:{json:Response.json}},
-    "@/lib/server/personalHistoryAccess":{readablePlayerHistoryIds:async()=>["lea"]},
     "@/lib/personalHistoryScope":{personalOrOrganizationFilter:()=>"club_id.is.null"},
     "../_lib":{
       performanceContext:async()=>({ok:true,db,callerId:"manager"}),
