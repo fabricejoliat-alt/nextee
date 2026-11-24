@@ -24,7 +24,7 @@ type Breakdown = { key: string; label?: string; minutes: number; sessions: numbe
 type CoachEvaluation = { event_id: string; engagement: number | null; attitude: number | null; performance: number | null; visible_to_player: boolean; player_note: string | null };
 type CustomEvaluation = { event_criterion_id: string; respondent_role: string; value_json: unknown; criterion?: { snapshot_name?: string; snapshot_domain_label?: string; snapshot_choices?: Array<{ value: string | number | boolean; label: string }>; snapshot_response_format?: string } | null };
 type Stats = {
-  scope?: { selected: string; organizations: StatisticsOrganization[]; objectiveOrganization: { id: string; name: string } };
+  scope?: { selected: string; organizations: StatisticsOrganization[]; objectiveMode?: "maximum" | "organization"; objectiveOrganization: { id: string; name: string } };
   generatedAt?: string;
   summary: string;
   player: { isPerformance: boolean };
@@ -122,7 +122,7 @@ export default function ManagerPlayerStatistics({ clubId, playerId, seasonRange,
         <label><span>{t("manager.junior.stats.benchmark")}</span><select value={isCurrentScope ? benchmark : "none"} disabled={!isCurrentScope} onChange={(event) => setBenchmark(event.target.value)}><option value="none">{t("manager.junior.stats.noBenchmark")}</option><option value="group">{t("manager.junior.stats.groupMedian")}</option><option value="ftem">{t("manager.junior.stats.sameFtem")}</option><option value="club">{t("manager.junior.stats.clubMedian")}</option></select></label>
       </div>
       <label className={styles.personalChoice}><input type="checkbox" checked={includePersonal} onChange={(event) => setIncludePersonal(event.target.checked)} /><span>{t("manager.junior.stats.includePersonal")}</span></label>
-      <p className={styles.caption}>{t("manager.junior.stats.scopeHelp")}{stats?.scope?.objectiveOrganization ? ` ${format("objectiveStructure", { name: stats.scope.objectiveOrganization.name })}` : ""}</p>
+      <p className={styles.caption}>{t("manager.junior.stats.scopeHelp")}{stats?.scope?.objectiveMode === "maximum" ? ` ${t("manager.junior.stats.objectiveMaximum")}` : stats?.scope?.objectiveOrganization ? ` ${format("objectiveStructure", { name: stats.scope.objectiveOrganization.name })}` : ""}</p>
       <div className={styles.period}><CalendarDays size={14} />{format("period", { from: from ? managerJuniorDate(t, locale, from, false) : "—", to: to ? managerJuniorDate(t, locale, to, false) : "—" })}{!validRange ? <b role="alert">{t("manager.junior.stats.invalidPeriod")}</b> : null}</div>
     </section>
     <ManagerStatisticsTabs<Section> items={sectionTabs} value={section} onChange={setSection} ariaLabel={t("manager.junior.stats.sections")} />

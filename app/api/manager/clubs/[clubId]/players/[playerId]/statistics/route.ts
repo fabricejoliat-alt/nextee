@@ -1,3 +1,4 @@
+import { calculateWeeklyTrainingObjective, type TrainingVolumeConfig } from "@/lib/trainingVolumeReference";
 import { managerTrainingVolumeSeries } from "@/lib/managerTrainingVolume";
 import { managerStatisticsOrganizations } from "@/lib/server/managerStatisticsScope";
 import { resolvePlayerStatisticsScope, statisticsRowInScope } from "@/lib/playerStatisticsScope";
@@ -9,7 +10,6 @@ import {
   calculateAttendance,
   playerSummarySignals,
   benchmarkMedian,
-  calculateProratedTrainingObjective,
   calculateRegularity,
   handicapProgression,
   percentChange,
@@ -100,9 +100,9 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       db.from("club_event_attendees").select("event_id,status").eq("player_id", playerId).limit(5000),
       db.from("training_sessions").select("id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,club_id").or(sourceFilter).eq("user_id", playerId).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(5000),
       db.from("golf_rounds").select("id,club_id,start_at,round_type,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus,om_competition_level,om_points_net,om_points_brut").or(sourceFilter).eq("user_id", playerId).gte("start_at", startIso(earliest)).lte("start_at", endIso(range.to)).limit(2000),
-      db.from("player_handicap_history").select("effective_date,value").eq("user_id", playerId).lte("effective_date", range.to).order("effective_date"),
-      db.from("training_volume_settings").select("season_months,offseason_months").eq("organization_id", objectiveOrganizationId).maybeSingle(),
-      db.from("training_volume_targets").select("ftem_code,level_label,handicap_min,handicap_max,minutes_offseason,minutes_inseason,sort_order").eq("organization_id", objectiveOrganizationId).order("sort_order"),
+      db.from("player_handicap_history").select("effective_date,value").eq("user_id", playerId).order("effective_date"),
+      db.from("training_volume_settings").select("organization_id,season_months,offseason_months").in("organization_id", selectedIds),
+      db.from("training_volume_targets").select("organization_id,ftem_code,level_label,handicap_min,handicap_max,minutes_offseason,minutes_inseason,sort_order").in("organization_id", selectedIds).order("sort_order").order("ftem_code"),
       db.from("club_event_coach_feedback").select("event_id,engagement,attitude,performance,player_note,visible_to_player").eq("player_id", playerId).limit(3000),
       db.from("club_event_player_feedback").select("event_id,motivation,difficulty,satisfaction,submitted_at").eq("player_id", playerId).limit(3000),
       db.from("club_event_evaluation_criteria").select("id,club_id,event_id,snapshot_name,snapshot_response_format,snapshot_domain_label,snapshot_respondent,snapshot_choices").in("club_id", selectedIds).eq("is_enabled", true).limit(3000),
@@ -148,16 +148,16 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
       const totalMinutes = periodTraining.reduce((sum, row) => sum + Number(row.minutes ?? 0), 0);
       const periodRounds = scopedRounds.filter((row: any) => dateKey(row.start_at) >= period.from && dateKey(row.start_at) <= period.to);
       const competitionRounds = periodRounds.filter((row: any) => row.round_type === "competition");
-      const objective = calculateProratedTrainingObjective({ range: period, seasonMonths: (settings.data?.season_months ?? []).map(Number), targets: (targets.data ?? []).map((row: any) => ({ ...row, handicap_min: row.handicap_min == null ? null : Number(row.handicap_min), handicap_max: row.handicap_max == null ? null : Number(row.handicap_max), minutes_offseason: Number(row.minutes_offseason ?? 0), minutes_inseason: Number(row.minutes_inseason ?? 0) })), handicapHistory, currentHandicap: typeof profile.data?.handicap === "number" ? profile.data.handicap : null });
+      const objective = calculateWeeklyTrainingObjective(period, volumeObjective);
       const hcp = handicapProgression(handicapHistory, period, typeof profile.data?.handicap === "number" ? profile.data.handicap : null);
       return { periodTraining, periodAttendance, regularity, totalMinutes, periodRounds, competitionRounds, objective, hcp };
     }
-    const volumeObjective = {
-      seasonMonths: (settings.data?.season_months ?? []).map(Number),
-      targets: (targets.data ?? []).map((row: any) => ({ ...row, handicap_min: row.handicap_min == null ? null : Number(row.handicap_min), handicap_max: row.handicap_max == null ? null : Number(row.handicap_max), minutes_offseason: Number(row.minutes_offseason ?? 0), minutes_inseason: Number(row.minutes_inseason ?? 0) })),
-      handicapHistory,
-      currentHandicap: typeof profile.data?.handicap === "number" ? profile.data.handicap : null,
-    };
+    const configs: TrainingVolumeConfig[] = selectedIds.map(organizationId => {
+      const setting = (settings.data ?? []).find((row: any) => row.organization_id === organizationId);
+      return { organizationId, seasonMonths: (setting?.season_months ?? []).map(Number), offseasonMonths: (setting?.offseason_months ?? []).map(Number),
+        targets: (targets.data ?? []).filter((row: any) => row.organization_id === organizationId).map((row: any) => ({ ...row, handicap_min: row.handicap_min == null ? null : Number(row.handicap_min), handicap_max: row.handicap_max == null ? null : Number(row.handicap_max), minutes_offseason: Number(row.minutes_offseason ?? 0), minutes_inseason: Number(row.minutes_inseason ?? 0) })) };
+    });
+    const volumeObjective = { configs, handicapHistory, currentHandicap: typeof profile.data?.handicap === "number" ? profile.data.handicap : null };
     const current = metrics(range);
     const previous = compareRange ? metrics(compareRange) : null;
 
@@ -282,7 +282,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
           const attendanceMetric = calculateAttendance(rows, range); if (attendanceMetric.rate != null) attendanceRates.push(attendanceMetric.rate); participation.push(attendanceMetric.present);
           const trainingMetric = uniqueTrainingRows((cohortTrainingRows.data ?? []).filter((row: any) => String(row.user_id) === id && statisticsRowInScope(row.club_id, [clubId], includePersonal)).map((row: any) => ({ id: row.id, startAt: row.start_at, minutes: Number(row.total_minutes ?? 0), sessionType: row.session_type, clubEventId: row.club_event_id })));
           const regularityMetric = calculateRegularity(trainingMetric, range); if (regularityMetric.rate != null) regularityRates.push(regularityMetric.rate);
-          const hcp = profileMap.get(id)?.handicap == null ? null : Number(profileMap.get(id)?.handicap); const target = calculateProratedTrainingObjective({ range, seasonMonths: (settings.data?.season_months ?? []).map(Number), targets: (targets.data ?? []).map((row: any) => ({ ...row, handicap_min: row.handicap_min == null ? null : Number(row.handicap_min), handicap_max: row.handicap_max == null ? null : Number(row.handicap_max), minutes_offseason: Number(row.minutes_offseason ?? 0), minutes_inseason: Number(row.minutes_inseason ?? 0) })), handicapHistory: [], currentHandicap: hcp }); const total = trainingMetric.reduce((sum, row) => sum + Number(row.minutes ?? 0), 0); if (target.minutes) objectiveRates.push(round1((total / target.minutes) * 100));
+          const hcp = profileMap.get(id)?.handicap == null ? null : Number(profileMap.get(id)?.handicap); const target = calculateWeeklyTrainingObjective(range, { configs, handicapHistory: [], currentHandicap: hcp }); const total = trainingMetric.reduce((sum, row) => sum + Number(row.minutes ?? 0), 0); if (target.minutes) objectiveRates.push(round1((total / target.minutes) * 100));
         }
         benchmark = { enabled: true, cohortSize: cohortIds.length, values: { attendanceRate: benchmarkMedian(attendanceRates).value, regularityRate: benchmarkMedian(regularityRates).value, objectiveRate: benchmarkMedian(objectiveRates).value, participation: benchmarkMedian(participation).value } };
       }
@@ -290,7 +290,7 @@ export async function GET(req: NextRequest, ctx: { params: Promise<{ clubId: str
 
     return NextResponse.json({
       generatedAt: new Date().toISOString(), range, comparison: compareRange,
-      scope: { selected: scope.selected, organizations, organizationIds: selectedIds, includePersonal, objectiveOrganization: { id: objectiveOrganization.id, name: objectiveOrganization.name } },
+      scope: { selected: scope.selected, organizations, organizationIds: selectedIds, includePersonal, objectiveMode: selectedIds.length > 1 ? "maximum" : "organization", objectiveOrganization: { id: objectiveOrganization.id, name: objectiveOrganization.name } },
       player: { id: playerId, name: `${profile.data?.first_name ?? ""} ${profile.data?.last_name ?? ""}`.trim(), isPerformance: access.isPerformance },
       summary: summarize({ attendanceRate: current.periodAttendance.rate, objectiveRate, regularityRate: current.regularity.rate, handicapChange: current.hcp.change, samples: current.periodAttendance.denominator }),
       overview: {

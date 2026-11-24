@@ -1,9 +1,10 @@
-import { calculateProratedTrainingObjective, uniqueTrainingRows, type DateRange, type TrainingInput } from "./playerStatistics";
+import { trainingReferenceForWeek, type WeeklyTrainingObjective } from "./trainingVolumeReference";
+import { uniqueTrainingRows, type DateRange, type TrainingInput } from "./playerStatistics";
 
 export type TrainingVolumeWeek = { week: string; club: number; private: number; individual: number; other: number; total: number; objective: number | null };
-type Objective = Omit<Parameters<typeof calculateProratedTrainingObjective>[0], "range">;
+type Objective = WeeklyTrainingObjective;
 
-/** Use the configured monthly FTEM target, prorated to the displayed calendar days. */
+/** Match the weekly FTEM reference displayed on Player. */
 export function managerTrainingVolumeSeries(range: DateRange, sessions: TrainingInput[], objective: Objective): TrainingVolumeWeek[] {
   const cursor = new Date(`${range.from}T12:00:00Z`);
   cursor.setUTCDate(cursor.getUTCDate() - (cursor.getUTCDay() + 6) % 7);
@@ -15,7 +16,7 @@ export function managerTrainingVolumeSeries(range: DateRange, sessions: Training
     const weekEnd = new Date(cursor); weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
     const from = week < range.from ? range.from : week;
     const to = weekEnd.toISOString().slice(0, 10) > range.to ? range.to : weekEnd.toISOString().slice(0, 10);
-    const row: TrainingVolumeWeek = { week, club: 0, private: 0, individual: 0, other: 0, total: 0, objective: calculateProratedTrainingObjective({ ...objective, range: { from, to } }).minutes };
+    const row: TrainingVolumeWeek = { week, club: 0, private: 0, individual: 0, other: 0, total: 0, objective: trainingReferenceForWeek(week, objective).minutes };
     for (const session of training) {
       const day = session.startAt.slice(0, 10);
       if (day < from || day > to) continue;

@@ -1,4 +1,5 @@
 "use client";
+import { pickTrainingVolumeTarget, objectiveForMonth, trainingHandicapForDate } from "@/lib/trainingVolumeReference";
 import { useTrainingDurationDisplay } from "@/components/golf/TrainingDurationPreference";
 import { useRetainedLoading } from "@/lib/useRetainedLoading";
 
@@ -316,33 +317,6 @@ function parseMonthArray(values: unknown): number[] {
     uniq.add(n);
   }
   return Array.from(uniq);
-}
-
-function pickTrainingVolumeTarget(
-  handicap: number | null | undefined,
-  rows: TrainingVolumeTargetRow[]
-): TrainingVolumeTargetRow | null {
-  if (!rows.length) return null;
-  if (typeof handicap !== "number" || !Number.isFinite(handicap)) return rows[0] ?? null;
-  const matched = rows.find((row) => {
-    if (typeof row.handicap_min !== "number" || typeof row.handicap_max !== "number") return false;
-    const lo = Math.min(row.handicap_min, row.handicap_max);
-    const hi = Math.max(row.handicap_min, row.handicap_max);
-    return handicap >= lo && handicap <= hi;
-  });
-  return matched ?? rows[0] ?? null;
-}
-
-function objectiveForMonth(
-  target: TrainingVolumeTargetRow | null,
-  seasonMonths: number[],
-  offseasonMonths: number[],
-  month: number
-) {
-  if (!target) return 0;
-  const inSeason =
-    seasonMonths.includes(month) || (!offseasonMonths.includes(month) && seasonMonths.length > 0);
-  return inSeason ? target.minutes_inseason : target.minutes_offseason;
 }
 
 function compareYmd(a: string, b: string) {
@@ -1287,17 +1261,8 @@ export default function GolfDashboardPage() {
     [trainingVolumeObjective]
   );
   const handicapForDate = useMemo(() => {
-    const sortedAsc = [...handicapHistory].sort((a, b) => compareYmd(a.effective_date, b.effective_date));
-    return (ymd: string) => {
-      if (sortedAsc.length === 0) return playerHandicap;
-      let active: HandicapHistoryEntry | null = null;
-      for (const entry of sortedAsc) {
-        if (compareYmd(entry.effective_date, ymd) <= 0) active = entry;
-        else break;
-      }
-      if (active) return active.value;
-      return sortedAsc[0]?.value ?? playerHandicap;
-    };
+    const history = handicapHistory.map(entry => ({ effectiveDate: entry.effective_date, value: entry.value }));
+    return (ymd: string) => trainingHandicapForDate(ymd, history, playerHandicap);
   }, [handicapHistory, playerHandicap]);
   const avgMotivation = useMemo(() => avg(sessions.map((s) => s.motivation)), [sessions]);
   const avgDifficulty = useMemo(() => avg(sessions.map((s) => s.difficulty)), [sessions]);

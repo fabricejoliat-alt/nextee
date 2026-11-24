@@ -49,6 +49,11 @@ function fixture() {
   };
   return tables;
 }
+function addVolumeReferences(tables: Record<string, Row[]>) {
+  tables.training_volume_settings = [club, academy].map(organization_id => ({ organization_id, season_months: [9], offseason_months: [8] }));
+  tables.training_volume_targets = [[club, 300], [academy, 600]].map(([organization_id, minutes]) => ({ organization_id, sort_order: 1, ftem_code: "T1", level_label: "QA", handicap_min: 0, handicap_max: 54, minutes_offseason: minutes, minutes_inseason: minutes }));
+}
+
 function setup(tables = fixture(), denied: string[] = [], path = routePath) {
   const fake = managerDatabase(tables);
   fake.db.rpc = async (_name: string, args: Row) => ({ data: !denied.includes(args.p_org), error: null }) as any;
@@ -102,6 +107,20 @@ test("club, academy and combined views recalculate attendance and count personal
   assert.equal(h.writes.length, 0);
 });
 
+test("manager weekly chart and FTEM totals match Player for single and combined structures", async () => {
+  const tables = fixture(); addVolumeReferences(tables);
+  const h = setup(tables);
+  for (const [scope, reference, total, rate] of [[club, 300, 60, 4], [academy, 600, 90, 3], ["all", 600, 150, 5]] as const) {
+    const { response, body } = await h.get(`scope=${scope}&include_personal=false`);
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.training.weekly.map((row: Row) => row.objective), Array(5).fill(reference));
+    assert.equal(body.overview.training.objectiveMinutes, reference * 5);
+    assert.equal(body.overview.training.minutes, total);
+    assert.equal(body.overview.training.objectiveRate, rate);
+    assert.equal(body.scope.objectiveMode, scope === "all" ? "maximum" : "organization");
+  }
+});
+
 test("inactive memberships, revoked authorization and suspended academy rosters are excluded before reading sports data", async () => {
   for (const kind of ["membership", "authorization", "roster", "organization"]) {
     const tables = fixture();
@@ -136,7 +155,7 @@ test("legacy active academy affiliations without a roster entry remain usable", 
 });
 
 test("the team dashboard keeps the manager's juniors and scopes each junior independently", async () => {
-  const tables = fixture();
+  const tables = fixture(); addVolumeReferences(tables);
   tables.club_members.push({ id: "peer-member", club_id: club, user_id: "peer", role: "player", is_active: true });
   tables.organization_members.push({ organization_id: club, user_id: "peer", role: "player", is_active: true });
   tables.profiles.push({ id: "peer", first_name: "Peer", last_name: "QA", handicap: 20 });
@@ -152,6 +171,8 @@ test("the team dashboard keeps the manager's juniors and scopes each junior inde
   assert.equal(combined.body.rows.find((row: Row) => row.id === "player").trainingMinutes, 150);
   const peer = combined.body.rows.find((row: Row) => row.id === "peer");
   assert.equal(peer.trainingMinutes, 10);
+  assert.equal(peer.objectiveRate, 0.7);
+  assert.equal(combined.body.rows.find((row: Row) => row.id === "player").objectiveRate, 5);
   assert.equal(peer.attendance.invited, 0);
   assert.equal(peer.evaluationsExpected, 0);
   const academyOnly = await h.get(`scope=${academy}&include_personal=false`);
