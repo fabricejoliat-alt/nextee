@@ -29,11 +29,8 @@ export function managerActivityEvaluationProgress(
   const expected = new Set(eventIds);
   const players = managerEvaluationProgress(attendees, feedback, criteria, responses);
   const recorded = new Set([...feedback, ...responses].filter(row => expected.has(row.event_id)).map(row => row.event_id));
-  const completed = new Set<string>(), inProgress = new Set<string>();
-  for (const eventId of expected) {
-    const participants = attendees.filter(row => row.event_id === eventId);
-    if (participants.length > 0 && participants.every(row => players.completed.has(`${eventId}|${row.player_id}`))) completed.add(eventId);
-    else if (recorded.has(eventId) || participants.some(row => players.completed.has(`${eventId}|${row.player_id}`) || players.inProgress.has(`${eventId}|${row.player_id}`))) inProgress.add(eventId);
-  }
-  return { expected, recorded, completed, inProgress, completedPairs: players.completed };
+  const inProgress = new Set(attendees
+    .filter(row => expected.has(row.event_id) && !recorded.has(row.event_id) && row.coach_recorded_status)
+    .map(row => row.event_id));
+  return { expected, recorded, completed: recorded, inProgress, completedPairs: players.completed };
 }

@@ -138,7 +138,7 @@ test("camp counters include standalone days and exclude duplicates, group days a
  assert.deepEqual(result,{planned:1,past:1});
 });
 
-test("performance API does not count a partial evaluation as completed or lose it from overdue work",async()=>{
+test("performance API counts a saved partial evaluation once for manager reporting",async()=>{
  const tables=managerFixture();const past=new Date(Date.now()-14*86400000).toISOString();const future=new Date(Date.now()+2*86400000).toISOString();
  tables.coach_groups[0]={...tables.coach_groups[0],is_active:true,head_coach_user_id:'target',name:'Group'};
  tables.club_events=[{id:'past',club_id:'A',group_id:'group-A',title:'Training',event_type:'training',starts_at:past,ends_at:past,duration_minutes:60,status:'scheduled',requires_evaluation:true},{id:'future',club_id:'A',group_id:'group-A',starts_at:future,ends_at:future,status:'scheduled',requires_evaluation:true}];
@@ -149,14 +149,14 @@ test("performance API does not count a partial evaluation as completed or lose i
   performanceContext:async()=>({ok:true,db:h.db}),resolveRange:async()=>({range:{from:past.slice(0,10),to:future.slice(0,10)},previous:{from:'2020-01-01',to:'2020-01-02'},season:{id:'season-A'},seasons:[]}),queryRows:async(q:PromiseLike<Row>)=>(await q).data,dateKey:(v:string)=>v.slice(0,10),startIso:(v:string)=>`${v}T00:00:00Z`,
  }});
  const request=Object.assign(managerRequest('GET'),{nextUrl:new URL('http://localhost/')});
- let response=await route.GET(request,ctx);let body=await response.json();assert.equal(response.status,200,JSON.stringify(body));assert.equal(body.rows[0].evaluationsExpected,1);assert.equal(body.rows[0].evaluationsCompleted,0);assert.equal(body.rows[0].evaluationsInProgress,1);assert.equal(body.rows[0].evaluationsOverdue,1);
+ let response=await route.GET(request,ctx);let body=await response.json();assert.equal(response.status,200,JSON.stringify(body));assert.equal(body.rows[0].evaluationsExpected,1);assert.equal(body.rows[0].evaluationsCompleted,1);assert.equal(body.rows[0].evaluationsInProgress,0);assert.equal(body.rows[0].evaluationsOverdue,0);
  Object.assign(tables.club_event_coach_feedback[0],{attitude:4,performance:4});
  tables.club_event_evaluation_criteria=[{id:'criterion',event_id:'past',is_enabled:true,snapshot_is_required:true,snapshot_respondent:'coach',snapshot_response_format:'short_text',snapshot_choices:[]}];
- response=await route.GET(request,ctx);body=await response.json();assert.equal(body.rows[0].evaluationsCompleted,0);
+ response=await route.GET(request,ctx);body=await response.json();assert.equal(body.rows[0].evaluationsCompleted,1);
  tables.club_event_evaluation_responses=[{event_id:'past',player_id:'player',event_criterion_id:'criterion',respondent_role:'coach',value_json:'Reviewed'}];
  response=await route.GET(request,ctx);body=await response.json();assert.equal(body.rows[0].evaluationsCompleted,1);assert.equal(body.rows[0].evaluationsInProgress,0);assert.equal(body.rows[0].evaluationsOverdue,0);
  tables.club_members.find(row=>row.user_id==='player'&&row.club_id==='A')!.player_consent_status='pending';
- response=await route.GET(request,ctx);body=await response.json();assert.equal(body.rows[0].evaluationsExpected,0);assert.equal(body.rows[0].evaluationsOverdue,0);
+ response=await route.GET(request,ctx);body=await response.json();assert.equal(body.rows[0].evaluationsExpected,1);assert.equal(body.rows[0].evaluationsOverdue,0);
  assert.equal(tables.club_event_coach_feedback[0].performance,4,"Saved historical feedback is preserved");
 });
 
