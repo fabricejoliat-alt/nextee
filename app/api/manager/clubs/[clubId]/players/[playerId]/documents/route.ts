@@ -1,7 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { performanceContext } from "@/app/api/manager/clubs/[clubId]/performance/_lib";
 import { activeClubMember } from "@/lib/server/managerAccess";
-import { canReadPlayerHistory } from "@/lib/server/personalHistoryAccess";
 import { readAllRows, readRelatedRows } from "@/lib/server/paginatedRead";
 import { signPlayerDocumentRows } from "@/lib/playerDocumentStorage";
 
@@ -16,7 +15,6 @@ export async function GET(req: NextRequest, context: { params: Promise<{ clubId:
     const access = await performanceContext(req, clubId);
     if (!access.ok) return reply({ error: access.error }, access.status);
     if (!(await activeClubMember(access.db, clubId, playerId, "player"))) return reply({ error: "manager.junior.documents.unavailable" }, 404);
-    if (!(await canReadPlayerHistory(access.db, access.callerId, playerId, clubId))) return reply({ error: "Forbidden" }, 403);
 
     // Document access remains limited to the selected organization, regardless of the statistics filter.
     const documents = await readAllRows<Document>((from, to) => access.db.from("player_dashboard_documents")

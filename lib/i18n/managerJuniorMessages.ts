@@ -1,4 +1,5 @@
 export const managerJuniorEntries: Record<string, readonly [string, string, string, string]> = {
+  "golf.title": ["Son golf", "Their golf", "Sein Golf", "Il suo golf"],
   "documents.title": ["Documents", "Documents", "Dokumente", "Documenti"],
   "documents.help": ["Retrouvez les fichiers partagés pour ce junior, notamment les documents ajoutés par les coachs aux activités.", "Find files shared for this junior, including documents coaches added to activities.", "Hier finden Sie die für diesen Junior geteilten Dateien, einschließlich der von Coaches zu Aktivitäten hinzugefügten Dokumente.", "Trova i file condivisi per questo junior, compresi i documenti aggiunti dai coach alle attività."],
   "documents.open": ["Ouvrir", "Open", "Öffnen", "Apri"],
@@ -372,7 +373,7 @@ export const managerJuniorEntries: Record<string, readonly [string, string, stri
   "stats.sameFtem": ["Même niveau FTEM", "Same FTEM level", "Gleiche FTEM-Stufe", "Stesso livello FTEM"],
   "stats.clubMedian": ["Médiane du club", "Club median", "Clubmedian", "Mediana del club"],
   "stats.invalidPeriod": ["La date de fin doit suivre la date de début.", "The end date must not precede the start date.", "Das Enddatum darf nicht vor dem Startdatum liegen.", "La data di fine non deve precedere quella di inizio."],
-  "stats.sections": ["Sections statistiques", "Statistics sections", "Statistikbereiche", "Sezioni statistiche"],
+  "stats.sections": ["Sections de son golf", "Golf sections", "Golfbereiche", "Sezioni del golf"],
   "stats.loading": ["Chargement des statistiques…", "Loading statistics…", "Statistiken werden geladen…", "Caricamento delle statistiche…"],
   "stats.cohort": ["Repères de cohorte", "Cohort benchmarks", "Vergleichswerte der Kohorte", "Riferimenti del gruppo di confronto"],
   "stats.medianAttendance": ["Assiduité médiane", "Median attendance", "Mediane Anwesenheit", "Presenza mediana"],

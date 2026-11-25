@@ -5,7 +5,7 @@ import { readRelatedRows } from "./paginatedRead";
 type Membership = { organization_id: string; user_id: string };
 type RosterEntry = { academy_id: string; player_id: string; status: string };
 
-/** Statistics for the manager's own roster and the junior's authorized affiliations.
+/** Statistics for the manager's own roster and the junior's recorded affiliations.
  * The route must first verify that the actor manages this player in currentId.
  * This never grants access to another structure's notes, documents or messages.
  */
@@ -15,7 +15,7 @@ export async function managerStatisticsOrganizations(db: SupabaseClient, playerI
 
 /** Caller must be an authenticated manager of currentId (or platform admin).
  * Manager statistics cover every retained player membership, independently of
- * Player/Parent onboarding. Other affiliations still require active authorization.
+ * Player/Parent onboarding. Other affiliations require an active membership; pending consent is not a statistics restriction.
  */
 export async function managerStatisticsOrganizationMap(db: SupabaseClient, playerIds: string[], currentId: string) {
   const result = new Map<string, StatisticsOrganization[]>();
@@ -39,14 +39,11 @@ export async function managerStatisticsOrganizationMap(db: SupabaseClient, playe
   if (!currentOrganization) return result;
   for (const playerId of currentPlayers) result.set(playerId, [currentOrganization]);
   const candidates = memberships.filter(row => row.organization_id !== currentId && byId.has(row.organization_id) && currentPlayers.has(row.user_id));
-  for (let offset = 0; offset < candidates.length; offset += 10) {
-    const allowed = await Promise.all(candidates.slice(offset, offset + 10).map(async row => {
-      if (roster.some(entry => entry.player_id === row.user_id && entry.academy_id === row.organization_id && entry.status !== "active")) return null;
-      const authorized = await db.rpc("organization_player_authorized", { p_org: row.organization_id, p_player: row.user_id });
-      if (authorized.error) throw authorized.error;
-      return authorized.data === true ? row : null;
-    }));
-    for (const row of allowed) if (row) result.set(row.user_id, [...(result.get(row.user_id) ?? []), byId.get(row.organization_id)!]);
+  for (const row of candidates) {
+    // Pending onboarding is visible to managers; an ended or suspended affiliation stays excluded.
+    if (roster.some(entry => entry.player_id === row.user_id && entry.academy_id === row.organization_id
+      && !["active", "pending"].includes(entry.status))) continue;
+    result.set(row.user_id, [...(result.get(row.user_id) ?? []), byId.get(row.organization_id)!]);
   }
   for (const available of result.values()) {
     available.sort((a, b) => Number(b.id === currentId) - Number(a.id === currentId) || a.name.localeCompare(b.name));

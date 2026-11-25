@@ -11,7 +11,7 @@ function setup({ manager = true, player = true, authorized = true, signingFailur
   const tables: Record<string, Row[]> = {
     club_members: [
       { id: "manager", club_id: club, user_id: "manager", role: "manager", is_active: manager },
-      { id: "player", club_id: club, user_id: "player", role: "player", is_active: player },
+      { id: "player", club_id: club, user_id: "player", role: "player", is_active: player, player_consent_status: authorized ? "granted" : "pending" },
     ],
     profiles: [{ id: "coach", first_name: "Coach", last_name: "QA" }],
     club_events: [{ id: "event", club_id: club, title: "Training QA", starts_at: "2026-09-01T10:00:00Z" }],
@@ -21,13 +21,13 @@ function setup({ manager = true, player = true, authorized = true, signingFailur
       { id: "foreign-junior", organization_id: club, player_id: "another-player" },
     ].map(row => ({ ...row, uploaded_by: "coach", club_event_id: "event", coach_only: true, file_name: `${row.id}.pdf`, storage_bucket: "player-documents", storage_path: `${row.id}.pdf`, mime_type: "application/pdf", size_bytes: 2048, created_at: "2026-09-01T12:00:00Z" })),
   };
-  const fake = managerDatabase(tables);
+  const fake = managerDatabase(tables, { rpcResult: authorized });
   const signed: string[] = [];
   (fake.db as any).storage = { from: () => ({ createSignedUrls: async (paths: string[]) => {
     signed.push(...paths);
     return { error: signingFailure ? { message: "Storage unavailable" } : null, data: paths.map(path => ({ path, signedUrl: `https://storage.invalid/${path}?token=temporary` })) };
   } }) };
-  const route = loadManagerModule(routePath, { ...fake.mocks, "@/lib/server/personalHistoryAccess": { canReadPlayerHistory: async () => authorized } });
+  const route = loadManagerModule(routePath, fake.mocks);
   const get = async (token = "test") => {
     const req = new Request("https://test.invalid/documents", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
     const response = await route.GET(req, { params: Promise.resolve({ clubId: club, playerId: "player" }) });
@@ -51,13 +51,24 @@ test("the manager can open coach uploads, including staff-only activity document
   assert.equal(h.writes.length, 0);
 });
 
-test("unauthenticated, inactive, foreign or unauthorized access cannot sign a document URL", async () => {
-  for (const options of [{ token: "", status: 401 }, { manager: false, status: 403 }, { player: false, status: 404 }, { authorized: false, status: 403 }]) {
+test("unauthenticated users, inactive managers and unavailable players cannot sign document URLs", async () => {
+  for (const options of [{ token: "", status: 401 }, { manager: false, status: 403 }, { player: false, status: 404 }]) {
     const h = setup(options);
     assert.equal((await h.get("token" in options ? options.token : "test")).response.status, options.status);
     assert.equal(h.signed.length, 0);
     assert.equal(h.writes.length, 0);
   }
+});
+
+test("an active manager can open own-structure coach files while the player's consent is pending", async () => {
+  const h = setup({ authorized: false });
+  const { response, body } = await h.get();
+  assert.equal(response.status, 200);
+  assert.deepEqual(h.signed, ["own.pdf"]);
+  assert.equal(body.documents.length, 1);
+  assert.equal(body.documents[0].coach_only, true);
+  assert.equal(h.rpcs.length, 0);
+  assert.equal(h.writes.length, 0);
 });
 
 test("a signing failure is reported instead of returning incomplete download links", async () => {

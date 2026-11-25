@@ -1,5 +1,6 @@
 "use client";
 
+import ManagerPlayerDocuments from "./ManagerPlayerDocuments";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { managerJuniorFeedback, managerJuniorFormat, managerJuniorDate } from "@/lib/managerJuniorPresentation";
 import GolfRoundsWorkspace, { type GolfWorkspaceRound, type WorkspaceScorecardHole } from "@/components/golf/GolfRoundsWorkspace";
@@ -19,7 +20,7 @@ import styles from "@/components/manager/ManagerPlayerStatistics.module.css";
 import ManagerStatisticsTabs from "@/components/manager/ManagerStatisticsTabs";
 import { DifficultyIcon, MotivationIcon, SatisfactionIcon } from "@/components/evaluations/StandardEvaluationIcons";
 
-type Section = "overview" | "attendance" | "training" | "play" | "evaluations";
+type Section = "overview" | "attendance" | "training" | "play" | "evaluations" | "documents";
 type Preset = "30d" | "season" | "3m" | "6m" | "12m" | "custom";
 type Breakdown = { key: string; label?: string; minutes: number; sessions: number; percentage?: number };
 type CoachEvaluation = { event_id: string; engagement: number | null; attitude: number | null; performance: number | null; visible_to_player: boolean; player_note: string | null };
@@ -58,7 +59,7 @@ function rangeFor(preset: Preset, seasonRange?: { from: string; to: string }) {
 
 
 
-export default function ManagerPlayerStatistics({ clubId, playerId, seasonRange, initialScope = "current", initialIncludePersonal = true }: { clubId: string; playerId: string; seasonRange?: { from: string; to: string }; initialScope?: string; initialIncludePersonal?: boolean }) {
+export default function ManagerPlayerStatistics({ clubId, playerId, seasonRange, initialScope = "current", initialIncludePersonal = true, initialSection = "overview" }: { clubId: string; playerId: string; seasonRange?: { from: string; to: string }; initialScope?: string; initialIncludePersonal?: boolean; initialSection?: Section }) {
   const { t, locale } = useI18n();
   const { value } = managerJuniorStatisticsLabels(t, locale);
   const format = (key: string, values: Record<string, string | number>) => managerJuniorFormat(t, `stats.${key}`, values);
@@ -69,8 +70,9 @@ export default function ManagerPlayerStatistics({ clubId, playerId, seasonRange,
   { value: "training", label: t("manager.junior.report.training") },
   { value: "play", label: t("manager.junior.stats.play") },
   { value: "evaluations", label: t("manager.performance.evaluations") },
+  { value: "documents", label: t("manager.junior.documents.title") },
 ];
-  const [section, setSection] = useState<Section>("overview");
+  const [section, setSection] = useState<Section>(initialSection);
   const [preset, setPreset] = useState<Preset>("season");
   const initial = useMemo(() => rangeFor("season", seasonRange), [seasonRange]);
   const [from, setFrom] = useState(initial.from); const [to, setTo] = useState(initial.to);
@@ -88,10 +90,11 @@ export default function ManagerPlayerStatistics({ clubId, playerId, seasonRange,
   const error = currentResult ? result.error : "";
   const loading = Boolean(from && to && from <= to && (!currentResult || result.pending));
 
+  const showingDocuments = section === "documents";
   const validRange = Boolean(from && to && from <= to);
   function selectPreset(next: Preset) { setPreset(next); if (next !== "custom") { const range = rangeFor(next, seasonRange); setFrom(range.from); setTo(range.to); } }
   useEffect(() => {
-    if (!clubId || !playerId || !from || !to || from > to) return;
+    if (showingDocuments || !clubId || !playerId || !from || !to || from > to) return;
     const controller = new AbortController();
     void (async () => {
       setResult({ key: requestKey, data: null, pending: true, error: "" });
@@ -107,11 +110,12 @@ export default function ManagerPlayerStatistics({ clubId, playerId, seasonRange,
       } catch (cause) { if (!controller.signal.aborted) setResult({ key: requestKey, data: null, pending: false, error: cause instanceof Error ? cause.message : "Chargement impossible." }); }
     })();
     return () => controller.abort();
-  }, [benchmark, clubId, comparison, from, playerId, to, scope, includePersonal, isCurrentScope, requestKey]);
+  }, [benchmark, clubId, comparison, from, playerId, to, scope, includePersonal, isCurrentScope, requestKey, showingDocuments]);
 
   return <div className={styles.stack}>
     <section className={campStyles.panel}>
-      <div className={campStyles.panelHeader}><div><h2>{t("manager.administration.statistics")}</h2><p>{t("manager.junior.stats.lead")}</p></div>{stats?.generatedAt ? <span className={styles.updated}>{format("updated", { date: managerJuniorDate(t, locale, stats.generatedAt) })}</span> : null}</div>
+      <div className={campStyles.panelHeader}><div><h2>{t("manager.junior.golf.title")}</h2><p>{t(showingDocuments ? "manager.junior.documents.help" : "manager.junior.stats.lead")}</p></div>{!showingDocuments && stats?.generatedAt ? <span className={styles.updated}>{format("updated", { date: managerJuniorDate(t, locale, stats.generatedAt) })}</span> : null}</div>
+      {!showingDocuments ? <>
       <div className={styles.filters}>
         <label><span>{t("manager.junior.stats.structure")}</span><select value={scope === "current" ? clubId : scope} onChange={(event) => { setScopeChoice({ clubId, playerId, selected: event.target.value }); setBenchmark("none"); }}>
           {organizations.length ? organizations.map(org => <option key={org.id} value={org.id}>{org.name} · {t(`organization.${org.org_type}`)}</option>) : <option value={clubId}>{t("manager.junior.stats.currentStructure")}</option>}
@@ -125,8 +129,10 @@ export default function ManagerPlayerStatistics({ clubId, playerId, seasonRange,
       <label className={styles.personalChoice}><input type="checkbox" checked={includePersonal} onChange={(event) => setIncludePersonal(event.target.checked)} /><span>{t("manager.junior.stats.includePersonal")}</span></label>
       <p className={styles.caption}>{t("manager.junior.stats.scopeHelp")}{stats?.scope?.objectiveMode === "maximum" ? ` ${t("manager.junior.stats.objectiveMaximum")}` : stats?.scope?.objectiveOrganization ? ` ${format("objectiveStructure", { name: stats.scope.objectiveOrganization.name })}` : ""}</p>
       <div className={styles.period}><CalendarDays size={14} />{format("period", { from: from ? managerJuniorDate(t, locale, from, false) : "—", to: to ? managerJuniorDate(t, locale, to, false) : "—" })}{!validRange ? <b role="alert">{t("manager.junior.stats.invalidPeriod")}</b> : null}</div>
+      </> : null}
     </section>
     <ManagerStatisticsTabs<Section> items={sectionTabs} value={section} onChange={setSection} ariaLabel={t("manager.junior.stats.sections")} />
+    {showingDocuments ? <ManagerPlayerDocuments key={`${clubId}:${playerId}`} clubId={clubId} playerId={playerId} /> : <>
     {error ? <div className={styles.error} role="alert"><AlertTriangle size={17} />{managerJuniorFeedback(t, error)}</div> : null}
     {loading ? <section className={campStyles.panel}><ListLoadingBlock label={t("manager.junior.stats.loading")} /></section> : stats && validRange ? <>
       {benchmark !== "none" && !stats.benchmark?.enabled ? <div className={styles.info}><AlertTriangle size={16} />{stats.benchmark?.cohortSize != null && stats.benchmark.cohortSize < 5 ? format("smallCohort", { count: value(stats.benchmark.cohortSize) }) : managerJuniorFeedback(t, stats.benchmark?.reason)}</div> : null}
@@ -138,6 +144,7 @@ export default function ManagerPlayerStatistics({ clubId, playerId, seasonRange,
       {section === "evaluations" ? <Evaluations stats={stats} /> : null}
       <Quality quality={stats.quality} />
     </> : null}
+    </>}
   </div>;
 }
 

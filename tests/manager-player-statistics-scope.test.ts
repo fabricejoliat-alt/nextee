@@ -151,13 +151,14 @@ test("manager scorecards paginate all holes instead of truncating at the databas
   assert.equal(body.play.completedRounds, 70);
 });
 
-test("inactive memberships, revoked authorization and suspended academy rosters are excluded before reading sports data", async () => {
-  for (const kind of ["membership", "authorization", "roster", "organization"]) {
+test("inactive memberships and suspended or ended academy rosters are excluded before reading sports data", async () => {
+  for (const kind of ["membership", "roster", "ended", "organization"]) {
     const tables = fixture();
     if (kind === "membership") tables.organization_members[1].is_active = false;
     if (kind === "roster") tables.academy_roster_entries[0].status = "suspended";
+    if (kind === "ended") tables.academy_roster_entries[0].status = "ended";
     if (kind === "organization") tables.organizations[1].is_active = false;
-    const h = setup(tables, kind === "authorization" ? [academy] : []);
+    const h = setup(tables);
     const { response, body } = await h.get(`scope=${academy}`);
     assert.equal(response.status, 403, kind);
     assert.equal(body.error, "manager.junior.stats.scopeForbidden");
@@ -187,10 +188,32 @@ test("a manager can read every retained club player's statistics without Player 
     const { response, body } = await h.get("scope=current");
     assert.equal(response.status, 200, kind);
     assert.equal(body.overview.training.minutes, 90, kind);
-    assert.deepEqual(body.scope.organizations.map((row: Row) => row.id), [club]);
+    assert.deepEqual(body.scope.organizations.map((row: Row) => row.id), [club, academy]);
     assert.ok(!h.rpcs.some(row => row.name === "organization_player_authorized" && row.args.p_org === club));
-    assert.equal((await h.get(`scope=${academy}`)).response.status, 403);
+    assert.equal((await h.get(`scope=${academy}`)).response.status, 200);
   }
+});
+
+test("Evan's recorded academy remains visible for manager statistics while consent and roster onboarding are pending", async () => {
+  const tables = fixture(); addVolumeReferences(tables);
+  tables.profiles[0].first_name = "Evan"; tables.profiles[0].last_name = "Bidal";
+  tables.organizations[0].name = "Sion"; tables.organizations[1].name = "Cadre valaisan";
+  tables.academy_roster_entries[0].status = "pending";
+  for (const member of tables.organization_members) member.player_consent_status = "pending";
+  const h = setup(tables, [club, academy]);
+  const own = await h.get("include_personal=false");
+  assert.equal(own.response.status, 200);
+  assert.deepEqual(own.body.scope.organizations.map((org: Row) => org.name), ["Sion", "Cadre valaisan"]);
+  const academyStats = await h.get(`scope=${academy}&include_personal=false`);
+  assert.equal(academyStats.response.status, 200);
+  assert.equal(academyStats.body.overview.training.minutes, 90);
+  const combined = await h.get("scope=all&include_personal=false");
+  assert.equal(combined.response.status, 200);
+  assert.equal(combined.body.overview.training.minutes, 150);
+  assert.equal(combined.body.overview.training.objectiveMinutes, 3000);
+  assert.doesNotMatch(JSON.stringify(academyStats.body), /PRIVATE|foreign-event/);
+  assert.equal(h.rpcs.length, 0);
+  assert.equal(h.writes.length, 0);
 });
 
 test("retained inactive players remain in the manager team statistics and the inactive filter", async () => {
