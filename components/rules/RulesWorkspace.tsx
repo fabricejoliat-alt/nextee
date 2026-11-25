@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import { useI18n } from "@/components/i18n/AppI18nProvider";
 import { rulesPhase } from "@/lib/rulesLearning";
+import { splitRuleActionText } from "@/lib/rulesCardContent";
 import styles from "./RulesWorkspace.module.css";
 import PlayerRulesWorkspace, { PlayerRulesLoading } from "./PlayerRulesWorkspace";
 import CoachRulesWorkspace, { CoachRulesLoading } from "./CoachRulesWorkspace";
@@ -27,6 +28,7 @@ export default function RulesWorkspace({ scope }: { scope: Scope }) {
   const requestedSeriesId = searchParams.get("series_id") ?? "";
   const { locale, t } = useI18n(); const tr=useCallback((fr:string,en:string)=>pickLocaleText(locale,fr,en),[locale]);
   const [data,setData]=useState<Payload|null>(null); const [error,setError]=useState(""); const [selected,setSelected]=useState<Card|null>(null);
+  const selectedContent = splitRuleActionText(selected?.rules_card_versions.action_text ?? "");
   const requestId = useRef(0);
   const load = useCallback(async () => {
     const request = ++requestId.current;
@@ -67,6 +69,6 @@ export default function RulesWorkspace({ scope }: { scope: Scope }) {
     </section>
     {data.cards.length?<section><div className={styles.sectionTitle}><div><span>{tr("Série actuelle","Current series")}</span><h2>{tr("Les six règles à découvrir","Six rules to discover")}</h2></div></div><div className={styles.grid}>{data.cards.map(card=><button key={card.card_version_id} onClick={()=>setSelected(card)} className={styles.card}><span className={styles.cardNumber}>{card.position}</span><div><small>{read.has(card.card_version_id)?tr("Consultée","Viewed"):tr("À découvrir","Discover")}</small><h3>{card.rules_card_versions.title}</h3><p>{card.rules_card_versions.situation}</p><em>{card.rules_card_versions.official_reference}</em></div><ChevronRight size={18}/></button>)}</div></section>:<section className={styles.state}><CircleAlert/><h2>{tr("Contenu en validation","Content under review")}</h2><p>{tr("Cette série ne peut pas être publiée tant que ses six fiches et leurs questions ne sont pas approuvées.","This series cannot be published until its six cards and questions are approved.")}</p></section>}
     <section><div className={styles.sectionTitle}><div><span>{tr("Saison","Season")}</span><h2>{tr("Calendrier des 12 séries","12-series calendar")}</h2></div></div><div className={styles.timeline}>{data.series.map(s=><article key={s.id}><b>{s.position}</b><div><strong>{s.title_i18n[locale]??s.title_i18n.fr}</strong><span>{new Intl.DateTimeFormat(locale==="fr"?"fr-CH":"en-GB",{month:"long",timeZone:"Europe/Zurich"}).format(new Date(s.discovery_starts_at))}</span></div></article>)}</div></section>
-    {selected?<div className={styles.backdrop} role="presentation" onMouseDown={()=>setSelected(null)}><article className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="rule-title" onMouseDown={e=>e.stopPropagation()}><button className={styles.close} onClick={()=>setSelected(null)} aria-label={tr("Fermer","Close")}>×</button><small>{selected.rules_card_versions.official_reference}</small><h2 id="rule-title">{selected.rules_card_versions.title}</h2><h3>{tr("Situation","Situation")}</h3><p>{selected.rules_card_versions.situation}</p><h3>{tr("Ce que je dois faire","What I should do")}</h3><p>{selected.rules_card_versions.action_text}</p><h3>{tr("Erreur fréquente","Common mistake")}</h3><p>{selected.rules_card_versions.common_mistake}</p><h3>{tr("Conseil coach","Coach tip")}</h3><p>{selected.rules_card_versions.coach_tip}</p></article></div>:null}
+    {selected?<div className={styles.backdrop} role="presentation" onMouseDown={()=>setSelected(null)}><article className={styles.modal} role="dialog" aria-modal="true" aria-labelledby="rule-title" onMouseDown={e=>e.stopPropagation()}><button className={styles.close} onClick={()=>setSelected(null)} aria-label={tr("Fermer","Close")}>×</button><small>{selected.rules_card_versions.official_reference}</small><h2 id="rule-title">{selected.rules_card_versions.title}</h2><h3>{tr("Situation","Situation")}</h3><p>{selected.rules_card_versions.situation}</p><h3>{tr("Ce que je dois faire","What I should do")}</h3><p>{selectedContent.action}</p>{selectedContent.penalties && <><h3>{pickLocaleText(locale, "Pénalités encourues", "Penalties incurred", "Anfallende Strafen", "Penalità previste")}</h3><p>{selectedContent.penalties}</p></>}<h3>{tr("Erreur fréquente","Common mistake")}</h3><p>{selected.rules_card_versions.common_mistake}</p><h3>{tr("Conseil coach","Coach tip")}</h3><p>{selected.rules_card_versions.coach_tip}</p></article></div>:null}
   </main>;
 }

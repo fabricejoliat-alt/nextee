@@ -9,6 +9,7 @@ import PlayerBreadcrumb from "@/components/player/PlayerBreadcrumb";
 import AccessibleDialog from "@/components/ui/AccessibleDialog";
 import { pickLocaleText } from "@/lib/i18n/pickLocaleText";
 import type { Card, RulesLeaderboard, RulesQuizAttempt, Series } from "./RulesWorkspace";
+import { splitRuleActionText } from "@/lib/rulesCardContent";
 import styles from "./PlayerRulesWorkspace.module.css";
 import RulesVisual from "./RulesVisual";
 import visualStyles from "./RulesVisual.module.css";
@@ -47,6 +48,7 @@ export default function PlayerRulesWorkspace({ series, current, cards, read, pha
   const { locale } = useI18n();
   const tr = (fr: string, en: string) => pickLocaleText(locale, fr, en);
   const [selected, setSelected] = useState<Card | null>(null);
+  const selectedContent = splitRuleActionText(selected?.rules_card_versions.action_text ?? "");
   const listPosition = useRef({ windowY: 0, scrollAreaY: 0 });
   const [nowMs, setNowMs] = useState(() => Date.now());
   const openCard = useCallback((card: Card) => {
@@ -143,7 +145,7 @@ export default function PlayerRulesWorkspace({ series, current, cards, read, pha
 
     {selected && <AccessibleDialog className={styles.dialog} labelledBy="player-rule-title" onClose={closeCard}><button type="button" className={styles.mobileBack} onClick={closeCard}><ArrowLeft size={19} />{tr("Retour aux fiches", "Back to cards")}</button><button type="button" className={styles.close} onClick={closeCard} aria-label={tr("Fermer", "Close")}><X size={20} /></button>
       {selected.rules_card_versions.image_url && <div className={styles.dialogImage}><Image src={selected.rules_card_versions.image_url} alt={selected.rules_card_versions.image_alt || selected.rules_card_versions.title} fill sizes="(max-width: 640px) 100vw, 640px" unoptimized /></div>}
-      <div className={styles.dialogBody}><span className={styles.dialogKicker}>{tr(`Fiche ${selected.position}`, `Card ${selected.position}`)} · {selected.rules_card_versions.official_reference}</span><h2 id="player-rule-title">{selected.rules_card_versions.title}</h2><div className={styles.dialogSection}><small>{tr("La situation", "The situation")}</small><p>{selected.rules_card_versions.situation}</p></div><div className={styles.dialogSection}><small>{tr("Comprendre la règle", "Understand the rule")}</small><p>{selected.rules_card_versions.simple_explanation}</p></div><div className={styles.takeaway}><Lightbulb size={20} /><div><strong>{tr("Le bon réflexe", "What to do")}</strong><p>{selected.rules_card_versions.action_text}</p></div></div><div className={styles.dialogSection}><small>{tr("À éviter", "Avoid")}</small><p>{selected.rules_card_versions.common_mistake}</p></div><button className={styles.done} type="button" onClick={closeCard}><ArrowLeft size={16} />{tr("Retour aux fiches", "Back to cards")}</button></div>
+      <div className={styles.dialogBody}><span className={styles.dialogKicker}>{tr(`Fiche ${selected.position}`, `Card ${selected.position}`)} · {selected.rules_card_versions.official_reference}</span><h2 id="player-rule-title">{selected.rules_card_versions.title}</h2><div className={styles.dialogSection}><small>{tr("La situation", "The situation")}</small><p>{selected.rules_card_versions.situation}</p></div><div className={styles.dialogSection}><small>{tr("Comprendre la règle", "Understand the rule")}</small><p>{selected.rules_card_versions.simple_explanation}</p></div><div className={styles.takeaway}><Lightbulb size={20} /><div><strong>{tr("Le bon réflexe", "What to do")}</strong><p>{selectedContent.action}</p></div></div>{selectedContent.penalties && <div className={styles.dialogSection}><small>{pickLocaleText(locale, "Pénalités encourues", "Penalties incurred", "Anfallende Strafen", "Penalità previste")}</small><p>{selectedContent.penalties}</p></div>}<div className={styles.dialogSection}><small>{tr("À éviter", "Avoid")}</small><p>{selected.rules_card_versions.common_mistake}</p></div><button className={styles.done} type="button" onClick={closeCard}><ArrowLeft size={16} />{tr("Retour aux fiches", "Back to cards")}</button></div>
     </AccessibleDialog>}
   </main>;
 }
