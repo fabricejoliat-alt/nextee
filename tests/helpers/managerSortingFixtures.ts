@@ -16,8 +16,8 @@ export const coachSortingData = {
   filters: { groups: [] }, overview: { activeCoaches: 3, activities: 12, activityHours: 30, coachHours: 40, medianPlayers: 10, coverageRate: 100, evaluationCompletionRate: 80, pendingAttendance: 0 },
   distribution: { medianCoachHours: 10, monthly: [] }, evaluations: { expected: 25, completed: 22, overdue: 3, completionRate: 88 }, coverage: { groupsWithoutHead: [], singleCoachGroups: [], futureWithoutCoach: [] }, attention: [],
   rows: [
-    { ...coach, id: "zoe", memberId: "zoe-member", name: "Zoé", groupCount: 2, activities: 2, coachHours: 2, uniquePlayers: 20, medianGroupSize: null, evaluationsCompleted: 2, evaluationsExpected: 5, evaluationsOverdue: 3, lastActivity: "2026-09-30T10:00:00Z" },
-    { ...coach, id: "alice", memberId: "alice-member", name: "Alice", groupCount: 10, activities: 10, coachHours: 10, uniquePlayers: 2, medianGroupSize: 10, evaluationsCompleted: 20, evaluationsExpected: 20, evaluationsOverdue: 0, lastActivity: "2026-10-01T10:00:00Z" },
-    { ...coach, id: "bea", memberId: "bea-member", name: "Béa", groupCount: 0, activities: 0, coachHours: 0, uniquePlayers: 0, medianGroupSize: 0, evaluationsCompleted: 0, evaluationsExpected: 0, evaluationsOverdue: 0, lastActivity: null },
+    { ...coach, id: "zoe", memberId: "zoe-member", name: "Zoé", groupCount: 2, activities: 2, coachHours: 2, uniquePlayers: 20, medianGroupSize: null, evaluationsRecorded: 3, evaluationsCompleted: 2, evaluationsExpected: 5, evaluationsOverdue: 3, lastActivity: "2026-09-30T10:00:00Z" },
+    { ...coach, id: "alice", memberId: "alice-member", name: "Alice", groupCount: 10, activities: 10, coachHours: 10, uniquePlayers: 2, medianGroupSize: 10, evaluationsRecorded: 20, evaluationsCompleted: 20, evaluationsExpected: 20, evaluationsOverdue: 0, lastActivity: "2026-10-01T10:00:00Z" },
+    { ...coach, id: "bea", memberId: "bea-member", name: "Béa", groupCount: 0, activities: 0, coachHours: 0, uniquePlayers: 0, medianGroupSize: 0, evaluationsRecorded: 0, evaluationsCompleted: 0, evaluationsExpected: 0, evaluationsOverdue: 0, lastActivity: null },
   ],
 };

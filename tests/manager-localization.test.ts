@@ -104,7 +104,7 @@ for (const [name,data,tabValues] of [["Junior",juniorData,["overview","attendanc
         if(tab === "overview") {
           assert.match(text,/Exemple/);assert.match(text,name === "Junior" ? /Groupe Élite/ : /Responsable école/);
           const cells=elements(expand(tree)).filter((node)=>node.type === "td" && node.props["data-label"]);
-          assert.equal(cells.length,name === "Junior" ? 7 : 9);
+          assert.equal(cells.length,name === "Junior" ? 7 : 10);
           assert.ok(cells.some((node)=>node.props["data-label"] === messages[locale][name === "Junior" ? "manager.performance.progress" : "manager.performance.lastActivity"]));
         }
       }

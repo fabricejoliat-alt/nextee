@@ -163,11 +163,11 @@ test("coach statistics localize numbers, months, roles and overdue reasons while
 
 test("coach API provides the overdue threshold and correct activity destination without writes",async()=>{
   const tables=managerFixture();tables.coach_groups[0]={...tables.coach_groups[0],name:"Groupe maison",is_active:true,head_coach_user_id:"target"};
-  tables.club_events=[{id:"event",club_id:"A",group_id:"group-A",title:"Activité maison",starts_at:"2020-09-01T08:00:00Z",ends_at:"2020-09-01T09:00:00Z",event_type:"training",requires_evaluation:true}];
+  tables.club_events=[{id:"event",club_id:"A",group_id:"group-A",title:"Activité maison",status:"scheduled",starts_at:"2020-09-01T08:00:00Z",ends_at:"2020-09-01T09:00:00Z",event_type:"training",requires_evaluation:true}];
   tables.club_event_coaches=[{event_id:"event",coach_id:"target"}];tables.club_event_attendees=[{event_id:"event",player_id:"player",status:"present"}];
   const fixture=managerDatabase(tables);
   const mockedLib={performanceContext:async()=>({ok:true,db:fixture.db}),resolveRange:async()=>({range:{from:"2020-09-01",to:"2020-09-30"},previous:{from:"2020-08-01",to:"2020-08-31"},season:{id:"season-A"},seasons:[]}),dateKey:(value:string)=>value.slice(0,10),startIso:(value:string)=>`${value}T00:00:00Z`,queryRows:async(query:any)=>(await query).data};
-  const route=loadManagerModule("app/api/manager/clubs/[clubId]/performance/coaches/route.ts",{...fixture.mocks,"../_lib":mockedLib,"@/lib/server/coachEvaluation":{loadCoachEvaluationWorkload:async()=>({attendees:[{event_id:"event",player_id:"player",coach_recorded_status:null}],criteria:[],responses:[]})}});
+  const route=loadManagerModule("app/api/manager/clubs/[clubId]/performance/coaches/route.ts",{...fixture.mocks,"../_lib":mockedLib,"@/lib/server/coachEvaluation":{loadCoachEvaluationState:async()=>({attendees:[{event_id:"event",player_id:"player",coach_recorded_status:null}],feedback:[],criteria:[],responses:[]})}});
   const response=await route.GET({nextUrl:new URL("http://local?coachId=target")},{params:Promise.resolve({clubId:"A"})});assert.equal(response.status,200);const json=await response.json();assert.deepEqual(json.coach.evaluationTodo,[{eventId:"event",playerId:"player",groupId:"group-A",eventTitle:"Activité maison",overdueAfterDays:7,reason:"Évaluation en retard de plus de 7 jours"}]);assert.equal(fixture.writes.length,0);
 });
 

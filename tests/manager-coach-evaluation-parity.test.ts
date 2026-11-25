@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { loadManagerModule, managerDatabase, type Row } from "./helpers/managerRouteHarness.ts";
 
 const club = "11111111-1111-4111-8111-111111111111";
-function fixture({ players = 10, events = 4, maxRows, incomplete = false }: { players?: number; events?: number; maxRows?: number; incomplete?: boolean } = {}) {
+function fixture({ players = 10, events = 4, maxRows, incomplete = false, authorized = true }: { players?: number; events?: number; maxRows?: number; incomplete?: boolean; authorized?: boolean } = {}) {
   const tables: Record<string, Row[]> = {
     club_members: [{ id: "manager", club_id: club, user_id: "manager", role: "manager", is_active: true }, ...["lead", "assistant"].map(user_id => ({ id: user_id, club_id: club, user_id, role: "coach", is_active: true }))],
     profiles: [{ id: "lead", first_name: "Coach", last_name: "Responsable QA" }, { id: "assistant", first_name: "Coach", last_name: "Assistant QA" }],
@@ -15,7 +15,7 @@ function fixture({ players = 10, events = 4, maxRows, incomplete = false }: { pl
   tables.club_event_coaches = tables.club_events.flatMap(event => ["lead", "assistant"].map(coach_id => ({ event_id: event.id, coach_id })));
   tables.club_event_attendees = tables.club_events.flatMap(event => Array.from({ length: players }, (_, i) => ({ event_id: event.id, player_id: `player-${i}`, status: "present", coach_recorded_status: "present" })));
   tables.club_event_coach_feedback = tables.club_event_attendees.map(row => ({ ...row, coach_id: row.event_id === "event-0" ? "lead" : "assistant", engagement: 4, attitude: 5, performance: incomplete && row.event_id === "event-0" && row.player_id === "player-0" ? null : 6, visible_to_player: true }));
-  const h = managerDatabase(tables, { rpcResult: true, maxRows });
+  const h = managerDatabase(tables, { rpcResult: authorized, maxRows });
   const route = loadManagerModule("app/api/manager/clubs/[clubId]/performance/coaches/route.ts", h.mocks);
   const loader = loadManagerModule("lib/server/coachEvaluation.ts", h.mocks);
   async function get() {
@@ -76,4 +76,52 @@ test("activities that cannot be evaluated in Coach do not create manager evaluat
   assert.equal(lead.evaluationsCompleted, 10);
   assert.equal(lead.evaluationsOverdue, 0);
   assert.equal(h.writes.length, 0);
+});
+
+
+test("Manager retains history and all expected participants while Coach excludes unauthorized or suspended juniors", async () => {
+  const h = fixture({ authorized: false, incomplete: true });
+  h.tables.academy_roster_entries = [{ academy_id: club, player_id: "player-0", status: "suspended" }];
+  const coachState = await h.state();
+  assert.equal(coachState.attendees.length, 0);
+  const checksBefore = h.rpcs.length;
+  h.tables.club_members.push({ id: "inactive-junior", club_id: club, user_id: "player-0", role: "player", is_active: false, player_consent_status: "refused" });
+  const result = await h.get(); const lead = result.rows.find((row: Row) => row.id === "lead");
+  assert.equal(h.rpcs.length, checksBefore, "Manager does not consult the player authorization gate");
+  assert.equal(lead.evaluationsRecorded, 40);
+  assert.equal(lead.evaluationsExpected, 40);
+  assert.equal(lead.evaluationsCompleted, 39);
+  assert.equal(lead.evaluationsRemaining, 1);
+  assert.equal(lead.evaluationsOverdue, 1);
+  assert.equal(result.evaluations.recorded, 40);
+  assert.equal(result.evaluations.remaining, 1);
+  assert.equal(result.coach, null);
+  assert.equal(h.writes.length, 0);
+});
+
+test("saved partial or legacy evaluations survive missing attendance confirmation, without being called complete", async () => {
+  const h = fixture({ players: 2, events: 1, authorized: false });
+  h.tables.club_event_attendees.forEach(row => { row.coach_recorded_status = null; });
+  h.tables.club_event_coach_feedback.push({ ...h.tables.club_event_coach_feedback[0], coach_id: "another-coach" });
+  h.tables.club_event_coach_feedback = h.tables.club_event_coach_feedback.filter(row => row.player_id === "player-0");
+  h.tables.club_event_evaluation_responses = [{ event_id: "event-0", player_id: "player-1", event_criterion_id: "criterion", respondent_role: "coach", value_json: "partial" }];
+  const result = await h.get(); const lead = result.rows.find((row: Row) => row.id === "lead");
+  assert.equal(lead.evaluationsRecorded, 2, "One saved evaluation per player/activity, including criterion-only entries");
+  assert.equal(lead.evaluationsCompleted, 0);
+  assert.equal(lead.evaluationsExpected, 2);
+  assert.equal(lead.evaluationsRemaining, 2);
+});
+
+test("attendance alone never creates a saved evaluation, and Manager authorization remains required", async () => {
+  const h = fixture({ players: 1, events: 1 });
+  h.tables.club_event_coach_feedback = [];
+  h.tables.club_event_attendees[0].coach_recorded_status = "absent";
+  const result = await h.get(); const lead = result.rows.find((row: Row) => row.id === "lead");
+  assert.equal(lead.evaluationsRecorded, 0);
+  assert.equal(lead.evaluationsCompleted, 1);
+  h.tables.club_members[0].is_active = false;
+  const route = loadManagerModule("app/api/manager/clubs/[clubId]/performance/coaches/route.ts", h.mocks);
+  const url = new URL("https://test.invalid");
+  const response = await route.GET(Object.assign(new Request(url, { headers: { Authorization: "Bearer test" } }), { nextUrl: url }), { params: Promise.resolve({ clubId: club }) });
+  assert.equal(response.status, 403);
 });
