@@ -151,11 +151,10 @@ test("manager scorecards paginate all holes instead of truncating at the databas
   assert.equal(body.play.completedRounds, 70);
 });
 
-test("inactive memberships and suspended or ended academy rosters are excluded before reading sports data", async () => {
-  for (const kind of ["membership", "roster", "ended", "organization"]) {
+test("inactive memberships and ended academy rosters are excluded before reading sports data", async () => {
+  for (const kind of ["membership", "ended", "organization"]) {
     const tables = fixture();
     if (kind === "membership") tables.organization_members[1].is_active = false;
-    if (kind === "roster") tables.academy_roster_entries[0].status = "suspended";
     if (kind === "ended") tables.academy_roster_entries[0].status = "ended";
     if (kind === "organization") tables.organizations[1].is_active = false;
     const h = setup(tables);
@@ -213,6 +212,19 @@ test("Evan's recorded academy remains visible for manager statistics while conse
   assert.equal(combined.body.overview.training.objectiveMinutes, 3000);
   assert.doesNotMatch(JSON.stringify(academyStats.body), /PRIVATE|foreign-event/);
   assert.equal(h.rpcs.length, 0);
+  assert.equal(h.writes.length, 0);
+});
+
+test("legal updates suspending an academy roster do not hide an active affiliation's manager statistics", async () => {
+  const tables = fixture(); tables.academy_roster_entries[0].status = "suspended";
+  const h = setup(tables, [club, academy]);
+  const academyStats = await h.get(`scope=${academy}&include_personal=false`);
+  assert.equal(academyStats.response.status, 200);
+  assert.equal(academyStats.body.overview.training.minutes, 90);
+  const combined = await h.get("scope=all&include_personal=false");
+  assert.equal(combined.response.status, 200);
+  assert.equal(combined.body.overview.training.minutes, 150);
+  assert.doesNotMatch(JSON.stringify(academyStats.body), /PRIVATE|foreign-event/);
   assert.equal(h.writes.length, 0);
 });
 

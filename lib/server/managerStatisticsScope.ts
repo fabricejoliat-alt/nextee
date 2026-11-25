@@ -40,9 +40,9 @@ export async function managerStatisticsOrganizationMap(db: SupabaseClient, playe
   for (const playerId of currentPlayers) result.set(playerId, [currentOrganization]);
   const candidates = memberships.filter(row => row.organization_id !== currentId && byId.has(row.organization_id) && currentPlayers.has(row.user_id));
   for (const row of candidates) {
-    // Pending onboarding is visible to managers; an ended or suspended affiliation stays excluded.
+    // Legal updates can suspend the roster without ending membership. Managers retain statistics-only visibility.
     if (roster.some(entry => entry.player_id === row.user_id && entry.academy_id === row.organization_id
-      && !["active", "pending"].includes(entry.status))) continue;
+      && entry.status === "ended")) continue;
     result.set(row.user_id, [...(result.get(row.user_id) ?? []), byId.get(row.organization_id)!]);
   }
   for (const available of result.values()) {
