@@ -19,3 +19,21 @@ export function managerEvaluationProgress(
   }
   return { completed, inProgress };
 }
+
+
+/** Manager workload unit: one responsible activity, regardless of participant count. */
+export function managerActivityEvaluationProgress(
+  eventIds: string[], attendees: CoachTrainingAttendeeState[], feedback: CoachTrainingFeedbackState[],
+  criteria: CoachEvaluationCriterionState[], responses: CoachEvaluationResponseState[]
+) {
+  const expected = new Set(eventIds);
+  const players = managerEvaluationProgress(attendees, feedback, criteria, responses);
+  const recorded = new Set([...feedback, ...responses].filter(row => expected.has(row.event_id)).map(row => row.event_id));
+  const completed = new Set<string>(), inProgress = new Set<string>();
+  for (const eventId of expected) {
+    const participants = attendees.filter(row => row.event_id === eventId);
+    if (participants.length > 0 && participants.every(row => players.completed.has(`${eventId}|${row.player_id}`))) completed.add(eventId);
+    else if (recorded.has(eventId) || participants.some(row => players.completed.has(`${eventId}|${row.player_id}`) || players.inProgress.has(`${eventId}|${row.player_id}`))) inProgress.add(eventId);
+  }
+  return { expected, recorded, completed, inProgress, completedPairs: players.completed };
+}

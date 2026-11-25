@@ -28,15 +28,15 @@ function fixture({ players = 10, events = 4, maxRows, incomplete = false, author
   return { ...h, tables, get, state: () => loader.loadCoachEvaluationWorkload(h.db, tables.club_events.filter(event => event.event_type === "training" && event.status === "scheduled" && event.requires_evaluation !== false).map(event => event.id)) };
 }
 
-test("a 10/40 author-only count becomes 40/40 when all activity/player evaluations are complete, matching Coach", async () => {
+test("four fully evaluated activities count as 4/4, regardless of participant count or feedback author", async () => {
   const h = fixture();
   const state = await h.state();
   const { managerEvaluationProgress } = loadManagerModule("lib/managerEvaluationProgress.ts", {});
   const authorOnly = managerEvaluationProgress(state.attendees, state.feedback.filter((row: Row) => row.coach_id === "lead"), state.criteria, state.responses);
   assert.equal(authorOnly.completed.size, 10, "Reproduce the old manager numerator on fictitious records");
   const result = await h.get(); const lead = result.rows.find((row: Row) => row.id === "lead");
-  assert.equal(lead.evaluationsExpected, 40);
-  assert.equal(lead.evaluationsCompleted, 40);
+  assert.equal(lead.evaluationsExpected, 4);
+  assert.equal(lead.evaluationsCompleted, 4);
   assert.equal(lead.evaluationsOverdue, 0);
   assert.equal(lead.evaluationsInProgress, 0);
   assert.equal(lead.evaluationTodo.length, 0);
@@ -49,8 +49,8 @@ test("a 10/40 author-only count becomes 40/40 when all activity/player evaluatio
 test("the manager uses all paginated Coach evaluations beyond the raw query row limit", async () => {
   const h = fixture({ players: 1100, events: 1, maxRows: 1000 });
   const result = await h.get(); const lead = result.rows.find((row: Row) => row.id === "lead");
-  assert.equal(lead.evaluationsExpected, 1100);
-  assert.equal(lead.evaluationsCompleted, 1100);
+  assert.equal(lead.evaluationsExpected, 1);
+  assert.equal(lead.evaluationsCompleted, 1);
   assert.equal(lead.evaluationsOverdue, 0);
   assert.equal(h.writes.length, 0);
 });
@@ -58,12 +58,12 @@ test("the manager uses all paginated Coach evaluations beyond the raw query row 
 test("genuinely incomplete evaluations remain overdue in both manager and Coach workloads", async () => {
   const h = fixture({ incomplete: true }); const state = await h.state();
   const result = await h.get(); const lead = result.rows.find((row: Row) => row.id === "lead");
-  assert.equal(lead.evaluationsExpected, 40);
-  assert.equal(lead.evaluationsCompleted, 39);
+  assert.equal(lead.evaluationsExpected, 4);
+  assert.equal(lead.evaluationsCompleted, 3);
   assert.equal(lead.evaluationsOverdue, 1);
   assert.equal(lead.evaluationsInProgress, 1);
   assert.equal(state.progressByEvent["event-0"].remainingPlayers, 1);
-  assert.deepEqual(lead.evaluationTodo.map((row: Row) => [row.eventId, row.playerId]), [["event-0", "player-0"]]);
+  assert.deepEqual(lead.evaluationTodo.map((row: Row) => row.eventId), ["event-0"]);
 });
 
 test("activities that cannot be evaluated in Coach do not create manager evaluation debts", async () => {
@@ -72,8 +72,8 @@ test("activities that cannot be evaluated in Coach do not create manager evaluat
   h.tables.club_events[2].requires_evaluation = false;
   h.tables.club_events[3].status = "cancelled";
   const result = await h.get(); const lead = result.rows.find((row: Row) => row.id === "lead");
-  assert.equal(lead.evaluationsExpected, 10);
-  assert.equal(lead.evaluationsCompleted, 10);
+  assert.equal(lead.evaluationsExpected, 1);
+  assert.equal(lead.evaluationsCompleted, 1);
   assert.equal(lead.evaluationsOverdue, 0);
   assert.equal(h.writes.length, 0);
 });
@@ -88,12 +88,12 @@ test("Manager retains history and all expected participants while Coach excludes
   h.tables.club_members.push({ id: "inactive-junior", club_id: club, user_id: "player-0", role: "player", is_active: false, player_consent_status: "refused" });
   const result = await h.get(); const lead = result.rows.find((row: Row) => row.id === "lead");
   assert.equal(h.rpcs.length, checksBefore, "Manager does not consult the player authorization gate");
-  assert.equal(lead.evaluationsRecorded, 40);
-  assert.equal(lead.evaluationsExpected, 40);
-  assert.equal(lead.evaluationsCompleted, 39);
+  assert.equal(lead.evaluationsRecorded, 4);
+  assert.equal(lead.evaluationsExpected, 4);
+  assert.equal(lead.evaluationsCompleted, 3);
   assert.equal(lead.evaluationsRemaining, 1);
   assert.equal(lead.evaluationsOverdue, 1);
-  assert.equal(result.evaluations.recorded, 40);
+  assert.equal(result.evaluations.recorded, 4);
   assert.equal(result.evaluations.remaining, 1);
   assert.equal(result.coach, null);
   assert.equal(h.writes.length, 0);
@@ -106,10 +106,10 @@ test("saved partial or legacy evaluations survive missing attendance confirmatio
   h.tables.club_event_coach_feedback = h.tables.club_event_coach_feedback.filter(row => row.player_id === "player-0");
   h.tables.club_event_evaluation_responses = [{ event_id: "event-0", player_id: "player-1", event_criterion_id: "criterion", respondent_role: "coach", value_json: "partial" }];
   const result = await h.get(); const lead = result.rows.find((row: Row) => row.id === "lead");
-  assert.equal(lead.evaluationsRecorded, 2, "One saved evaluation per player/activity, including criterion-only entries");
+  assert.equal(lead.evaluationsRecorded, 1, "One activity despite multiple players and duplicate coach entries");
   assert.equal(lead.evaluationsCompleted, 0);
-  assert.equal(lead.evaluationsExpected, 2);
-  assert.equal(lead.evaluationsRemaining, 2);
+  assert.equal(lead.evaluationsExpected, 1);
+  assert.equal(lead.evaluationsRemaining, 1);
 });
 
 test("attendance alone never creates a saved evaluation, and Manager authorization remains required", async () => {
@@ -124,4 +124,28 @@ test("attendance alone never creates a saved evaluation, and Manager authorizati
   const url = new URL("https://test.invalid");
   const response = await route.GET(Object.assign(new Request(url, { headers: { Authorization: "Bearer test" } }), { nextUrl: url }), { params: Promise.resolve({ clubId: club }) });
   assert.equal(response.status, 403);
+});
+
+
+test("multiple missing juniors produce one overdue activity and one navigation link", async () => {
+  const h = fixture({ players: 10, events: 1 });
+  h.tables.club_event_coach_feedback = h.tables.club_event_coach_feedback.slice(0, 2);
+  const result = await h.get(); const lead = result.rows.find((row: Row) => row.id === "lead");
+  assert.equal(lead.evaluationsRecorded, 1);
+  assert.equal(lead.evaluationsExpected, 1);
+  assert.equal(lead.evaluationsCompleted, 0);
+  assert.equal(lead.evaluationsInProgress, 1);
+  assert.equal(lead.evaluationsOverdue, 1);
+  assert.equal(lead.evaluationTodo.length, 1);
+  assert.equal(result.evaluations.overdue, 1);
+  assert.equal(result.overview.evaluationCompletionRate, 0);
+  assert.equal(result.rows.find((row: Row) => row.id === "assistant").evaluationsExpected, 0);
+});
+
+test("a course requiring evaluation counts once even before any participants are recorded", async () => {
+  const h = fixture({ players: 0, events: 1 });
+  const result = await h.get(); const lead = result.rows.find((row: Row) => row.id === "lead");
+  assert.equal(lead.evaluationsExpected, 1);
+  assert.equal(lead.evaluationsCompleted, 0);
+  assert.equal(lead.evaluationsRecorded, 0);
 });
