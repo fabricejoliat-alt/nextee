@@ -22,7 +22,7 @@ test("Manager messages cover every locale, preserve interpolation tokens and res
       for (const value of values) { assert.ok(value.trim(), key); assert.deepEqual(tokens(value), tokens(values[0]), key); }
     }
   }
-  for (const file of ["app/manager/page.tsx", "components/manager/ManagerDesktopDrawer.tsx", "components/manager/ManagerCoachPerformancePage.tsx", "components/manager/ManagerJuniorPerformancePage.tsx"]) {
+  for (const file of ["app/manager/page.tsx", "components/manager/ManagerDesktopDrawer.tsx", "components/manager/ManagerCoachPerformancePage.tsx", "components/manager/ManagerJuniorPerformancePage.tsx", "components/manager/ManagerTableSortControls.tsx"]) {
     const source = readFileSync(file, "utf8");
     for (const [, key] of source.matchAll(/\bt\("([^"]+)"\)/g)) for (const locale of locales) assert.ok(messages[locale][key], `${file} ${locale} ${key}`);
     const ast = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
@@ -78,7 +78,7 @@ const coachData = {
   attention:[{type:"evaluation",reason:"Français hérité",value:"Français hérité",amount:2,label:coach.name,href:"/manager/calendar"}]
 };
 const context = {clubs:[{id:"A",name:"Club Exemple"}],clubId:"A",seasons:[{id:"season",name:"Saison du club",starts_on:"2026-01-01",ends_on:"2026-12-31",is_current:true}],seasonId:"season",loading:false,error:"",setClubId(){},setSeasonId(){}};
-const localComponents = new Set(["Kpi","Small","Header","DataList","CoachTable","JuniorTable","Distribution","GroupTable","AttentionList"]);
+const localComponents = new Set(["Kpi","Small","Header","DataList","CoachTable","JuniorTable","Distribution","GroupTable","AttentionList","SortHeader","TableSortControls"]);
 function expand(tree: any): any {
   if (Array.isArray(tree)) return tree.map(expand);
   if (!tree || typeof tree !== "object" || !tree.props) return tree;

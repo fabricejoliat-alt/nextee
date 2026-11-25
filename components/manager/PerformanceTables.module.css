@@ -56,3 +56,18 @@
     margin-top: 3px;
   }
 }
+
+.sortHeader { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 4px 0; border: 0; background: transparent; color: inherit; font: inherit; text-transform: inherit; letter-spacing: inherit; text-align: left; cursor: pointer; }
+.sortHeader svg { flex-shrink: 0; opacity: .55; }
+th[aria-sort="ascending"] .sortHeader, th[aria-sort="descending"] .sortHeader { color: #354f38; }
+th[aria-sort="ascending"] .sortHeader svg, th[aria-sort="descending"] .sortHeader svg { opacity: 1; }
+.sortHeader:focus-visible, .mobileSort button:focus-visible, .mobileSort select:focus-visible { outline: 3px solid #899d7d; outline-offset: 3px; }
+.mobileSort { display: none; }
+@media (max-width: 640px) {
+  .mobileSort { display: flex; align-items: flex-end; gap: 10px; margin: 12px 0; }
+  .mobileSort label { display: grid; gap: 5px; min-width: 0; flex: 1; color: #617066; font-size: 11px; }
+  .mobileSort select, .mobileSort button { min-height: 42px; padding: 8px; border: 1px solid #dce4da; border-radius: 8px; background: #fff; color: #35483b; font: 600 12px/1.3 var(--font-inter), sans-serif; }
+  .mobileSort select { width: 100%; min-width: 0; }
+  .mobileSort button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; cursor: pointer; }
+  .mobileSort button:disabled { opacity: .5; cursor: default; }
+}
