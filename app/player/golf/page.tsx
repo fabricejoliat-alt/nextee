@@ -237,6 +237,7 @@ type GolfData = {
   performanceOrganizationIds: string[];
   viewerUserId: string; effectiveUserId: string; role: "player" | "parent";
   sessions: TrainingSessionRow[]; items: TrainingItemRow[]; events: OverviewEvent[]; attendance: Record<string, string | null>;
+  latestRounds: (GolfRoundRow & { om_competition_format: string | null; match_score_text: string | null; om_match_result: string | null })[];
   rounds: GolfRoundRow[]; holes: GolfHoleRow[]; performanceEnabled: boolean; handicap: number | null;
   handicapHistory: HandicapHistoryEntry[]; pending: Array<{ id: string }>;
   personalActivities: Array<{ organization_id: string | null; id: string; event_type: string; starts_at: string; ends_at: string; status: string }>;
@@ -1921,40 +1922,31 @@ export default function GolfDashboardPage() {
   );
   const overviewFtemPercent = overviewObjective > 0 ? Math.round((totalMinutes / overviewObjective) * 100) : null;
 
-  const calendarStats = useMemo(() => playerGolfOverviewStats({
-    events: overviewEvents,
-    attendance: overviewAttendance,
-    sessions,
-    personalActivities: golfData?.personalActivities ?? [],
-    now: new Date(),
-  }), [golfData?.personalActivities, overviewAttendance, overviewEvents, sessions]);
-
-  const trainingAttendanceOverview = useMemo(() => {
-    const calculate = (from: string, to: string) => {
-      const fromTime = new Date(`${from}T00:00:00`).getTime();
-      const toTime = new Date(`${to}T23:59:59`).getTime();
-      const now = Date.now();
-      const eligible = overviewEvents.filter((event) => {
-        const eventTime = new Date(event.starts_at).getTime();
-        const status = overviewAttendance[event.id];
-        return event.status === "scheduled" && event.event_type === "training" && eventTime >= fromTime && eventTime <= toTime && eventTime < now && (status === "present" || status === "absent");
-      });
-      const present = eligible.filter((event) => overviewAttendance[event.id] === "present").length;
-      return { present, total: eligible.length, rate: eligible.length ? Math.round((present / eligible.length) * 100) : null };
-    };
-    if (!fromDate || !toDate) return { present: 0, total: 0, rate: null, trend: null };
-    const current = calculate(fromDate, toDate);
-    const previous = prevRange ? calculate(prevRange.from, prevRange.to) : null;
-    return { ...current, trend: current.rate != null && previous?.rate != null ? current.rate - previous.rate : null };
-  }, [fromDate, overviewAttendance, overviewEvents, prevRange, toDate]);
+  const calendarStats = useMemo(() => {
+    const range = (from: string, to: string) => ({
+      from: from ? Date.parse(startOfDayISO(from)) : -Infinity,
+      to: to ? Date.parse(nextDayStartISO(to)) : Infinity,
+    });
+    return playerGolfOverviewStats({
+      events: overviewEvents, attendance: overviewAttendance, sessions,
+      personalActivities: golfData?.personalActivities ?? [], now: new Date(),
+      periodRange: range(fromDate, toDate),
+      seasonRange: currentClubSeason ? range(currentClubSeason.starts_on, currentClubSeason.ends_on) : undefined,
+      previousRange: prevRange ? range(prevRange.from, prevRange.to) : undefined,
+    });
+  }, [currentClubSeason, fromDate, golfData?.personalActivities, overviewAttendance, overviewEvents, prevRange, sessions, toDate]);
 
   const orderedRounds = useMemo(
     () => [...rounds].sort((a, b) => new Date(a.start_at).getTime() - new Date(b.start_at).getTime()),
     [rounds]
   );
-  const lastRound = orderedRounds.at(-1) ?? null;
-  const previousRound = orderedRounds.at(-2) ?? null;
-  const lastRoundDelta = typeof lastRound?.total_score === "number" && typeof previousRound?.total_score === "number"
+  const lastRound = allGolfData?.latestRounds?.at(-1) ?? null;
+  const previousRound = allGolfData?.latestRounds?.at(-2) ?? null;
+  const lastMatchPlay = lastRound?.om_competition_format === "match_play_individual";
+  const lastRoundScore = lastMatchPlay ? lastRound?.match_score_text ||
+    (lastRound?.om_match_result === "won" ? pickLocaleText(locale, "Victoire", "Win", "Sieg", "Vittoria") :
+      lastRound?.om_match_result === "lost" ? pickLocaleText(locale, "Défaite", "Loss", "Niederlage", "Sconfitta") : "—") : lastRound?.total_score ?? "—";
+  const lastRoundDelta = !lastMatchPlay && previousRound?.om_competition_format !== "match_play_individual" && typeof lastRound?.total_score === "number" && typeof previousRound?.total_score === "number"
     ? lastRound.total_score - previousRound.total_score
     : null;
   const roundProgressionOption = useMemo(() => buildManagementDualLineChartOption({
@@ -2354,10 +2346,10 @@ export default function GolfDashboardPage() {
               <article className={overviewStyles.kpiCard}>
                 <div className={overviewStyles.cardTitle}><span><Flag size={17} /></span><h2>{pickLocaleText(locale, "Dernier parcours", "Latest round")}</h2></div>
                 {loadingRounds ? <div className={overviewStyles.kpiSkeleton} /> : lastRound ? <>
-                  <strong>{lastRound.total_score ?? "—"}</strong>
+                  <strong>{lastRoundScore}</strong>
                   <p>{lastRound.course_name || lastRound.location || pickLocaleText(locale, "Parcours non renseigné", "Course not specified")}</p>
                   {lastRoundDelta != null ? <small className={lastRoundDelta <= 0 ? overviewStyles.positive : overviewStyles.caution}>{lastRoundDelta < 0 ? <ArrowDown size={13} /> : lastRoundDelta > 0 ? <ArrowUp size={13} /> : <ArrowRight size={13} />}{lastRoundDelta > 0 ? "+" : ""}{lastRoundDelta} {pickLocaleText(locale, "coup(s)", "stroke(s)")}</small> : <small>{pickLocaleText(locale, "Aucune comparaison disponible", "No comparison available")}</small>}
-                </> : <div className={overviewStyles.neutralValue}>—<small>{pickLocaleText(locale, "Aucun parcours sur la période", "No round in this period")}</small></div>}
+                </> : <div className={overviewStyles.neutralValue}>—<small>{pickLocaleText(locale, "Aucun parcours enregistré", "No round recorded", "Keine Runde erfasst", "Nessun giro registrato")}</small></div>}
               </article>
 
               <article className={overviewStyles.kpiCard}>
@@ -2457,7 +2449,7 @@ export default function GolfDashboardPage() {
                   const target = pickTrainingVolumeTarget(handicapForDate(week), config.rows);
                   return Math.max(maximum, objectiveForMonth(target, config.seasonMonths, config.offseasonMonths, new Date(`${week}T12:00:00`).getMonth() + 1));
                 }, 0) : weeklyObjectiveMinutes}
-                compareLabel={compareLabel} periodLabel={periodLabel} trainingAttendanceOverview={trainingAttendanceOverview}
+                compareLabel={compareLabel} periodLabel={periodLabel} trainingAttendanceOverview={calendarStats.period}
                 loading={loading} pendingEvaluationCount={pendingEvaluationCount} latestCoachEvaluation={latestCoachEvaluation}
                 calendarHref="/player/golf/trainings" pendingHref="/player/golf/trainings/to-complete" onEvaluationsClick={() => selectSection("evaluations")}/>
             </> : null}

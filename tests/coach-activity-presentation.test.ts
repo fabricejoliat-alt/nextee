@@ -4,7 +4,10 @@ import { coachComponentHarness, elements, textContent, flush } from "./helpers/c
 import { messages } from "../lib/i18n/messages.ts";
 
 const noFetch: typeof fetch = async () => { throw new Error("Unexpected network request"); };
-const chartMocks = { "@/components/ui/ActiviteeEChart": { __esModule: true, default: "chart" } };
+const chartMocks = {
+  "@/components/golf/TrainingDurationPreference": { useTrainingDurationDisplay: () => ({ unit: "minutes", formatDuration: (minutes: number) => String(minutes) }) },
+  "@/components/ui/ActiviteeEChart": { __esModule: true, default: "chart" },
+};
 
 test("Coach player identity contains only the avatar, full name and localized handicap", (context) => {
   const props = { avatarUrl: "/avatar-test.png", name: "Milo Joliat", initials: "MJ", handicap: 14.2,

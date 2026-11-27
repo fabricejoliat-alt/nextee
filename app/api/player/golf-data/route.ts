@@ -36,7 +36,7 @@ export async function GET(req: NextRequest) {
       const rounds = view === "rounds" ? loadedRounds : loadedRounds.filter(round => !isMatchPlayRound(round));
       const holes = await readRelatedRows(rounds.map(row => row.id), (ids, from, to) => db.from("golf_round_holes")
         .select("id,round_id,hole_no,par,score,putts,fairway_hit,stroke_index,note").in("round_id", ids).order("id").range(from, to));
-      return { rounds, holes };
+      return view === "dashboard" ? { rounds, holes, latestRounds: loadedRounds.slice(-2) } : { rounds, holes };
     };
     if (view === "rounds") {
       return NextResponse.json({ ...identity, ...await timing.measure("rounds", readRounds) }, { headers: { ...legalNoStore, ...timing.headers() } });

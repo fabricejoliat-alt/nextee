@@ -39,3 +39,16 @@ test("upcoming count includes club, standalone, and personal activities", () => 
   assert.equal(stats.upcoming, 3);
   assert.deepEqual(Object.fromEntries(stats.upcomingByType), { training: 1, individual: 1, competition: 1 });
 });
+
+test("season and selected period agree across a year boundary and exclude future activities", () => {
+  const season = { from: Date.parse("2025-09-01"), to: Date.parse("2026-09-01") };
+  const events = ["2025-11-10", "2026-01-10", "2026-03-10"].map((date, i) => ({
+    id: String(i), event_type: i === 0 ? "camp" : "training", starts_at: date, ends_at: null, status: "scheduled",
+  }));
+  const input = { now: new Date("2026-02-01"), events, attendance: { 0: "present", 1: "absent", 2: "present" },
+    sessions: [], personalActivities: [], seasonRange: season };
+  const stats = playerGolfOverviewStats({ ...input, periodRange: season });
+  assert.deepEqual(stats.season, { present: 1, total: 2, rate: 50 });
+  assert.deepEqual(stats.period, { ...stats.season, trend: null });
+  assert.deepEqual(playerGolfOverviewStats(input).period, stats.period);
+});

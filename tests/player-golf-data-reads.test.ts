@@ -88,6 +88,7 @@ test('player graphs exclude match play and its holes while round history retains
   const dashboard = await (await route.GET(request('dashboard'))).json();
   assert.deepEqual(dashboard.rounds.map((row: Row) => row.id), ['stroke']);
   assert.deepEqual(dashboard.holes.map((row: Row) => row.round_id), ['stroke']);
+  assert.deepEqual(dashboard.latestRounds.map((row: Row) => row.id), ['stroke', 'match']);
   const history = await (await route.GET(request('rounds'))).json();
   assert.deepEqual(history.rounds.map((row: Row) => row.id), ['stroke', 'match']);
   assert.equal(history.rounds[1].om_match_result, 'won');

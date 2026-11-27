@@ -10,9 +10,12 @@ function activityEnd(start: string, end: string | null, minutes?: number | null)
   return end ? new Date(end).getTime() : new Date(start).getTime() + Math.max(1, Number(minutes ?? 0)) * 60_000;
 }
 
+type Range = { from: number; to: number };
+
 export function playerGolfOverviewStats(args: {
   events: CalendarEvent[]; attendance: Record<string, string | null>;
   sessions: TrainingSession[]; personalActivities: PersonalActivity[]; now: Date;
+  seasonRange?: Range; periodRange?: Range; previousRange?: Range;
 }) {
   const now = args.now.getTime();
   const monthStart = new Date(args.now.getFullYear(), args.now.getMonth(), 1).getTime();
@@ -24,14 +27,16 @@ export function playerGolfOverviewStats(args: {
       const start = new Date(event.starts_at).getTime();
       const status = args.attendance[event.id];
       return event.status === "scheduled" && attendanceTypes.has(event.event_type ?? "")
-        && start >= from && start < to && (status === "present" || status === "absent");
+        && start >= from && start < Math.min(to, now) && (status === "present" || status === "absent");
     });
     const present = eligible.filter(event => args.attendance[event.id] === "present").length;
     return { present, total: eligible.length, rate: eligible.length ? Math.round(present / eligible.length * 100) : null };
   };
   const month = attendance(monthStart, now);
   const previousMonth = attendance(previousMonthStart, monthStart);
-  const season = attendance(seasonStart, now);
+  const season = attendance(args.seasonRange?.from ?? seasonStart, args.seasonRange?.to ?? now);
+  const period = attendance(args.periodRange?.from ?? -Infinity, args.periodRange?.to ?? now);
+  const previous = args.previousRange ? attendance(args.previousRange.from, args.previousRange.to) : null;
   const upcomingByType = new Map<string, number>();
   const count = (type: string) => upcomingByType.set(type, (upcomingByType.get(type) ?? 0) + 1);
   args.events.forEach(event => {
@@ -50,6 +55,7 @@ export function playerGolfOverviewStats(args: {
   return {
     month: { ...month, trend: month.rate != null && previousMonth.rate != null ? month.rate - previousMonth.rate : null },
     season,
+    period: { ...period, trend: period.rate != null && previous?.rate != null ? period.rate - previous.rate : null },
     upcoming: [...upcomingByType.values()].reduce((sum, value) => sum + value, 0),
     upcomingByType: [...upcomingByType].sort((a, b) => b[1] - a[1]),
   };

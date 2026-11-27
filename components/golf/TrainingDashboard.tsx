@@ -258,7 +258,7 @@ export default function TrainingDashboard({
                   <div className={trainingStyles.attendanceKpiContent}>
                     <div className={trainingStyles.attendanceKpiRing}><AnimatedProgressRing percent={trainingAttendanceOverview.rate} size={96} label={pickLocaleText(locale, "Assiduité", "Attendance")} /></div>
                     <div className={trainingStyles.attendanceKpiDetails}>
-                      <p>{trainingAttendanceOverview.present} {pickLocaleText(locale, trainingAttendanceOverview.present === 1 ? "entraînement suivi" : "entraînements suivis", trainingAttendanceOverview.present === 1 ? "training attended" : "trainings attended")} / {trainingAttendanceOverview.total}</p>
+                      <p>{trainingAttendanceOverview.present} {playerView ? pickLocaleText(locale, "activité(s) sur", "activities out of", "Aktivitäten von", "attività su") : pickLocaleText(locale, trainingAttendanceOverview.present === 1 ? "entraînement suivi" : "entraînements suivis", trainingAttendanceOverview.present === 1 ? "training attended" : "trainings attended")}{playerView ? " " : " / "}{trainingAttendanceOverview.total}</p>
                       <small className={trainingAttendanceOverview.trend == null ? "" : trainingAttendanceOverview.trend >= 0 ? trainingStyles.positive : trainingStyles.caution}>{trainingAttendanceOverview.trend == null ? pickLocaleText(locale, "Pas de période comparable", "No comparable period") : `${trainingAttendanceOverview.trend > 0 ? "+" : ""}${trainingAttendanceOverview.trend} pts · ${compareLabel}`}</small>
                     </div>
                   </div>
