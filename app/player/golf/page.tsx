@@ -77,6 +77,7 @@ const GolfRoundsWorkspace = dynamic(()=>import("@/components/golf/GolfRoundsWork
 type SessionType = "club" | "private" | "individual";
 
 type TrainingSessionRow = {
+  club_id: string | null;
   id: string;
   start_at: string;
   total_minutes: number | null;
@@ -105,6 +106,7 @@ type CoachEvaluationFeedbackRow = {
 };
 
 type CoachEvaluationEventRow = {
+  club_id: string | null;
   id: string;
   starts_at: string;
   event_type: string | null;
@@ -112,6 +114,7 @@ type CoachEvaluationEventRow = {
 };
 
 type CoachEvaluationRow = {
+  club_id: string | null;
   event_id: string;
   starts_at: string;
   title: string | null;
@@ -131,6 +134,7 @@ type CustomCoachEvaluation = {
 };
 
 type GolfRoundRow = {
+  club_id: string | null;
   id: string;
   start_at: string;
   round_type: string; // training | competition | ...
@@ -218,6 +222,7 @@ type PlayerDashboardDocument = {
 type Preset = "week" | "month" | "last3" | "season" | "lastSeason" | "all" | "custom";
 type DashboardSection = "overview" | "trainings" | "evaluations" | "rounds" | "stats" | "documents";
 type OverviewEvent = {
+  club_id: string | null;
   id: string;
   event_type: string | null;
   starts_at: string;
@@ -228,12 +233,14 @@ type OverviewEvent = {
 };
 
 type GolfData = {
+  organizations: Array<{ id: string; name: string }>;
+  performanceOrganizationIds: string[];
   viewerUserId: string; effectiveUserId: string; role: "player" | "parent";
   sessions: TrainingSessionRow[]; items: TrainingItemRow[]; events: OverviewEvent[]; attendance: Record<string, string | null>;
   rounds: GolfRoundRow[]; holes: GolfHoleRow[]; performanceEnabled: boolean; handicap: number | null;
   handicapHistory: HandicapHistoryEntry[]; pending: Array<{ id: string }>;
-  personalActivities: Array<{ id: string; event_type: string; starts_at: string; ends_at: string; status: string }>;
-  volumeConfigs: Array<{ rows: TrainingVolumeTargetRow[]; settings: { season_months?: unknown; offseason_months?: unknown } | null; seasons: ClubSeason[] }>;
+  personalActivities: Array<{ organization_id: string | null; id: string; event_type: string; starts_at: string; ends_at: string; status: string }>;
+  volumeConfigs: Array<{ organizationId: string; rows: TrainingVolumeTargetRow[]; settings: { season_months?: unknown; offseason_months?: unknown } | null; seasons: ClubSeason[] }>;
 };
 
 function clamp(n: number, a: number, b: number) {
@@ -558,7 +565,24 @@ export default function GolfDashboardPage() {
   const [mobileGolfMenuOpen, setMobileGolfMenuOpen] = useState(false);
   const mobileGolfMenuRef = useRef<HTMLDivElement>(null);
   const [sectionReady, setSectionReady] = useState(false);
-  const [golfData, setGolfData] = useState<GolfData | null>(null);
+  const [allGolfData, setGolfData] = useState<GolfData | null>(null);
+  const [organizationId, setOrganizationId] = useState("");
+  const golfData = useMemo(() => {
+    if (!allGolfData || !organizationId) return allGolfData;
+    const events = allGolfData.events.filter(event => event.club_id === organizationId);
+    const eventIds = new Set(events.map(event => event.id));
+    const sessions = allGolfData.sessions.filter(session => session.club_id === organizationId ||
+      (!session.club_id && session.club_event_id && eventIds.has(session.club_event_id)));
+    const sessionIds = new Set(sessions.map(session => session.id));
+    const performanceEnabled = allGolfData.performanceOrganizationIds.includes(organizationId);
+    return {
+      ...allGolfData, events, sessions, performanceEnabled,
+      pending: performanceEnabled ? allGolfData.pending.filter(row => eventIds.has(row.id) || sessionIds.has(row.id)) : [],
+      rounds: allGolfData.rounds.filter(round => round.club_id === organizationId),
+      personalActivities: allGolfData.personalActivities.filter(row => row.organization_id === organizationId),
+      volumeConfigs: allGolfData.volumeConfigs.filter(config => config.organizationId === organizationId),
+    };
+  }, [allGolfData, organizationId]);
   const [playerChartView, setPlayerChartView] = useState<"values" | "trend">("values");
   const [coachChartView, setCoachChartView] = useState<"values" | "trend">("values");
   useEffect(() => {
@@ -616,7 +640,10 @@ export default function GolfDashboardPage() {
   const [holes, setHoles] = useState<GolfHoleRow[]>([]);
   const [prevHoles, setPrevHoles] = useState<GolfHoleRow[]>([]);
 
-  const [coachEvaluations, setCoachEvaluations] = useState<CoachEvaluationRow[]>([]);
+  const [allCoachEvaluations, setCoachEvaluations] = useState<CoachEvaluationRow[]>([]);
+  const coachEvaluations = useMemo(() => organizationId
+    ? allCoachEvaluations.filter(row => row.club_id === organizationId)
+    : allCoachEvaluations, [allCoachEvaluations, organizationId]);
   const [customCoachEvaluations, setCustomCoachEvaluations] = useState<CustomCoachEvaluation[]>([]);
   const [loadingCoachEvaluations, setLoadingCoachEvaluations] = useState(false);
   const authTokenRef = useRef<string>("");
@@ -673,25 +700,29 @@ export default function GolfDashboardPage() {
     void readPlayerPage<GolfData>("/api/player/golf-data?view=dashboard").then(data => {
       if (!alive) return;
       setEffectivePlayerId(data.effectiveUserId); setCurrentUserId(data.viewerUserId);
-      setIsPerformanceEnabled(data.performanceEnabled); setPlayerHandicap(data.handicap); setHandicapHistory(data.handicapHistory);
-      setOverviewEvents(data.events); setOverviewAttendance(data.attendance); setPendingEvaluationCount(data.pending.length);
-      const month = new Date().getMonth() + 1;
-      const responses: TrainingVolumeClubResponse[] = data.volumeConfigs.map(config => {
-        const seasonMonths = parseMonthArray(config.settings?.season_months), offseasonMonths = parseMonthArray(config.settings?.offseason_months);
-        const currentSeason = config.seasons.find(season => season.is_current) ?? config.seasons[0] ?? null;
-        return { rows: config.rows, seasonMonths, offseasonMonths, currentSeason,
-          previousSeason: currentSeason ? config.seasons.find(season => season.starts_on < currentSeason.starts_on) ?? null : null,
-          objective: objectiveForMonth(pickTrainingVolumeTarget(data.handicap, config.rows), seasonMonths, offseasonMonths, month) };
-      });
-      setTrainingVolumeConfigs(responses.map(({ rows, seasonMonths, offseasonMonths }) => ({ rows, seasonMonths, offseasonMonths })));
-      const best = responses.sort((a, b) => b.objective - a.objective)[0];
-      setTrainingVolumeRows(best?.rows ?? []); setTrainingSeasonMonths(best?.seasonMonths ?? []); setTrainingOffseasonMonths(best?.offseasonMonths ?? []);
-      setCurrentClubSeason(best?.currentSeason ?? null); setPreviousClubSeason(best?.previousSeason ?? null);
       setGolfData(data);
     }).catch(error => { if (alive) setError(error instanceof Error ? error.message : "Unable to load golf data"); })
       .finally(() => { if (alive) { setLoading(false); setLoadingRounds(false); setLoadingHoles(false); setOverviewActivitiesLoading(false); } });
     return () => { alive = false; };
   }, [needsDashboardData, setLoading, setLoadingRounds, setLoadingHoles, setOverviewActivitiesLoading]);
+
+  useEffect(() => {
+    if (!golfData) return;
+    setIsPerformanceEnabled(golfData.performanceEnabled); setPlayerHandicap(golfData.handicap); setHandicapHistory(golfData.handicapHistory);
+    setOverviewEvents(golfData.events); setOverviewAttendance(golfData.attendance); setPendingEvaluationCount(golfData.pending.length);
+    const month = new Date().getMonth() + 1;
+    const responses: TrainingVolumeClubResponse[] = golfData.volumeConfigs.map(config => {
+      const seasonMonths = parseMonthArray(config.settings?.season_months), offseasonMonths = parseMonthArray(config.settings?.offseason_months);
+      const currentSeason = config.seasons.find(season => season.is_current) ?? config.seasons[0] ?? null;
+      return { rows: config.rows, seasonMonths, offseasonMonths, currentSeason,
+        previousSeason: currentSeason ? config.seasons.find(season => season.starts_on < currentSeason.starts_on) ?? null : null,
+        objective: objectiveForMonth(pickTrainingVolumeTarget(golfData.handicap, config.rows), seasonMonths, offseasonMonths, month) };
+    });
+    setTrainingVolumeConfigs(responses.map(({ rows, seasonMonths, offseasonMonths }) => ({ rows, seasonMonths, offseasonMonths })));
+    const best = responses.sort((a, b) => b.objective - a.objective)[0];
+    setTrainingVolumeRows(best?.rows ?? []); setTrainingSeasonMonths(best?.seasonMonths ?? []); setTrainingOffseasonMonths(best?.offseasonMonths ?? []);
+    setCurrentClubSeason(best?.currentSeason ?? null); setPreviousClubSeason(best?.previousSeason ?? null);
+  }, [golfData]);
 
   function shortDate(iso: string, localeCode: string) {
     return new Intl.DateTimeFormat(localeCode, { day: "2-digit", month: "2-digit", year: "numeric" }).format(new Date(iso));
@@ -956,6 +987,8 @@ export default function GolfDashboardPage() {
       if (previousClubSeason) {
         setFromDate(previousClubSeason.starts_on);
         setToDate(previousClubSeason.ends_on);
+      } else if (golfData && !golfData.volumeConfigs.some(config => config.seasons.length > 1)) {
+        setPreset("season");
       }
       return;
     }
@@ -965,7 +998,7 @@ export default function GolfDashboardPage() {
       setToDate("");
       return;
     }
-  }, [currentClubSeason, preset, previousClubSeason]);
+  }, [currentClubSeason, preset, previousClubSeason, golfData, setPreset, setFromDate, setToDate]);
 
   const periodLabel = useMemo(() => fmtPeriod(fromDate, toDate, dateLocale, t), [dateLocale, fromDate, t, toDate]);
 
@@ -1074,6 +1107,7 @@ export default function GolfDashboardPage() {
   }, [golfData, fromDate, toDate, prevRange]);
 
   useEffect(() => {
+    let active = true;
     (async () => {
       if (!["trainings", "evaluations"].includes(activeSection) || !effectivePlayerId) {
         setCoachEvaluations([]);
@@ -1091,6 +1125,7 @@ export default function GolfDashboardPage() {
           .limit(500);
         if (feedbackRes.error) throw new Error(feedbackRes.error.message);
 
+        if (!active) return;
         const feedbacks = (feedbackRes.data ?? []) as CoachEvaluationFeedbackRow[];
         const eventIds = Array.from(new Set(feedbacks.map((row) => row.event_id).filter(Boolean)));
         if (eventIds.length === 0) {
@@ -1100,7 +1135,7 @@ export default function GolfDashboardPage() {
 
         let eventsQuery = supabase
           .from("club_events")
-          .select("id,starts_at,event_type,title")
+          .select("id,club_id,starts_at,event_type,title")
           .in("id", eventIds)
           .in("event_type", ["training"])
           .lt("starts_at", new Date().toISOString())
@@ -1111,6 +1146,7 @@ export default function GolfDashboardPage() {
         const eventsRes = await eventsQuery;
         if (eventsRes.error) throw new Error(eventsRes.error.message);
 
+        if (!active) return;
         const events = (eventsRes.data ?? []) as CoachEvaluationEventRow[];
         const eventById = new Map(events.map((event) => [event.id, event]));
 
@@ -1119,6 +1155,7 @@ export default function GolfDashboardPage() {
             const event = eventById.get(feedback.event_id);
             if (!event) return null;
             return {
+              club_id: event.club_id,
               event_id: feedback.event_id,
               starts_at: event.starts_at,
               title: event.title ?? null,
@@ -1134,14 +1171,16 @@ export default function GolfDashboardPage() {
 
         setCoachEvaluations(merged);
       } catch {
-        setCoachEvaluations([]);
+        if (active) setCoachEvaluations([]);
       } finally {
-        setLoadingCoachEvaluations(false);
+        if (active) setLoadingCoachEvaluations(false);
       }
     })();
+    return () => { active = false; };
   }, [activeSection, effectivePlayerId, fromDate, toDate]);
 
   useEffect(() => {
+    let active = true;
     if (activeSection !== "evaluations" || !effectivePlayerId) {
       setCustomCoachEvaluations([]);
       return;
@@ -1160,6 +1199,7 @@ export default function GolfDashboardPage() {
         .in("event_id", eventIds)
         .eq("is_enabled", true)
         .in("snapshot_respondent", ["coach", "both"]);
+      if (!active) return;
       if (criteriaResult.error || !criteriaResult.data?.length) {
         setCustomCoachEvaluations([]);
         return;
@@ -1171,6 +1211,7 @@ export default function GolfDashboardPage() {
         .eq("player_id", effectivePlayerId)
         .eq("respondent_role", "coach")
         .in("event_criterion_id", criteria.map((criterion) => criterion.id));
+      if (!active) return;
       if (responsesResult.error) {
         setCustomCoachEvaluations([]);
         return;
@@ -1182,6 +1223,7 @@ export default function GolfDashboardPage() {
         return [{ event_id: response.event_id, criterion_id: criterion.id, name: criterion.snapshot_name, format: criterion.snapshot_response_format, value: response.value_json as string | number | boolean }];
       }));
     })();
+    return () => { active = false; };
   }, [activeSection, effectivePlayerId, fromDate, overviewEvents, toDate]);
       
   const volumeCardTitle = useMemo(() => {
@@ -1931,8 +1973,10 @@ export default function GolfDashboardPage() {
     },
   }), [dateLocale, handicapForDate, locale, orderedRounds]);
 
-  const recentDocuments = useMemo(() => [...documents].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 3), [documents]);
-  const newestSharedDocument = useMemo(() => documents.find((document) => String(document.uploaded_by) !== currentUserId) ?? null, [currentUserId, documents]);
+  const overviewDocuments = useMemo(() => organizationId
+    ? documents.filter(document => document.organization_id === organizationId) : documents, [documents, organizationId]);
+  const recentDocuments = useMemo(() => [...overviewDocuments].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 3), [overviewDocuments]);
+  const newestSharedDocument = useMemo(() => overviewDocuments.find((document) => String(document.uploaded_by) !== currentUserId) ?? null, [currentUserId, overviewDocuments]);
   const incompleteRound = useMemo(() => [...rounds].reverse().find((round) => round.total_score == null) ?? null, [rounds]);
   const strongestGameMarker = useMemo(() => {
     const values = [
@@ -1997,6 +2041,19 @@ export default function GolfDashboardPage() {
 {activeSection !== "rounds" ? <div className="glass-section">
   <div className="glass-card" style={{ padding: 14 }}>
     <div style={{ display: "grid", gap: 12 }}>
+      {activeSection !== "documents" && (allGolfData?.organizations.length ?? 0) > 1 && (
+        <>
+          <label className={overviewStyles.periodFilterLabel} htmlFor="golf-organization">
+            <span><SlidersHorizontal size={16} /></span>
+            <strong>{pickLocaleText(locale, "Organisation", "Organization", "Organisation", "Organizzazione")}</strong>
+          </label>
+          <select id="golf-organization" className={overviewStyles.filterSelect} value={organizationId}
+            onChange={(event) => setOrganizationId(event.target.value)}>
+            <option value="">{pickLocaleText(locale, "Toutes les organisations", "All organizations", "Alle Organisationen", "Tutte le organizzazioni")}</option>
+            {allGolfData?.organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}
+          </select>
+        </>
+      )}
       {/* Label */}
       <div className={overviewStyles.periodFilterLabel}>
         <span><SlidersHorizontal size={16} /></span>
@@ -2032,20 +2089,7 @@ export default function GolfDashboardPage() {
           setPreset(v);
           setCustomOpen(false);
         }}
-        style={{
-          width: "100%",
-          height: 44,
-          borderWidth: 1,
-          borderStyle: "solid",
-          borderColor: "rgba(0,0,0,0.10)",
-          borderRadius: 12,
-          padding: "0 12px",
-          background: "rgba(255,255,255,0.75)",
-          fontWeight: 950,
-          color: "rgba(0,0,0,0.80)",
-          outline: "none",
-          appearance: "none",
-        }}
+        className={overviewStyles.filterSelect}
         aria-label={t("common.filterByPeriod")}
       >
         <option value="month">{t("common.thisMonth")}</option>

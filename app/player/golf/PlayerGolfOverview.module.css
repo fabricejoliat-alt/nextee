@@ -12,3 +12,15 @@
 @media(max-width:640px){.navigationCard{padding:0!important;border:0!important;box-shadow:none!important;background:transparent!important}.mobileNavigationMenu{left:0;right:0}}
 
 .activityTypeCounts{display:flex;flex-wrap:wrap;align-content:start;gap:5px}.activityTypeCounts span{display:inline-flex;align-items:center;gap:3px;padding:4px 7px;border-radius:999px;background:#edf3ea;color:#435a45;font-size:10px;font-weight:700}.activityTypeCounts b{font-weight:850}.attendanceContent{display:grid;grid-template-columns:96px minmax(0,1fr);align-items:center;gap:12px;min-width:0}.attendanceRing{display:grid;place-items:center;width:96px;height:96px}.attendanceRing svg{display:block;max-width:100%;height:auto}.attendanceDetails{display:grid;align-content:center;gap:8px;min-width:0}.attendanceDetails small{margin:0;line-height:1.4}
+
+.filterSelect {
+  width: 100%;
+  height: 44px;
+  border: 1px solid rgba(0,0,0,.10);
+  border-radius: 12px;
+  padding: 0 12px;
+  background: rgba(255,255,255,.75);
+  color: rgba(0,0,0,.80);
+  font-weight: 950;
+}
+.periodFilterLabel strong { font-size: 12px; font-weight: 950; }

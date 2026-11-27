@@ -16,7 +16,7 @@ type Session = HomeHistorySession & { location_text: string | null; coach_name: 
 type Event = HomeHistoryEvent & { club_id: string; group_id: string | null; location_text: string | null };
 type Round = MatchPlayRound & { id: string; start_at: string };
 type Item = HomeHistoryItem & { id: string };
-type PersonalActivity = { id: string; event_type: "competition" | "camp"; starts_at: string; ends_at: string; status: string };
+type PersonalActivity = { organization_id: string | null; id: string; event_type: "competition" | "camp"; starts_at: string; ends_at: string; status: string };
 
 export async function GET(req: NextRequest) {
   const timing = createRequestTiming();
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
     const identity = { viewerUserId: access.actorUserId, effectiveUserId: playerId, role: access.viewerRole, organizationIds: orgIds };
     const readRounds = async () => {
       const loadedRounds = await readAllRows<Round>((from, to) => db.from("golf_rounds")
-        .select("id,start_at,round_type,competition_name,course_name,location,tee_name,slope_rating,course_rating,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus,om_competition_format,om_match_result,match_score_text,score_entry_mode")
+        .select("id,club_id,start_at,round_type,competition_name,course_name,location,tee_name,slope_rating,course_rating,total_score,total_putts,fairways_hit,fairways_total,gir,eagles,birdies,pars,bogeys,doubles_plus,om_competition_format,om_match_result,match_score_text,score_entry_mode")
         .eq("user_id", playerId).or(scope("club_id")).order("start_at").order("id").range(from, to));
       const rounds = view === "rounds" ? loadedRounds : loadedRounds.filter(round => !isMatchPlayRound(round));
       const holes = await readRelatedRows(rounds.map(row => row.id), (ids, from, to) => db.from("golf_round_holes")
@@ -41,18 +41,23 @@ export async function GET(req: NextRequest) {
     if (view === "rounds") {
       return NextResponse.json({ ...identity, ...await timing.measure("rounds", readRounds) }, { headers: { ...legalNoStore, ...timing.headers() } });
     }
-    const readTraining = async () => {
+    const readTraining = async (): Promise<{
+      sessions: Session[]; items: Item[]; events: Event[]; pending: ReturnType<typeof summarizePlayerHome>["pendingTrainings"];
+      performanceEnabled: boolean; performanceOrganizationIds: string[]; attendance: Record<string, string | null>;
+    }> => {
       const [sessions, attendees, performance] = await Promise.all([
         readAllRows<Session>((from, to) => db.from("training_sessions")
-          .select(view === "pending" ? "id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,location_text" : "id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,location_text,coach_name,notes")
+          .select(view === "pending" ? "id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,location_text" : "id,club_id,start_at,total_minutes,motivation,difficulty,satisfaction,session_type,club_event_id,location_text,coach_name,notes")
           .eq("user_id", playerId).or(scope("club_id")).order("id").range(from, to)),
         readAllRows<HomeHistoryAttendance>((from, to) => db.from("club_event_attendees").select("event_id,status")
           .eq("player_id", playerId).order("event_id").range(from, to)),
-        db.from("club_members").select("id").eq("user_id", playerId).eq("role", "player")
-          .eq("is_active", true).eq("is_performance", true).in("club_id", orgIds).limit(1),
+        db.from("club_members").select("club_id").eq("user_id", playerId).eq("role", "player")
+          .eq("is_active", true).eq("is_performance", true).in("club_id", orgIds),
       ]);
       if (performance.error) throw performance.error;
-      if(view === "pending" && !performance.data?.length)return {sessions:[],items:[],events:[],pending:[],performanceEnabled:false,attendance:{}};
+      if (view === "pending" && !performance.data?.length) {
+        return { sessions: [], items: [], events: [], pending: [], performanceEnabled: false, performanceOrganizationIds: [], attendance: {} };
+      }
       const ids = [...new Set([...attendees.map(row => row.event_id), ...sessions.map(row => row.club_event_id)].filter((id): id is string => Boolean(id)))];
       const itemSessionIds = (view === "pending" ? sessions.filter(row => typeof row.motivation === "number" && typeof row.difficulty === "number" && typeof row.satisfaction === "number") : sessions).map(row=>row.id);
       const itemsRead = readRelatedRows<Item>(itemSessionIds, (ids, from, to) => {
@@ -83,7 +88,7 @@ export async function GET(req: NextRequest) {
       const summary = summarizePlayerHome({ sessions, items, events, attendees: visibleAttendance, performanceEnabled: Boolean(performance.data?.length),
         now: now.toISOString(), monthStart: month.toISOString(), monthEnd: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString(),
         previousMonthStart: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString() });
-      return { sessions, items, events, pending: summary.pendingTrainings, performanceEnabled: Boolean(performance.data?.length),
+      return { sessions, items, events, performanceOrganizationIds: (performance.data ?? []).map(row => row.club_id), pending: summary.pendingTrainings, performanceEnabled: Boolean(performance.data?.length),
         attendance: Object.fromEntries(visibleAttendance.map(row => [row.event_id, row.status])) };
     };
     if (view === "pending") {
@@ -110,7 +115,7 @@ export async function GET(req: NextRequest) {
         clubNameById: Object.fromEntries((clubs.data ?? []).map(row => [row.id, row.name])),
         groupNameById: Object.fromEntries((groups.data ?? []).map(row => [row.id, row.name])) }, { headers: { ...legalNoStore, ...timing.headers() } });
     }
-    const [training, roundData, profile, history, targets, settings, seasons, personalActivities] = await timing.measure("data", () => Promise.all([
+    const [training, roundData, profile, history, targets, settings, seasons, personalActivities, organizations] = await timing.measure("data", () => Promise.all([
       readTraining(), readRounds(),
       db.from("profiles").select("handicap").eq("id", playerId).maybeSingle(),
       personal ? readAllRows((from, to) => db.from("player_handicap_history").select("id,effective_date,value,note")
@@ -120,12 +125,13 @@ export async function GET(req: NextRequest) {
       db.from("training_volume_settings").select("organization_id,season_months,offseason_months").in("organization_id", orgIds),
       db.from("club_seasons").select("id,club_id,name,starts_on,ends_on,is_current").in("club_id", orgIds).order("starts_on", { ascending: false }),
       readAllRows<PersonalActivity>((from, to) => db.from("player_activity_events")
-        .select("id,event_type,starts_at,ends_at,status").eq("user_id", playerId)
+        .select("id,organization_id,event_type,starts_at,ends_at,status").eq("user_id", playerId)
         .or(personalOrOrganizationFilter("organization_id", orgIds)).eq("status", "scheduled").gte("ends_at", new Date().toISOString()).order("starts_at").order("id").range(from, to)),
+      db.from("organizations").select("id,name").in("id", orgIds).order("name"),
     ]));
-    for (const result of [profile, targets, settings, seasons]) if (result.error) throw result.error;
-    return NextResponse.json({ ...identity, ...training, ...roundData, personalActivities, handicap: profile.data?.handicap ?? null, handicapHistory: history,
-      volumeConfigs: orgIds.map(id => ({ rows: (targets.data ?? []).filter(row => row.organization_id === id),
+    for (const result of [profile, targets, settings, seasons, organizations]) if (result.error) throw result.error;
+    return NextResponse.json({ ...identity, ...training, ...roundData, organizations: organizations.data, personalActivities, handicap: profile.data?.handicap ?? null, handicapHistory: history,
+      volumeConfigs: orgIds.map(id => ({ organizationId: id, rows: (targets.data ?? []).filter(row => row.organization_id === id),
         settings: (settings.data ?? []).find(row => row.organization_id === id) ?? null,
         seasons: (seasons.data ?? []).filter(row => row.club_id === id) })) }, { headers: { ...legalNoStore, ...timing.headers() } });
   } catch (error) {
